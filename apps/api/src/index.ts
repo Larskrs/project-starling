@@ -1,13 +1,28 @@
 import { createServer } from 'node:http';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadRoutes, matchRoute } from './router.js';
 import { ApiError, type ApiEvent, sendJson } from './lib/handler.js';
 import { setupSockets } from './lib/sockets.js';
 
-const here   = dirname(fileURLToPath(import.meta.url));
-const apiDir = join(here, 'routes');
-const PORT   = Number(process.env.PORT ?? 3000);
+const here    = dirname(fileURLToPath(import.meta.url));
+const apiDir  = join(here, 'routes');
+const webDist = join(here, '../../web/dist');
+const PORT    = Number(process.env.PORT ?? 3000);
+
+const MIME: Record<string, string> = {
+  '.html':  'text/html; charset=utf-8',
+  '.js':    'application/javascript; charset=utf-8',
+  '.mjs':   'application/javascript; charset=utf-8',
+  '.css':   'text/css; charset=utf-8',
+  '.svg':   'image/svg+xml',
+  '.png':   'image/png',
+  '.ico':   'image/x-icon',
+  '.woff':  'font/woff',
+  '.woff2': 'font/woff2',
+  '.json':  'application/json',
+};
 
 const routes = await loadRoutes(apiDir);
 console.log(`[server] loaded ${routes.length} route(s):`);
@@ -26,6 +41,30 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok' });
+    return;
+  }
+
+  if (url.pathname === '/app' || url.pathname.startsWith('/app/')) {
+    const rel     = url.pathname.slice('/app'.length) || '/';
+    const ext     = extname(rel);
+    const isAsset = ext.length > 0;
+
+    try {
+      const body        = await readFile(isAsset ? join(webDist, rel) : join(webDist, 'index.html'));
+      const contentType = MIME[isAsset ? ext : '.html'] ?? 'application/octet-stream';
+      res.setHeader('Content-Type',  contentType);
+      res.setHeader('Cache-Control', rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
+      res.statusCode = 200;
+      res.end(body);
+    } catch {
+      if (isAsset) {
+        sendJson(res, 404, { error: 'Not found' });
+      } else {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.statusCode = 503;
+        res.end('Web app not built — run: npm run build -w web');
+      }
+    }
     return;
   }
 
