@@ -6,10 +6,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
-    "skipLibCheck": true,
-    "paths": {
-      "@starling/db": ["../../packages/db/src/index.ts"]
-    }
+    "skipLibCheck": true
   },
   "include": ["src"]
 }
