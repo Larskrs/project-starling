@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@starling/db": "*",
-    "drizzle-orm": "^0.44.2",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
     "socket.io": "^4.8.1",
     "zod": "^4.4.3"

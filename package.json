@@ -20,5 +20,18 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "overrides": {
+    "ws":      "8.21.0",
+    "esbuild": "0.25.5",
+    "engine.io": {
+      "ws": "8.21.0"
+    },
+    "engine.io-client": {
+      "ws": "8.21.0"
+    },
+    "socket.io-adapter": {
+      "ws": "8.21.0"
+    }
+  }
 }
