@@ -19,8 +19,8 @@ export default defineEventHandler(async (event) => {
   try {
     [user] = await db.insert(users).values({ email, name, hashedPassword }).returning();
   } catch (err: unknown) {
-    const pg = err as { code?: string };
-    if (pg.code === '23505') throw new ApiError(409, 'Email already in use');
+    const code = err.cause.code
+    if (code === '23505') throw new ApiError(409, 'Email already in use');
     throw err;
   }
 

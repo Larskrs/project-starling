@@ -57,6 +57,7 @@ export function useAuth(baseUrl = '') {
 
   async function fetchUser(): Promise<AuthState> {
     const res = await fetch(`${baseUrl}/api/auth/me`, { credentials: 'include' });
+    console.log(res)
     if (!res.ok) {
       user.value    = null;
       session.value = null;

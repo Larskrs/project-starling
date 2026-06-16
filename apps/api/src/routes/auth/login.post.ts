@@ -19,8 +19,11 @@ export default defineEventHandler(async (event) => {
     throw new ApiError(401, 'Invalid email or password');
   }
 
+  
   const role      = user.isAdministrator ? 'admin' : 'user';
   const sessionId = await createSession(user.id, role);
+  
+  console.log(`User ${user.email} logged in`);
 
   event.res.setHeader(
     'Set-Cookie',

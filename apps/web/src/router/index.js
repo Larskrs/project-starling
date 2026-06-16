@@ -1,12 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import DefaultLayout from '../layouts/DefaultLayout.vue'
+import AuthLayout from '../layouts/AuthLayout.vue'
 
 const router = createRouter({
   history: createWebHistory('/app'),
   routes: [
     { path: '/',         redirect: '/chat' },
-    { path: '/login',    component: () => import('../views/LoginView.vue') },
-    { path: '/register', component: () => import('../views/RegisterView.vue') },
-    { path: '/chat',     component: () => import('../views/ChatView.vue'), meta: { requiresAuth: true } },
+    { path: '/login',    component: () => import('../views/LoginView.vue'),  meta: { layout: AuthLayout } },
+    { path: '/register', component: () => import('../views/RegisterView.vue'), meta: { layout: AuthLayout } },
+    { path: '/chat',     component: () => import('../views/ChatView.vue'),   meta: { requiresAuth: true, layout: DefaultLayout } },
   ],
 })
 
