@@ -3,7 +3,7 @@ import { eq, lt } from 'drizzle-orm';
 import { db, sessions } from '@starling/db';
 
 export const SESSION_COOKIE  = 'syncsw_sid';
-const        SESSION_TTL_MS  = 7 * 24 * 60 * 60 * 1000;
+const        SESSION_TTL_MS  = 24 * 60 * 60 * 1000;
 export const SESSION_TTL_SEC = SESSION_TTL_MS / 1000;
 
 /** The only data carried out of a session lookup — intentionally minimal. */

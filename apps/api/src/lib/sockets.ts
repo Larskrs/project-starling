@@ -41,8 +41,12 @@ type ChatSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<stri
 // ── In-memory state ───────────────────────────────────────────────────────────
 
 const MAX_HISTORY = 100;
-const history: ChatMessage[]       = [];
-const online  = new Map<string, OnlineUser>(); // socketId → user
+const history: ChatMessage[] = [];
+const online  = new Map<number, { user: OnlineUser; sockets: Set<string> }>(); // userId → {user, socketIds}
+
+function onlineUsers(): OnlineUser[] {
+  return [...online.values()].map(e => e.user);
+}
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -77,10 +81,15 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
     const socket = rawSocket as ChatSocket;
     const { user } = socket.data;
 
-    online.set(socket.id, user);
+    const isFirstSocket = !online.has(user.id);
+    if (isFirstSocket) {
+      online.set(user.id, { user, sockets: new Set() });
+    }
+    online.get(user.id)!.sockets.add(socket.id);
+
     socket.emit('history', history);
-    socket.emit('online', [...online.values()]);
-    socket.broadcast.emit('user:joined', user);
+    socket.emit('online', onlineUsers());
+    if (isFirstSocket) socket.broadcast.emit('user:joined', user);
 
     // ── message:send ─────────────────────────────────────────────────────
     socket.on('message:send', (text, ack) => {
@@ -105,8 +114,13 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
 
     // ── Disconnect ───────────────────────────────────────────────────────
     socket.on('disconnect', () => {
-      online.delete(socket.id);
-      io.emit('user:left', user);
+      const entry = online.get(user.id);
+      if (!entry) return;
+      entry.sockets.delete(socket.id);
+      if (entry.sockets.size === 0) {
+        online.delete(user.id);
+        io.emit('user:left', user);
+      }
     });
   });
 
