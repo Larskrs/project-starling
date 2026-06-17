@@ -8,7 +8,7 @@ import { config } from 'dotenv';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: join(__dirname, '..', '..', '..', '.env') });
 
-const url = process.env.DATABASE_URL ?? 'postgres://starling:starling@localhost:5432/starling';
+const url = process.env.DATABASE_URL ?? "";
 const client = postgres(url, { max: 1 });
 const db = drizzle(client);
 
