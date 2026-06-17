@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted, reactive } from 'vue'
 import { useAuth }   from '../composables/useAuth.js'
 import { useSocket } from '../composables/useSocket.js'
 import Button from '../components/ui/Button.vue'
@@ -12,6 +12,30 @@ const text       = ref('')
 const sending    = ref(false)
 const listEl     = ref(null)
 
+// ── Image previews ────────────────────────────────────────────────────────────
+
+const URL_RE     = /https?:\/\/[^\s<>"']+/gi
+const imageCache = reactive(new Map()) // url → 'image' | 'none'
+
+async function resolveUrls(text) {
+  const urls = [...new Set(text.match(URL_RE) ?? [])]
+  await Promise.all(urls.map(async (url) => {
+    if (imageCache.has(url)) return
+    imageCache.set(url, 'pending')
+    try {
+      const res = await fetch(url, { method: 'HEAD' })
+      const ct  = res.headers.get('content-type') ?? ''
+      imageCache.set(url, ct.startsWith('image/') ? 'image' : 'none')
+    } catch {
+      imageCache.set(url, 'none')
+    }
+  }))
+}
+
+function msgImages(text) {
+  return [...new Set(text.match(URL_RE) ?? [])].filter(u => imageCache.get(u) === 'image')
+}
+
 onMounted(async () => {
   await fetchUser()
   connect()
@@ -19,9 +43,10 @@ onMounted(async () => {
 
 onUnmounted(() => disconnect())
 
-watch(messages, async () => {
+watch(messages, async (msgs) => {
   await nextTick()
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
+  for (const msg of msgs) resolveUrls(msg.text)
 }, { deep: true })
 
 async function handleSend() {
@@ -94,6 +119,15 @@ function fmt(iso) {
                 <span class="text-xs text-muted-foreground">{{ fmt(msg.sentAt) }}</span>
               </div>
               <p class="text-sm text-foreground leading-relaxed break-words">{{ msg.text }}</p>
+              <div v-if="msgImages(msg.text).length" class="mt-2 flex flex-col gap-2">
+                <img
+                  v-for="url in msgImages(msg.text)"
+                  :key="url"
+                  :src="url"
+                  class="max-w-xs max-h-64 rounded-md object-contain"
+                  loading="lazy"
+                />
+              </div>
             </div>
           </div>
         </div>
