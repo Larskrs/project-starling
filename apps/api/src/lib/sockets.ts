@@ -9,12 +9,12 @@ import { sessionFromCookies } from './session.js';
 export interface ChatMessage {
   id:     string;
   text:   string;
-  user:   { id: number; name: string };
+  user:   { id: string; name: string };
   sentAt: string;
 }
 
 interface OnlineUser {
-  id:   number;
+  id:   string;
   name: string;
 }
 
@@ -42,7 +42,7 @@ type ChatSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<stri
 
 const MAX_HISTORY = 100;
 const history: ChatMessage[] = [];
-const online  = new Map<number, { user: OnlineUser; sockets: Set<string> }>(); // userId → {user, socketIds}
+const online  = new Map<string, { user: OnlineUser; sockets: Set<string> }>(); // userId → {user, socketIds}
 
 function onlineUsers(): OnlineUser[] {
   return [...online.values()].map(e => e.user);

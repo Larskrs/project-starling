@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   }
 
   
-  const role      = user.isAdministrator ? 'admin' : 'user';
+  const role      = user.role ? 'admin' : 'user';
   const sessionId = await createSession(user.id, role);
   
   console.log(`User ${user.email} logged in`);
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
       id:              user.id,
       email:           user.email,
       name:            user.name,
-      isAdministrator: user.isAdministrator,
+      role:            user.role,
     },
   };
 });

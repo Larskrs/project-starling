@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   if (session.expiresAt < new Date())  throw new ApiError(401, 'Session expired');
 
   const [user] = await db
-    .select({ id: users.id, email: users.email, name: users.name, isEmailVerified: users.isEmailVerified, isAdministrator: users.isAdministrator })
+    .select({ id: users.id, email: users.email, name: users.name, isEmailVerified: users.isEmailVerified, role: users.role })
     .from(users)
     .where(eq(users.id, session.userId))
     .limit(1);

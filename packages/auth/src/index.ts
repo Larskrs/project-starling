@@ -9,7 +9,7 @@ export interface User {
 
 export interface Session {
   id:        string;
-  userId:    number;
+  userId:    string;
   role:      'admin' | 'user';
   expiresAt: string;
 }

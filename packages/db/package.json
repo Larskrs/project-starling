@@ -13,6 +13,7 @@
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --import=tsx/esm src/migrate.ts",
+    "db:reset":   "node --import=tsx/esm src/reset.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },

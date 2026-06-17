@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1781550094653,
-      "tag": "0000_good_black_queen",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1781645371115,
-      "tag": "0001_fearless_alice",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1781702378322,
-      "tag": "0002_furry_dorian_gray",
+      "when": 1781704393599,
+      "tag": "0000_bright_hemingway",
       "breakpoints": true
     }
   ]

@@ -13,7 +13,6 @@ const schema = z.object({
 
 export default defineEventHandler(async (event) => {
   const { email, first_name, last_name, password } = await readValidatedBody(event, schema);
-  console.log(`first_name: ${first_name}, last_name: ${last_name}`);
   const name = first_name + ' ' + last_name;
   const hashedPassword = await hashPassword(password);
 
@@ -40,7 +39,7 @@ export default defineEventHandler(async (event) => {
       name:            user!.name,
       first_name:      user!.first_name,
       last_name:       user!.last_name,
-      isAdministrator: user!.isAdministrator,
+      role: user!.role,
     },
   };
 });

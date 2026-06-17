@@ -8,7 +8,7 @@ export const SESSION_TTL_SEC = SESSION_TTL_MS / 1000;
 
 /** The only data carried out of a session lookup — intentionally minimal. */
 export interface SessionData {
-  userId: number;
+  userId: string;
   role:   'admin' | 'user';
 }
 
@@ -24,7 +24,7 @@ setInterval(async () => {
 
 // ── Core operations ───────────────────────────────────────────────────────────
 
-export async function createSession(userId: number, role: 'admin' | 'user'): Promise<string> {
+export async function createSession(userId: string, role: 'admin' | 'user'): Promise<string> {
   const id        = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   await db.insert(sessions).values({ id, userId, role, expiresAt });
