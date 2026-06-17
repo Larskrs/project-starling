@@ -6,11 +6,17 @@ import { sessionFromCookies } from './session.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface Attachment {
+  type: 'gif';
+  url:  string;
+}
+
 export interface ChatMessage {
-  id:     string;
-  text:   string;
-  user:   { id: string; name: string };
-  sentAt: string;
+  id:          string;
+  text:        string;
+  attachments: Attachment[];
+  user:        { id: string; name: string };
+  sentAt:      string;
 }
 
 interface OnlineUser {
@@ -26,8 +32,13 @@ interface ServerToClientEvents {
   'online':      (users: OnlineUser[]) => void;
 }
 
+interface MessagePayload {
+  text:        string;
+  attachments?: Attachment[];
+}
+
 interface ClientToServerEvents {
-  'message:send': (text: string, ack?: Ack) => void;
+  'message:send': (payload: MessagePayload, ack?: Ack) => void;
 }
 
 interface SocketData {
@@ -92,17 +103,22 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
     if (isFirstSocket) socket.broadcast.emit('user:joined', user);
 
     // ── message:send ─────────────────────────────────────────────────────
-    socket.on('message:send', (text, ack) => {
+    socket.on('message:send', ({ text, attachments = [] }, ack) => {
       if (typeof text !== 'string' || !text.trim()) {
         ack?.({ error: 'Empty message' });
         return;
       }
 
+      const safeAttachments: Attachment[] = attachments
+        .filter(a => a.type === 'gif' && typeof a.url === 'string')
+        .slice(0, 10);
+
       const message: ChatMessage = {
-        id:     crypto.randomUUID(),
-        text:   text.trim().slice(0, 2000),
+        id:          crypto.randomUUID(),
+        text:        text.trim().slice(0, 2000),
+        attachments: safeAttachments,
         user,
-        sentAt: new Date().toISOString(),
+        sentAt:      new Date().toISOString(),
       };
 
       history.push(message);

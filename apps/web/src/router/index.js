@@ -8,7 +8,7 @@ const router = createRouter({
     { path: '/',         redirect: '/chat' },
     { path: '/login',    component: () => import('../views/LoginView.vue'),  meta: { layout: AuthLayout } },
     { path: '/register', component: () => import('../views/RegisterView.vue'), meta: { layout: AuthLayout } },
-    { path: '/chat',     component: () => import('../views/ChatView.vue'),   meta: { requiresAuth: true, layout: DefaultLayout } },
+    { path: '/chat',     component: () => import('../views/Chat/index.vue'),   meta: { requiresAuth: true, layout: DefaultLayout } },
   ],
 })
 

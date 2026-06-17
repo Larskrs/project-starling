@@ -52,10 +52,10 @@ export function useSocket() {
     onlineUsers.value = []
   }
 
-  function sendMessage(text) {
+  function sendMessage(text, attachments = []) {
     return new Promise((resolve, reject) => {
       if (!socket?.connected) { reject(new Error('Not connected')); return }
-      socket.emit('message:send', text, (result) => {
+      socket.emit('message:send', { text, attachments }, (result) => {
         'error' in result ? reject(new Error(result.error)) : resolve()
       })
     })
