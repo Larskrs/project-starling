@@ -5,18 +5,19 @@
   "type": "module",
   "exports": {
     ".": {
-      "types":   "./dist/index.d.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
   "scripts": {
-    "build":       "tsc",
+    "build": "tsc",
     "db:generate": "drizzle-kit generate",
-    "db:migrate":  "node --import=tsx/esm src/migrate.ts",
-    "db:push":     "drizzle-kit push",
-    "db:studio":   "drizzle-kit studio"
+    "db:migrate": "node --import=tsx/esm src/migrate.ts",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.5"
   },
