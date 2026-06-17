@@ -8,6 +8,13 @@
       "when": 1781704393599,
       "tag": "0000_bright_hemingway",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781730685951,
+      "tag": "0001_thick_stryfe",
+      "breakpoints": true
     }
   ]
 }

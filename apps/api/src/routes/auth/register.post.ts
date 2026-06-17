@@ -25,7 +25,9 @@ export default defineEventHandler(async (event) => {
     throw err;
   }
 
-  const sessionId = await createSession(user!.id, 'user');
+  console.log(`User ${user.email} registered! Bring out the champagne!`);
+
+  const sessionId = await createSession(user!.id);
 
   event.res.setHeader(
     'Set-Cookie',

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DefaultLayout from '../layouts/DefaultLayout.vue'
 import AuthLayout from '../layouts/AuthLayout.vue'
+import EmptyLayout from '../layouts/EmptyLayout.vue'
 
 const router = createRouter({
   history: createWebHistory('/app'),
@@ -8,7 +9,8 @@ const router = createRouter({
     { path: '/',         redirect: '/chat' },
     { path: '/login',    component: () => import('../views/LoginView.vue'),  meta: { layout: AuthLayout } },
     { path: '/register', component: () => import('../views/RegisterView.vue'), meta: { layout: AuthLayout } },
-    { path: '/chat',     component: () => import('../views/Chat/index.vue'),   meta: { requiresAuth: true, layout: DefaultLayout } },
+    { path: '/chat',     component: () => import('../views/Chat/index.vue'),   meta: { requiresAuth: true, layout: EmptyLayout } },
+    { path: '/home',     component: () => import('../views/Home/index.vue'),   meta: { requiresAuth: true, layout: DefaultLayout } }
   ],
 })
 
@@ -23,7 +25,7 @@ router.beforeEach(async (to) => {
   const ok  = res?.ok ?? false
 
   if (needsAuth  && !ok) return '/login'
-  if (isAuthPage &&  ok) return '/chat'
+  if (isAuthPage &&  ok) return '/home'
   return true
 })
 

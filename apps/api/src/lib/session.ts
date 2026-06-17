@@ -1,12 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { eq, lt } from 'drizzle-orm';
-import { db, sessions } from '@starling/db';
+import { db, sessions, users } from '@starling/db';
 
 export const SESSION_COOKIE  = 'syncsw_sid';
 const        SESSION_TTL_MS  = 24 * 60 * 60 * 1000;
 export const SESSION_TTL_SEC = SESSION_TTL_MS / 1000;
 
-/** The only data carried out of a session lookup — intentionally minimal. */
 export interface SessionData {
   userId: string;
   role:   'admin' | 'user';
@@ -14,8 +13,6 @@ export interface SessionData {
 
 // ── Cleanup ───────────────────────────────────────────────────────────────────
 
-// Purge expired rows every 5 min. unref() so this timer doesn't keep the
-// process alive during graceful shutdown.
 setInterval(async () => {
   try {
     await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
@@ -24,24 +21,28 @@ setInterval(async () => {
 
 // ── Core operations ───────────────────────────────────────────────────────────
 
-export async function createSession(userId: string, role: 'admin' | 'user'): Promise<string> {
+export async function createSession(userId: string): Promise<string> {
   const id        = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  await db.insert(sessions).values({ id, userId, role, expiresAt });
+  await db.insert(sessions).values({ id, userId, expiresAt });
   return id;
 }
 
 export async function getSession(id: string): Promise<SessionData | null> {
   const [row] = await db
-    .select({ userId: sessions.userId, role: sessions.role, expiresAt: sessions.expiresAt })
+    .select({
+      userId:    sessions.userId,
+      role:      users.role,
+      expiresAt: sessions.expiresAt,
+    })
     .from(sessions)
+    .innerJoin(users, eq(sessions.userId, users.id))
     .where(eq(sessions.id, id))
     .limit(1);
 
   if (!row) return null;
 
   if (row.expiresAt < new Date()) {
-    // Expired — delete lazily (cleanup interval handles bulk; this handles precise expiry)
     await db.delete(sessions).where(eq(sessions.id, id)).catch(() => {});
     return null;
   }
@@ -67,7 +68,6 @@ export function parseSessionCookie(cookieHeader: string | undefined): string | n
   return null;
 }
 
-/** Parse the Cookie header, look up the session, return data or null. */
 export async function sessionFromCookies(
   cookieHeader: string | undefined,
 ): Promise<SessionData | null> {
@@ -75,7 +75,6 @@ export async function sessionFromCookies(
   return id ? getSession(id) : null;
 }
 
-/** Parse the Cookie header and destroy the referenced session. */
 export async function destroySessionFromCookies(
   cookieHeader: string | undefined,
 ): Promise<void> {

@@ -22,6 +22,7 @@ const sizes = {
   sm:      'h-9 px-3',
   lg:      'h-11 px-8',
   icon:    'h-10 w-10',
+  xs:      'h-7 px-2.5',
 }
 
 const cls = computed(() => cn(base, variants[props.variant] ?? variants.default, sizes[props.size] ?? sizes.default, props.class))

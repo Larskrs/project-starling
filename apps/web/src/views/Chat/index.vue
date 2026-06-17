@@ -16,7 +16,6 @@ const gifDialogOpen   = ref(false)
 const pendingGif      = ref(null) // { type: 'gif', url }
 
 onMounted(async () => {
-  await fetchUser()
   connect()
 })
 
@@ -57,7 +56,7 @@ function fmt(iso) {
 </script>
 
 <template>
-  <div class="h-screen flex flex-col bg-background">
+  <div class="h-dvh max-h-dvh flex flex-col bg-background">
 
     <!-- ── Header ──────────────────────────────────────────────────────────── -->
     <header class="flex items-center justify-between px-6 py-3 border-b border-border bg-card shrink-0">
@@ -69,7 +68,7 @@ function fmt(iso) {
         />
       </div>
       <div class="flex items-center gap-4">
-        <span class="text-sm text-muted-foreground">{{ user?.name }}</span>
+        <span class="text-muted-foreground">{{ user?.first_name }}</span>
         <Button variant="outline" size="sm" @click="logout">Sign out</Button>
       </div>
     </header>
