@@ -1,5 +1,5 @@
 <template>
-  <div class="h-screen bg-gradient-to-t from-background grid grid-cols-1 lg:grid-cols-2">
+  <div class="h-[100dvh] bg-gradient-to-t from-background grid grid-cols-1 lg:grid-cols-2">
     <div class="w-full flex flex-col justify-center items-center px-4">
       <slot />
     </div>

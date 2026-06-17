@@ -1,7 +1,7 @@
-import { pgTable, serial, text, boolean, timestamp, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, boolean, timestamp } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
-  id:              serial('id').primaryKey(),
+  id:              uuid('id').primaryKey().defaultRandom(),
   email:           text('email').notNull().unique(),
   name:            text('name').notNull(),
   avatar:          text('avatar').notNull().default(''),
@@ -14,8 +14,8 @@ export const users = pgTable('users', {
 });
 
 export const sessions = pgTable('sessions', {
-  id:        text('id').primaryKey(),
-  userId:    integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  id:        uuid('id').primaryKey().defaultRandom(),
+  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   role:      text('role').$type<'admin' | 'user'>().notNull(),
   expiresAt: timestamp('expires_at').notNull(),
 });
