@@ -7,17 +7,18 @@ import Label  from '../components/ui/Label.vue'
 
 const { register } = useAuth()
 
-const name     = ref('')
-const email    = ref('')
-const password = ref('')
-const error    = ref('')
-const loading  = ref(false)
+const first_name   = ref('')
+const last_name    = ref('')
+const email        = ref('')
+const password     = ref('')
+const error        = ref('')
+const loading      = ref(false)
 
 async function handleSubmit() {
   error.value   = ''
   loading.value = true
   try {
-    await register(email.value, name.value, password.value)
+    await register(email.value, first_name.value, last_name.value, password.value)
   } catch (e) {
     error.value = e.message
   } finally {
@@ -28,7 +29,7 @@ async function handleSubmit() {
 
 <template>
   <Teleport to="#auth-panel" defer>
-    <div class="bg-primary h-full" />
+    <div />
   </Teleport>
 
   <div class="flex flex-col max-w-sm w-full">
@@ -44,13 +45,22 @@ async function handleSubmit() {
       <form @submit.prevent="handleSubmit" class="space-y-4">
 
         <div class="space-y-1.5">
-          <Label for="name">Full name</Label>
+          <Label for="name">First name</Label>
           <Input
-            id="name"
-            v-model="name"
+            id="first_name"
+            v-model="first_name"
             type="text"
-            placeholder="Jane Doe"
-            autocomplete="name"
+            placeholder="Jane"
+            autocomplete="given-name"
+            required
+          />
+          <Label for="last_name">Last name</Label>
+          <Input
+            id="last_name"
+            v-model="last_name"
+            type="text"
+            placeholder="Doe"
+            autocomplete="family-name"
             required
           />
         </div>

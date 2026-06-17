@@ -36,14 +36,15 @@ export function useAuth(baseUrl = '') {
     session.value = null;
   }
 
-  async function register(email: string, name: string, password: string): Promise<void> {
+  async function register(email: string, first_name: string, last_name: string, password: string): Promise<void> {
     const res  = await fetch(`${baseUrl}/api/auth/register`, {
       method:      'POST',
       headers:     { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body:        JSON.stringify({ email, name, password }),
+      body:        JSON.stringify({ email, first_name, last_name, password }),
     });
     const data = await res.json();
+    console.log(data);
     if (!res.ok) throw new Error(data.error ?? 'Registration failed');
     user.value    = data.user;
     session.value = null;

@@ -27,8 +27,8 @@ async function handleSubmit() {
 
 <template>
   <Teleport to="#auth-panel" defer>
-    <div class="bg-primary h-full" >
-      
+    <div >
+
     </div>
   </Teleport>
 

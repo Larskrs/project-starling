@@ -9,9 +9,9 @@ export function useAuth() {
     await auth.login(email, password)
     await router.push('/chat')
   }
-  
-  async function register(email, name, password) {
-    await auth.register(email, name, password)
+
+  async function register(email, first_name, last_name, password) {
+    await auth.register(email, first_name, last_name, password)
     await router.push('/chat')
   }
 

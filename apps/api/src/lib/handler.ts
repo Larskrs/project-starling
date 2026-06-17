@@ -97,7 +97,7 @@ export async function readBody<T = unknown>(event: ApiEvent): Promise<T> {
 export async function readValidatedBody<T>(event: ApiEvent, schema: ZodType<T>): Promise<T> {
   const body   = await readBody(event);
   const result = schema.safeParse(body);
-  if (!result.success) throw new ApiError(422, 'Validation failed', result.error.flatten());
+  if (!result.success) throw new ApiError(422, JSON.stringify(result.error.flatten().fieldErrors), result.error.flatten());
   return result.data;
 }
 

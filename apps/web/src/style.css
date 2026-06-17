@@ -4,9 +4,9 @@
 
 @layer base {
   :root {
-    --background:             0.16 0.033 245;
+    --background:             0.16 0.028 245;
     --foreground:             0.93 0.012 240;
-    --card:                   0.20 0.028 245;
+    --card:                   0.20 0.022 245;
     --card-foreground:        0.93 0.012 240;
     --border:                 0.31 0.024 241;
     --input:                  0.25 0.026 245;
