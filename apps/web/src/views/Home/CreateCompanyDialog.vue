@@ -4,7 +4,6 @@ import Dialog from '../../components/ui/Dialog.vue'
 import Input  from '../../components/ui/Input.vue'
 import Label  from '../../components/ui/Label.vue'
 import Button from '../../components/ui/Button.vue'
-import { apiFetch } from '../../lib/api'
 
 const props = defineProps({
   open: { type: Boolean, required: true },
@@ -39,7 +38,7 @@ async function handleSubmit() {
   error.value = ''
   loading.value = true
   try {
-    const res = await apiFetch('/api/company', {
+    const res = await fetch('/api/company', {
       method:      'POST',
       headers:     { 'Content-Type': 'application/json' },
       credentials: 'include',

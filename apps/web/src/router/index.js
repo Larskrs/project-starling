@@ -2,10 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import DefaultLayout from '../layouts/DefaultLayout.vue'
 import AuthLayout from '../layouts/AuthLayout.vue'
 import EmptyLayout from '../layouts/EmptyLayout.vue'
-import { apiFetch } from '../lib/api'
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory('/'),
   routes: [
     { path: '/',         redirect: '/chat' },
     { path: '/login',    component: () => import('../views/LoginView.vue'),  meta: { layout: AuthLayout } },
@@ -24,7 +23,7 @@ router.beforeEach(async (to) => {
 
   if (!needsAuth && !isAuthPage) return true
 
-  const res = await apiFetch('/api/auth/me', { credentials: 'include' }).catch(() => null)
+  const res = await fetch('/api/auth/me', { credentials: 'include' }).catch(() => null)
   const ok  = res?.ok ?? false
 
   if (needsAuth  && !ok) return '/login'

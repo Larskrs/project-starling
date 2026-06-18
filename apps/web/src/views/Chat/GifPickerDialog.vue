@@ -2,7 +2,6 @@
 import { ref, watch } from 'vue'
 import Dialog from '../../components/ui/Dialog.vue'
 import Input  from '../../components/ui/Input.vue'
-import { apiFetch } from '../../lib/api'
 
 const props = defineProps({
   open: { type: Boolean, required: true },
@@ -22,7 +21,7 @@ async function fetchGifs(path, params = {}) {
   error.value   = ''
   try {
     const qs  = new URLSearchParams(params)
-    const res = await apiFetch(`/api/chat/gifs/${path}?${qs}`, { credentials: 'include' })
+    const res = await fetch(`/api/chat/gifs/${path}?${qs}`, { credentials: 'include' })
     if (!res.ok) throw new Error(res.statusText)
     const { data } = await res.json()
     results.value = data ?? []

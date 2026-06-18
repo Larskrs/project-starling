@@ -1,10 +1,9 @@
 import { useRouter } from 'vue-router'
 import { useAuth as _useAuth } from '@starling/auth'
-import { apiBase } from '../lib/api'
 
 export function useAuth() {
   const router = useRouter()
-  const auth   = _useAuth(apiBase)
+  const auth   = _useAuth()
 
   async function login(email, password) {
     await auth.login(email, password)

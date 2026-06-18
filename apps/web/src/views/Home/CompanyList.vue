@@ -2,7 +2,6 @@
 import { ref, onMounted } from 'vue'
 import Button              from '../../components/ui/Button.vue'
 import CreateCompanyDialog from './CreateCompanyDialog.vue'
-import { apiFetch } from '../../lib/api'
 
 const companies    = ref([])
 const loading      = ref(true)
@@ -13,7 +12,7 @@ async function load() {
   loading.value = true
   error.value   = ''
   try {
-    const res = await apiFetch('/api/company', { credentials: 'include' })
+    const res = await fetch('/api/company', { credentials: 'include' })
     if (!res.ok) throw new Error('Feil ved lasting av selskaper')
     const data = await res.json()
     companies.value = data.companyList
