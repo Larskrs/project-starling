@@ -4,7 +4,7 @@ import AuthLayout from '../layouts/AuthLayout.vue'
 import EmptyLayout from '../layouts/EmptyLayout.vue'
 
 const router = createRouter({
-  history: createWebHistory('/'),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/',         redirect: '/chat' },
     { path: '/login',    component: () => import('../views/LoginView.vue'),  meta: { layout: AuthLayout } },
