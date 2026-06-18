@@ -53,15 +53,17 @@ onMounted(load)
 
     <!-- List -->
     <ul v-else class="flex flex-col divide-y divide-border rounded-lg border border-border">
-      <li
-        v-for="c in companies"
-        :key="c.id"
-        class="flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors"
-      >
-        <div>
-          <p class="text-sm font-medium text-foreground">{{ c.name }}</p>
-          <p class="text-xs text-muted-foreground">{{ c.slug }}</p>
-        </div>
+      <li v-for="c in companies" :key="c.id" class="hover:bg-muted/40 transition-colors">
+        <router-link
+          :to="`/c/${c.slug}`"
+          class="flex items-center justify-between px-4 py-3"
+        >
+          <div>
+            <p class="text-sm font-medium text-foreground">{{ c.name }}</p>
+            <p class="text-xs text-muted-foreground font-mono">{{ c.slug }}</p>
+          </div>
+          <span class="text-muted-foreground/40 text-xs">→</span>
+        </router-link>
       </li>
     </ul>
 

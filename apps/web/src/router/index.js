@@ -10,11 +10,13 @@ const router = createRouter({
     { path: '/login',    component: () => import('../views/LoginView.vue'),  meta: { layout: AuthLayout } },
     { path: '/register', component: () => import('../views/RegisterView.vue'), meta: { layout: AuthLayout } },
     { path: '/chat',     component: () => import('../views/Chat/index.vue'),   meta: { requiresAuth: true, layout: EmptyLayout } },
-    { path: '/home',     component: () => import('../views/Home/index.vue'),   meta: { requiresAuth: true, layout: DefaultLayout } }
+    { path: '/home',      component: () => import('../views/Home/index.vue'),      meta: { requiresAuth: true, layout: DefaultLayout } },
+    { path: '/c', component: () => import('../views/Companies/index.vue'), meta: { requiresAuth: true, layout: DefaultLayout } },
+    { path: '/c/:slug',   component: () => import('../views/Company/index.vue'),   meta: { requiresAuth: true, layout: DefaultLayout } }
   ],
 })
 
-// Auth guard — single /api/auth/me check per navigation
+// Auth guard — single /api/au th/me check per navigation
 router.beforeEach(async (to) => {
   const needsAuth  = to.meta.requiresAuth
   const isAuthPage = to.path === '/login' || to.path === '/register'
