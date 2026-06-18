@@ -1,12 +1,27 @@
+# Proxy /api and /socket to the Node backend
+<IfModule mod_proxy.c>
+  ProxyPass        /api    http://localhost:3000/api
+  ProxyPassReverse /api    http://localhost:3000/api
+</IfModule>
+
+<IfModule mod_proxy_wstunnel.c>
+  ProxyPass        /socket ws://localhost:3000/socket
+  ProxyPassReverse /socket ws://localhost:3000/socket
+</IfModule>
+
+# SPA fallback — everything else serves index.html
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+
+  # Let proxied paths pass through untouched
+  RewriteRule ^(api|socket)(/.*)?$ - [L]
 
   # Skip real files and directories
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Send everything else to index.html
+  # Client-side routes → index.html
   RewriteRule ^ index.html [L]
 </IfModule>
