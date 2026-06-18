@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { apiFetch } from '../../lib/api'
 
 const route = useRoute()
 const company = ref(null)
@@ -13,7 +14,7 @@ async function load(slug) {
   company.value = null
   
   try {
-    const res = await fetch(`/api/company/${slug}`, { credentials: 'include' })
+    const res = await apiFetch(`/api/company/${slug}`, { credentials: 'include' })
 
     if (res.status === 404) {
       error.value = `Company "${slug}" could not be found`

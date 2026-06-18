@@ -2,10 +2,6 @@
   RewriteEngine On
   RewriteBase /
 
-  # Proxy /api and /socket to the Node backend
-  RewriteRule ^api(/.*)?$    http://localhost:3000/api$1    [P,L]
-  RewriteRule ^socket(/.*)?$ ws://localhost:3000/socket$1   [P,L]
-
   # Skip real files and directories
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
