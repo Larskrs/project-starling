@@ -28,6 +28,9 @@ out/
 build
 dist
 
+# Storage
+storage/
+
 # Compiled JS artifacts alongside TS source
 packages/*/src/**/*.js
 
