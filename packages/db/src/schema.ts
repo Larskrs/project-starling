@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 
@@ -35,3 +35,34 @@ export const productions = pgTable('productions', {
   slug:      text('slug').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, (t) => [uniqueIndex('prod_slug_uq').on(t.companyId, t.slug)]);
+
+export const storageFileTypeEnum = pgEnum('storage_file_type', ['image', 'audio']);
+
+export const storageFolders = pgTable('storage_folders', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  parentId:  uuid('parent_id').references((): AnyPgColumn => storageFolders.id, { onDelete: 'cascade' }),
+  name:      text('name').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const storageFiles = pgTable('storage_files', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  companyId:    uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  folderId:     uuid('folder_id').references(() => storageFolders.id, { onDelete: 'set null' }),
+  name:         text('name').notNull(),
+  mimeType:     text('mime_type').notNull(),
+  size:         integer('size').notNull(),
+  type:         storageFileTypeEnum('type').notNull(),
+  physicalPath: text('physical_path').notNull(),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+});
+
+export const storageImageVersions = pgTable('storage_image_versions', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  fileId:       uuid('file_id').notNull().references(() => storageFiles.id, { onDelete: 'cascade' }),
+  quality:      integer('quality').notNull(),
+  physicalPath: text('physical_path').notNull(),
+  size:         integer('size').notNull(),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+});

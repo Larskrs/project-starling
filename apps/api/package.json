@@ -13,9 +13,11 @@
     "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
     "socket.io": "^4.8.1",
+    "sharp": "^0.33.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/sharp": "^0.31.1",
     "@types/express": "^5.0.3",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"

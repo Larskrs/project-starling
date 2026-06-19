@@ -112,3 +112,89 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(JSON.stringify(body));
 }
+
+// ── Multipart helpers ─────────────────────────────────────────────────────────
+
+export interface MultipartFile {
+  filename: string;
+  mimeType: string;
+  data:     Buffer;
+}
+
+export interface MultipartResult {
+  fields: Record<string, string>;
+  files:  Record<string, MultipartFile>;
+}
+
+function extractBoundary(contentType: string): string | null {
+  const m = contentType.match(/boundary=(?:"([^"]+)"|([^\s;]+))/);
+  return m ? (m[1] ?? m[2] ?? null) : null;
+}
+
+function parsePartHeaders(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of raw.split('\r\n')) {
+    const idx = line.indexOf(':');
+    if (idx === -1) continue;
+    out[line.slice(0, idx).toLowerCase().trim()] = line.slice(idx + 1).trim();
+  }
+  return out;
+}
+
+/** Parse a multipart/form-data request body without external dependencies. */
+export async function readMultipart(event: ApiEvent): Promise<MultipartResult> {
+  const ct = event.req.headers['content-type'] ?? '';
+  const boundary = extractBoundary(ct);
+  if (!boundary) throw new ApiError(400, 'Missing multipart boundary');
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of event.req) chunks.push(chunk as Buffer);
+  const body = Buffer.concat(chunks);
+
+  const fields: Record<string, string> = {};
+  const files:  Record<string, MultipartFile> = {};
+
+  const delim  = Buffer.from(`\r\n--${boundary}`);
+  const opener = Buffer.from(`--${boundary}\r\n`);
+
+  let pos = body.indexOf(opener);
+  if (pos === -1) throw new ApiError(400, 'Invalid multipart body');
+  pos += opener.length;
+
+  while (pos < body.length) {
+    const headerEnd = body.indexOf(Buffer.from('\r\n\r\n'), pos);
+    if (headerEnd === -1) break;
+
+    const headers   = parsePartHeaders(body.subarray(pos, headerEnd).toString('utf8'));
+    const dataStart = headerEnd + 4;
+    const nextDelim = body.indexOf(delim, dataStart);
+    const dataEnd   = nextDelim === -1 ? body.length : nextDelim;
+    const data      = body.subarray(dataStart, dataEnd);
+
+    const disposition  = headers['content-disposition'] ?? '';
+    const nameMatch    = disposition.match(/name="([^"]+)"/);
+    const filenameMatch = disposition.match(/filename="([^"]+)"/);
+    const name = nameMatch?.[1];
+
+    if (name) {
+      if (filenameMatch) {
+        files[name] = {
+          filename: filenameMatch[1]!,
+          mimeType: headers['content-type'] ?? 'application/octet-stream',
+          data,
+        };
+      } else {
+        fields[name] = data.toString('utf8');
+      }
+    }
+
+    if (nextDelim === -1) break;
+    pos = nextDelim + delim.length;
+    // \r\n → more parts,  -- → closing delimiter (end)
+    if (body[pos] === 0x2d && body[pos + 1] === 0x2d) break;
+    if (body[pos] === 0x0d && body[pos + 1] === 0x0a) pos += 2;
+    else break;
+  }
+
+  return { fields, files };
+}

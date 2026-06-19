@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import ProductionList from './ProductionList.vue'
+import FileExplorer   from '../../components/storage/FileExplorer.vue'
 
 const route = useRoute()
 const company = ref(null)
@@ -44,6 +46,10 @@ watch(() => route.params.slug, (slug) => { if (slug) load(slug) })
       <div class="flex flex-col gap-1 mb-8">
         <h1 class="text-2xl font-semibold">{{ company.name }}</h1>
         <p class="text-sm text-muted-foreground font-mono">{{ company.slug }}</p>
+      </div>
+      <ProductionList :company="company" />
+      <div class="mt-10 border-t border-border pt-8">
+        <FileExplorer :company-id="company.id" />
       </div>
     </template>
   </div>

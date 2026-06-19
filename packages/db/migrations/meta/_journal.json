@@ -15,6 +15,20 @@
       "when": 1781730685951,
       "tag": "0001_thick_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781872756307,
+      "tag": "0002_tense_wraith",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781960000000,
+      "tag": "0003_image_version_quality",
+      "breakpoints": true
     }
   ]
 }
