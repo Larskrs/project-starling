@@ -80,7 +80,7 @@ onUnmounted(() => {
         v-if="isOpen && !disabled"
         ref="subEl"
         role="menu"
-        class="absolute min-w-44 rounded-lg border border-border bg-popover text-popover-foreground shadow-xl py-1 z-10"
+        class="absolute min-w-44 rounded-lg bg-background border border-border bg-popover text-popover-foreground shadow-xl py-1 z-10"
         :class="openToLeft ? 'right-full mr-1' : 'left-full ml-1'"
         :style="{ top: subTop + 'px' }"
       >
