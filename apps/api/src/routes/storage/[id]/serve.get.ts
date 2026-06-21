@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'File missing from disk' });
   }
 
-  const mime = file.type === 'image' ? 'image/jpeg' : file.mimeType;
+  const mime = file.type === 'image' ? 'image/webp' : file.mimeType;
 
   event.res.statusCode = 200;
   event.res.setHeader('Content-Type', mime);

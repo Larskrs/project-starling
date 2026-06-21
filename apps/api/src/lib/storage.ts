@@ -18,9 +18,9 @@ export const ALLOWED_AUDIO_TYPES = new Set([
 export function isImage(mimeType: string) { return ALLOWED_IMAGE_TYPES.has(mimeType); }
 export function isAudio(mimeType: string) { return ALLOWED_AUDIO_TYPES.has(mimeType); }
 
-// storage/c/{companyId}/images/{fileId}@{quality}.jpg
+// storage/c/{companyId}/images/{fileId}@{quality}.webp
 export function imagePhysicalPath(companyId: string, fileId: string, quality: number): string {
-  return join(STORAGE_ROOT, 'c', companyId, 'images', `${fileId}@${quality}.jpg`);
+  return join(STORAGE_ROOT, 'c', companyId, 'images', `${fileId}@${quality}.webp`);
 }
 
 // storage/c/{companyId}/audio/{fileId}{ext}
@@ -67,19 +67,26 @@ export async function processImage(
   const origWidth  = meta.width  ?? 1920;
   const origHeight = meta.height ?? 1080;
 
+  // Clamp longest edge to 1920, preserving aspect ratio
+  const maxDim  = 1920;
+  const longest = Math.max(origWidth, origHeight);
+  const ratio   = longest > maxDim ? maxDim / longest : 1;
+  const baseWidth  = Math.round(origWidth  * ratio);
+  const baseHeight = Math.round(origHeight * ratio);
+
   for (const quality of levels) {
     const scale    = quality / 100;
     const maxBytes = Math.round(scale * 1024 * 1024); // quality% of 1 MB
 
-    let w   = Math.max(1, Math.round(origWidth  * scale));
-    let h   = Math.max(1, Math.round(origHeight * scale));
-    let out = await sharp(data).resize(w, h, { fit: 'fill' }).jpeg({ quality, mozjpeg: true }).toBuffer();
+    let w   = Math.max(1, Math.round(baseWidth  * scale));
+    let h   = Math.max(1, Math.round(baseHeight * scale));
+    let out = await sharp(data).resize(w, h, { fit: 'fill' }).webp({ quality }).toBuffer();
 
     // Shrink dimensions by 15% per iteration until the output fits within the cap
     while (out.length > maxBytes && w > 64) {
       w   = Math.max(64, Math.round(w * 0.85));
       h   = Math.max(64, Math.round(h * 0.85));
-      out = await sharp(data).resize(w, h, { fit: 'fill' }).jpeg({ quality, mozjpeg: true }).toBuffer();
+      out = await sharp(data).resize(w, h, { fit: 'fill' }).webp({ quality }).toBuffer();
     }
 
     const physicalPath = imagePhysicalPath(companyId, fileId, quality);

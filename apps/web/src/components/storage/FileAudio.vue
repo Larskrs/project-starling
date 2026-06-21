@@ -3,7 +3,7 @@ import { Icon } from '@iconify/vue'
 import FileBase from './FileBase.vue'
 
 defineProps({ file: { type: Object, required: true } })
-defineEmits(['select', 'delete'])
+defineEmits(['select', 'delete', 'renamed', 'moved'])
 
 function formatSize(bytes) {
   if (bytes < 1024)      return `${bytes} B`
@@ -13,7 +13,7 @@ function formatSize(bytes) {
 </script>
 
 <template>
-  <FileBase :file="file" @select="$emit('select', file)" @delete="$emit('delete', file)">
+  <FileBase :file="file" @select="$emit('select', file)" @delete="$emit('delete', file)" @renamed="$emit('renamed', $event)" @moved="$emit('moved', $event)">
 
     <template #preview>
       <div class="w-full h-full bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 flex flex-col items-center justify-center gap-3">

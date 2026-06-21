@@ -4,7 +4,7 @@ import { Icon } from '@iconify/vue'
 import FileBase from './FileBase.vue'
 
 const props = defineProps({ file: { type: Object, required: true } })
-defineEmits(['select', 'delete'])
+defineEmits(['select', 'delete', 'renamed', 'moved'])
 
 const thumbnailSrc = computed(() => {
   if (!props.file.versions?.length) return null
@@ -20,7 +20,7 @@ function formatSize(bytes) {
 </script>
 
 <template>
-  <FileBase :file="file" @select="$emit('select', file)" @delete="$emit('delete', file)">
+  <FileBase :file="file" @select="$emit('select', file)" @delete="$emit('delete', file)" @renamed="$emit('renamed', $event)" @moved="$emit('moved', $event)">
 
     <template #preview>
       <img

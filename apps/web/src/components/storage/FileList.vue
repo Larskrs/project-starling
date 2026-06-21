@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, provide } from 'vue'
 import { Icon } from '@iconify/vue'
 import Folder      from './Folder.vue'
 import FileImage   from './FileImage.vue'
@@ -12,6 +12,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['navigate', 'select', 'deleted', 'crumbs-change', 'nav-change'])
+
+provide('storage-company-id', props.companyId)
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -100,11 +102,19 @@ function goToCrumb(idx) {
 
 // ── File actions ──────────────────────────────────────────────────────────────
 
-async function deleteFile(file) {
-  const res = await fetch(`/api/storage/${file.id}`, { method: 'DELETE', credentials: 'include' })
-  if (!res.ok) return
+// FileBase handles the DELETE API call; we just update the local list
+function deleteFile(file) {
   files.value = files.value.filter(f => f.id !== file.id)
   emit('deleted', file.id)
+}
+
+function onFileRenamed({ id, name }) {
+  const idx = files.value.findIndex(f => f.id === id)
+  if (idx !== -1) files.value[idx] = { ...files.value[idx], name }
+}
+
+function onFileMoved(fileId) {
+  files.value = files.value.filter(f => f.id !== fileId)
 }
 
 async function setFolderHue({ folder, hue }) {
@@ -139,7 +149,7 @@ const breadcrumbItems = computed(() => [
 watch(breadcrumbItems, (items) => emit('crumbs-change', items), { immediate: true })
 watch([canGoBack, canGoForward], ([back, forward]) => emit('nav-change', { canGoBack: back, canGoForward: forward }), { immediate: true })
 
-defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, goForward })
+defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, goForward, getFileIds: () => files.value.map(f => f.id) })
 </script>
 
 <template>
@@ -189,18 +199,24 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
               :file="file"
               @select="emit('select', file)"
               @delete="deleteFile"
+              @renamed="onFileRenamed"
+              @moved="onFileMoved"
             />
             <FileAudio
               v-else-if="file.type === 'audio'"
               :file="file"
               @select="emit('select', file)"
               @delete="deleteFile"
+              @renamed="onFileRenamed"
+              @moved="onFileMoved"
             />
             <FileDefault
               v-else
               :file="file"
               @select="emit('select', file)"
               @delete="deleteFile"
+              @renamed="onFileRenamed"
+              @moved="onFileMoved"
             />
           </template>
         </div>

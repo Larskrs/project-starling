@@ -10,20 +10,28 @@ const pos     = ref({ x: 0, y: 0 })
 
 async function reposition() {
   await nextTick()
-  const trigger = props.menu.triggerEl.value
-  if (!trigger || !panelEl.value) return
+  if (!panelEl.value) return
 
-  const t  = trigger.getBoundingClientRect()
   const pw = panelEl.value.offsetWidth
   const ph = panelEl.value.offsetHeight
   const vw = window.innerWidth
   const vh = window.innerHeight
 
-  let x = t.left
-  let y = t.bottom + 4
+  let x, y
+  if (props.menu.mousePos?.value) {
+    x = props.menu.mousePos.value.x
+    y = props.menu.mousePos.value.y
+  } else {
+    const trigger = props.menu.triggerEl.value
+    if (!trigger) return
+    const t = trigger.getBoundingClientRect()
+    x = t.left
+    y = t.bottom + 4
+    if (x + pw > vw - 8) x = t.right - pw
+  }
 
-  if (x + pw > vw - 8) x = t.right - pw
-  if (y + ph > vh - 8) y = t.top - ph - 4
+  if (x + pw > vw - 8) x = x - pw
+  if (y + ph > vh - 8) y = y - ph - 4
 
   pos.value = { x: Math.max(8, x), y: Math.max(8, y) }
 }

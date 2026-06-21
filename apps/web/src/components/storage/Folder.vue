@@ -54,6 +54,7 @@ function swatchStyle(hue) {
   <div
     class="folder-card flex items-center rounded-lg transition-colors"
     :class="{ 'folder-card--hued': folder.hue != null }"
+    @contextmenu.prevent="menu.open($event)"
     :style="folder.hue != null ? {
       '--bg':    `oklch(0.40 0.1 ${folder.hue} / 0.3)`,
       '--hover': `oklch(0.40 0.12 ${folder.hue} / 0.5)`,
