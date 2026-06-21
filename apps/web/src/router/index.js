@@ -6,7 +6,7 @@ import EmptyLayout from '../layouts/EmptyLayout.vue'
 const router = createRouter({
   history: createWebHistory('/'),
   routes: [
-    { path: '/',         redirect: '/chat' },
+    { path: '/',         redirect: '/home' },
     { path: '/login',    component: () => import('../views/LoginView.vue'),  meta: { layout: AuthLayout } },
     { path: '/register', component: () => import('../views/RegisterView.vue'), meta: { layout: AuthLayout } },
     { path: '/chat',     component: () => import('../views/Chat/index.vue'),   meta: { requiresAuth: true, layout: EmptyLayout } },

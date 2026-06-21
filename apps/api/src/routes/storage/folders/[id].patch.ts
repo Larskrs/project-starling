@@ -4,7 +4,8 @@ import { db, storageFolders } from '@starling/db';
 import { defineEventHandler, getRouterParam, readValidatedBody, createError, requireAuth } from '../../../lib/handler.js';
 
 const schema = z.object({
-  hue: z.number().int().min(0).max(360).nullable(),
+  hue:  z.number().int().min(0).max(360).nullable().optional(),
+  name: z.string().min(1).max(255).optional(),
 });
 
 export default defineEventHandler(async (event) => {
@@ -17,10 +18,13 @@ export default defineEventHandler(async (event) => {
     .from(storageFolders).where(eq(storageFolders.id, id)).limit(1);
   if (!existing) throw createError({ statusCode: 404, message: 'Folder not found' });
 
-  const { hue } = await readValidatedBody(event, schema);
+  const body = await readValidatedBody(event, schema);
+  const patch: Record<string, unknown> = {};
+  if (body.hue  !== undefined) patch.hue  = body.hue;
+  if (body.name !== undefined) patch.name = body.name;
 
   const [folder] = await db.update(storageFolders)
-    .set({ hue })
+    .set(patch)
     .where(eq(storageFolders.id, id))
     .returning();
 

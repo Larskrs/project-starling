@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, inject, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useContextMenu } from '../../composables/useContextMenu.js'
 import ContextMenuRoot      from '../ui/ContextMenuRoot.vue'
@@ -8,11 +8,94 @@ import ContextMenuSub       from '../ui/ContextMenuSub.vue'
 import ContextMenuSeparator from '../ui/ContextMenuSeparator.vue'
 import ContextMenuLabel     from '../ui/ContextMenuLabel.vue'
 import ConfirmDialog        from '../ui/ConfirmDialog.vue'
+import Dialog               from '../ui/Dialog.vue'
+import Button               from '../ui/Button.vue'
+import Input                from '../ui/Input.vue'
+import Label                from '../ui/Label.vue'
 
 const props = defineProps({ folder: { type: Object, required: true } })
-const emit  = defineEmits(['open', 'hue-change', 'deleted'])
+const emit  = defineEmits(['open', 'hue-change', 'deleted', 'renamed'])
 const menu  = useContextMenu()
 
+// ── File peek previews ────────────────────────────────────────────────────────
+const companyId    = inject('storage-company-id', null)
+const previewFiles = ref([])
+
+onMounted(async () => {
+  if (!companyId || !props.folder.fileCount) return
+  try {
+    const params = new URLSearchParams({ cid: companyId, folder_id: props.folder.id })
+    const res    = await fetch(`/api/storage?${params}`, { credentials: 'include' })
+    if (!res.ok) return
+    const data = await res.json()
+    previewFiles.value = data.files.slice(0, 3)
+  } catch {}
+})
+
+const isHovered = ref(false)
+
+const PEEK_STYLES_DEFAULT = [
+  { transform: 'rotate(-11deg) translate(-7px, 3px) scale(0.86)', zIndex: 1 },
+  { transform: 'rotate(-3deg)  translate(-1px, 1px) scale(0.93)', zIndex: 2 },
+  { transform: 'rotate(8deg)   translate(5px, -1px) scale(1)',    zIndex: 3 },
+]
+
+const PEEK_STYLES_HOVER = [
+  { transform: 'rotate(-15deg) translate(-13px, 4px) scale(0.84)', zIndex: 1 },
+  { transform: 'rotate(-4deg)  translate(-1px,  2px) scale(0.92)', zIndex: 2 },
+  { transform: 'rotate(13deg)  translate(11px, -2px) scale(1)',    zIndex: 3 },
+]
+
+const peekStyles = computed(() => isHovered.value ? PEEK_STYLES_HOVER : PEEK_STYLES_DEFAULT)
+
+function fileThumbnailSrc(file) {
+  if (file.type !== 'image' || !file.versions?.length) return null
+  const best = [...file.versions].sort((a, b) => a.quality - b.quality)[0]
+  return `/api/storage/${file.id}/serve?quality=${best.quality}`
+}
+
+function fileTypeIcon(file) {
+  if (file.type === 'image') return 'mdi:image-outline'
+  if (file.type === 'audio') return 'mdi:music-note'
+  return 'mdi:file-outline'
+}
+
+// ── Rename ────────────────────────────────────────────────────────────────────
+const renameOpen    = ref(false)
+const renameName    = ref('')
+const renameLoading = ref(false)
+const renameError   = ref('')
+
+function startRename() {
+  renameName.value  = props.folder.name
+  renameError.value = ''
+  renameOpen.value  = true
+}
+
+async function submitRename() {
+  const name = renameName.value.trim()
+  if (!name || name === props.folder.name) { renameOpen.value = false; return }
+  renameLoading.value = true
+  renameError.value   = ''
+  try {
+    const res  = await fetch(`/api/storage/folders/${props.folder.id}`, {
+      method:      'PATCH',
+      credentials: 'include',
+      headers:     { 'Content-Type': 'application/json' },
+      body:        JSON.stringify({ name }),
+    })
+    const data = await res.json()
+    if (!res.ok) { renameError.value = data.message ?? 'Rename failed'; return }
+    renameOpen.value = false
+    emit('renamed', { id: props.folder.id, name })
+  } catch {
+    renameError.value = 'Network error'
+  } finally {
+    renameLoading.value = false
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
 const confirmDelete = ref(false)
 const deleting      = ref(false)
 
@@ -46,21 +129,50 @@ const HUE_PRESETS = [
 function swatchStyle(hue) {
   return hue == null
     ? { background: 'transparent', borderStyle: 'dashed', borderColor: 'currentColor', opacity: '0.45' }
-    : { background: `oklch(0.65 0.18 ${hue})`, borderColor: 'transparent' }
+    : { background: `oklch(0.72 0.20 ${hue})`, borderColor: 'transparent' }
 }
 </script>
 
 <template>
   <div
-    class="folder-card flex items-center rounded-lg transition-colors"
+    class="folder-card isolate relative flex items-center rounded-lg transition-colors"
     :class="{ 'folder-card--hued': folder.hue != null }"
+    @mouseenter="isHovered = true"
+    @mouseleave="isHovered = false"
     @contextmenu.prevent="menu.open($event)"
     :style="folder.hue != null ? {
-      '--bg':    `oklch(0.40 0.1 ${folder.hue} / 0.3)`,
-      '--hover': `oklch(0.40 0.12 ${folder.hue} / 0.5)`,
-      '--icon':  `oklch(0.72 0.18 ${folder.hue})`,
+      '--bg':    `oklch(0.40 0.15 ${folder.hue} / 0.3)`,
+      '--hover': `oklch(0.50 0.15 ${folder.hue} / 0.5)`,
+      '--icon':  `oklch(0.72 0.20 ${folder.hue})`,
     } : null"
   >
+    <!-- File peek previews -->
+    <Transition name="peek">
+      <div
+        v-if="previewFiles.length"
+        class="peek-cards absolute pointer-events-none"
+        style="top: 0; right: 40px;"
+      >
+        <div class="relative" style="width: 52px; height: 36px;">
+          <div
+            v-for="(file, i) in previewFiles"
+            :key="file.id"
+            class="absolute inset-0 rounded overflow-hidden shadow-lg bg-muted peek-card"
+            style="border: 1px solid oklch(1 0 0 / 0.1);"
+            :style="peekStyles[i]"
+          >
+            <img
+              v-if="fileThumbnailSrc(file)"
+              :src="fileThumbnailSrc(file)"
+              class="w-full h-full object-cover"
+            />
+            <div v-else class="w-full h-full flex items-center justify-center">
+              <Icon :icon="fileTypeIcon(file)" class="text-lg text-foreground/50" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
     <button
       class="flex-1 flex items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-l-lg min-w-0"
       @click="$emit('open', folder)"
@@ -105,11 +217,36 @@ function swatchStyle(hue) {
     <ContextMenuItem icon="mdi:folder-open-outline" @click="$emit('open', folder)">
       Open folder
     </ContextMenuItem>
+    <ContextMenuItem icon="mdi:pencil-outline" @click="startRename">
+      Rename folder
+    </ContextMenuItem>
     <ContextMenuSeparator />
     <ContextMenuItem icon="mdi:delete-outline" destructive @click="confirmDelete = true">
       Delete folder
     </ContextMenuItem>
   </ContextMenuRoot>
+
+  <Dialog :open="renameOpen" class="max-w-sm" @close="renameOpen = false">
+    <div class="p-6 flex flex-col gap-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-semibold">Rename folder</h3>
+        <button class="text-muted-foreground hover:text-foreground transition-colors" @click="renameOpen = false">✕</button>
+      </div>
+      <form class="flex flex-col gap-3" @submit.prevent="submitRename">
+        <div class="flex flex-col gap-1.5">
+          <Label for="rename-folder-input">Folder name</Label>
+          <Input id="rename-folder-input" v-model="renameName" autofocus required />
+        </div>
+        <p v-if="renameError" class="text-sm text-destructive">{{ renameError }}</p>
+        <div class="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="outline" @click="renameOpen = false">Cancel</Button>
+          <Button type="submit" :disabled="!renameName.trim() || renameLoading">
+            {{ renameLoading ? 'Saving…' : 'Rename' }}
+          </Button>
+        </div>
+      </form>
+    </div>
+  </Dialog>
 
   <ConfirmDialog
     :open="confirmDelete"
@@ -139,4 +276,13 @@ function swatchStyle(hue) {
 
 .folder-card--hued       { background-color: var(--bg); }
 .folder-card--hued:hover { background-color: var(--hover); }
+
+.peek-cards              { z-index: -1; transform: translateY(-62%); transition: transform 0.25s ease; }
+.folder-card:hover .peek-cards { transform: translateY(-75%); }
+
+.peek-card { transition: transform 0.25s ease; }
+
+.peek-enter-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.peek-enter-from   { opacity: 0; transform: translateY(-45%) scale(0.85); }
+.peek-enter-to     { opacity: 1; transform: translateY(-62%); }
 </style>

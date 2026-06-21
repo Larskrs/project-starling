@@ -117,6 +117,11 @@ function onFileMoved(fileId) {
   files.value = files.value.filter(f => f.id !== fileId)
 }
 
+function onFolderRenamed({ id, name }) {
+  const idx = folders.value.findIndex(f => f.id === id)
+  if (idx !== -1) folders.value[idx] = { ...folders.value[idx], name }
+}
+
 async function setFolderHue({ folder, hue }) {
   const res = await fetch(`/api/storage/folders/${folder.id}`, {
     method: 'PATCH',
@@ -184,6 +189,7 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
             :folder="folder"
             @open="enterFolder"
             @hue-change="setFolderHue"
+            @renamed="onFolderRenamed"
             @deleted="folders = folders.filter(f => f.id !== $event)"
           />
         </div>
