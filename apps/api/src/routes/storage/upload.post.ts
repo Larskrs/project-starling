@@ -71,5 +71,8 @@ export default defineEventHandler(async (event) => {
     .where(eq(storageFiles.id, file.id))
     .returning();
 
-  return { file: updated, versions: type === 'image' ? versions : undefined };
+  const { physicalPath: _fp, ...fileOut } = updated;
+  const versionsOut = versions.map(({ physicalPath: _vp, ...v }) => v);
+
+  return { file: fileOut, versions: type === 'image' ? versionsOut : undefined };
 });

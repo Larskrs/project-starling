@@ -27,7 +27,7 @@ function formatSize(bytes) {
         v-if="thumbnailSrc"
         :src="thumbnailSrc"
         :alt="file.name"
-        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        class="w-full h-full object-cover transition-transform duration-300"
         loading="lazy"
       />
       <div v-else class="w-full h-full bg-muted flex items-center justify-center">
@@ -36,8 +36,8 @@ function formatSize(bytes) {
     </template>
 
     <template #info>
-      <p class="text-xs font-medium text-foreground truncate leading-snug">{{ file.name }}</p>
-      <p class="text-xs text-muted-foreground leading-snug">
+      <p class="text-sm font-medium text-foreground truncate leading-snug">{{ file.name }}</p>
+      <p class="text-xs mt-1 text-muted-foreground leading-snug">
         {{ formatSize(file.size) }}
         <span v-if="file.versions?.length > 1"> · {{ file.versions.length }}v</span>
       </p>

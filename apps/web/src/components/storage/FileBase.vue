@@ -6,24 +6,24 @@ defineEmits(['select', 'delete'])
 </script>
 
 <template>
-  <div class="group relative rounded-lg border-2 border-border/50 hover:border-border overflow-hidden hover:border-muted-foreground/30 transition-colors">
+  <div class="group relative rounded-lg overflow-hidden hover:border-muted-foreground/30 transition-colors">
 
     <!-- Delete -->
     <button
-      class="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-background/80 backdrop-blur-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+      class="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded bg-destructive/10 hover:bg-destructive/25 text-destructive"
       title="Delete"
       @click.stop="$emit('delete', file)"
     >
-      <Icon icon="mdi:trash-can-outline" class="text-sm" />
+      <Icon icon="mdi:trash-can-outline" class="text-base" />
     </button>
 
     <!-- Preview -->
-    <button class="w-full aspect-square block overflow-hidden" @click="$emit('select', file)">
+    <button class="w-full aspect-video block overflow-hidden rounded-lg" @click="$emit('select', file)">
       <slot name="preview" />
     </button>
 
     <!-- Info -->
-    <div class="px-2.5 py-2 bg-card">
+    <div class="px-0.5 py-2">
       <slot name="info" />
     </div>
 

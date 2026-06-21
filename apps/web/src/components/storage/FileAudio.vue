@@ -23,8 +23,8 @@ function formatSize(bytes) {
     </template>
 
     <template #info>
-      <p class="text-xs font-medium text-foreground truncate leading-snug">{{ file.name }}</p>
-      <p class="text-xs text-muted-foreground leading-snug">{{ formatSize(file.size) }}</p>
+      <p class="text-sm font-medium text-foreground truncate leading-snug">{{ file.name }}</p>
+      <p class="text-xs mt-1 text-muted-foreground leading-snug">{{ formatSize(file.size) }}</p>
     </template>
 
   </FileBase>

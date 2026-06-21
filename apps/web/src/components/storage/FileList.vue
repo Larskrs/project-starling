@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import Folder      from './Folder.vue'
 import FileImage   from './FileImage.vue'
@@ -11,7 +11,7 @@ const props = defineProps({
   rootFolderId: { type: String, default: null },
 })
 
-const emit = defineEmits(['navigate', 'select', 'deleted'])
+const emit = defineEmits(['navigate', 'select', 'deleted', 'crumbs-change', 'nav-change'])
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -44,25 +44,58 @@ async function load(folderId) {
   }
 }
 
-// ── Navigation ────────────────────────────────────────────────────────────────
+// ── Navigation history ────────────────────────────────────────────────────────
+
+// cursor-in-array history: entries to the right of the index are "future"
+const navHistory = ref([{ folderId: props.rootFolderId ?? null, crumbs: [] }])
+const navIndex   = ref(0)
+
+const canGoBack    = computed(() => navIndex.value > 0)
+const canGoForward = computed(() => navIndex.value < navHistory.value.length - 1)
+
+function applyEntry(entry) {
+  crumbs.value          = entry.crumbs
+  currentFolderId.value = entry.folderId
+  load(entry.folderId)
+  emit('navigate', entry.folderId)
+}
+
+// Push a new entry and clear any forward history — call on explicit user navigation
+function pushEntry(folderId, newCrumbs) {
+  navHistory.value = navHistory.value.slice(0, navIndex.value + 1)
+  navHistory.value.push({ folderId, crumbs: newCrumbs })
+  navIndex.value++
+}
+
+function goBack() {
+  if (!canGoBack.value) return
+  navIndex.value--
+  applyEntry(navHistory.value[navIndex.value])
+}
+
+function goForward() {
+  if (!canGoForward.value) return
+  navIndex.value++
+  applyEntry(navHistory.value[navIndex.value])
+}
 
 function enterFolder(folder) {
-  crumbs.value          = [...crumbs.value, { id: folder.id, name: folder.name }]
+  const newCrumbs = [...crumbs.value, { id: folder.id, name: folder.name }]
+  crumbs.value          = newCrumbs
   currentFolderId.value = folder.id
   load(folder.id)
   emit('navigate', folder.id)
+  pushEntry(folder.id, newCrumbs)
 }
 
 function goToCrumb(idx) {
-  if (idx === -1) {
-    crumbs.value          = []
-    currentFolderId.value = null
-  } else {
-    crumbs.value          = crumbs.value.slice(0, idx + 1)
-    currentFolderId.value = crumbs.value[idx].id
-  }
-  load(currentFolderId.value)
-  emit('navigate', currentFolderId.value)
+  const newCrumbs = idx === -1 ? [] : crumbs.value.slice(0, idx + 1)
+  const folderId  = idx === -1 ? null : newCrumbs[idx].id
+  crumbs.value          = newCrumbs
+  currentFolderId.value = folderId
+  load(folderId)
+  emit('navigate', folderId)
+  pushEntry(folderId, newCrumbs)
 }
 
 // ── File actions ──────────────────────────────────────────────────────────────
@@ -74,6 +107,18 @@ async function deleteFile(file) {
   emit('deleted', file.id)
 }
 
+async function setFolderHue({ folder, hue }) {
+  const res = await fetch(`/api/storage/folders/${folder.id}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hue }),
+  })
+  if (!res.ok) return
+  const idx = folders.value.findIndex(f => f.id === folder.id)
+  if (idx !== -1) folders.value[idx] = { ...folders.value[idx], hue }
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 onMounted(() => load(currentFolderId.value))
@@ -81,39 +126,24 @@ onMounted(() => load(currentFolderId.value))
 watch(() => props.rootFolderId, (id) => {
   crumbs.value          = []
   currentFolderId.value = id
+  navHistory.value      = [{ folderId: id ?? null, crumbs: [] }]
+  navIndex.value        = 0
   load(id)
 })
 
-defineExpose({ refresh: () => load(currentFolderId.value) })
+const breadcrumbItems = computed(() => [
+  { id: null, label: 'Root' },
+  ...crumbs.value.map(c => ({ id: c.id, label: c.name })),
+])
+
+watch(breadcrumbItems, (items) => emit('crumbs-change', items), { immediate: true })
+watch([canGoBack, canGoForward], ([back, forward]) => emit('nav-change', { canGoBack: back, canGoForward: forward }), { immediate: true })
+
+defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, goForward })
 </script>
 
 <template>
   <div class="flex flex-col gap-4">
-
-    <!-- Breadcrumb -->
-    <nav class="flex items-center gap-1 text-sm flex-wrap">
-      <button
-        class="transition-colors"
-        :class="crumbs.length === 0
-          ? 'text-foreground font-medium pointer-events-none'
-          : 'text-muted-foreground hover:text-foreground'"
-        @click="goToCrumb(-1)"
-      >
-        Root
-      </button>
-      <template v-for="(crumb, i) in crumbs" :key="crumb.id">
-        <Icon icon="mdi:chevron-right" class="text-muted-foreground/40 text-xs shrink-0" />
-        <button
-          class="transition-colors truncate max-w-36"
-          :class="i === crumbs.length - 1
-            ? 'text-foreground font-medium pointer-events-none'
-            : 'text-muted-foreground hover:text-foreground'"
-          @click="goToCrumb(i)"
-        >
-          {{ crumb.name }}
-        </button>
-      </template>
-    </nav>
 
     <!-- Loading -->
     <div v-if="loading" class="py-8 text-center">
@@ -137,12 +167,14 @@ defineExpose({ refresh: () => load(currentFolderId.value) })
       <!-- Folders section -->
       <div v-if="folders.length > 0" class="flex flex-col gap-2">
         <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Folders</p>
-        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))">
+        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(230px, 1fr))">
           <Folder
             v-for="folder in folders"
             :key="folder.id"
             :folder="folder"
             @open="enterFolder"
+            @hue-change="setFolderHue"
+            @deleted="folders = folders.filter(f => f.id !== $event)"
           />
         </div>
       </div>
@@ -150,7 +182,7 @@ defineExpose({ refresh: () => load(currentFolderId.value) })
       <!-- Files section -->
       <div v-if="files.length > 0" class="flex flex-col gap-2">
         <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Files</p>
-        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr))">
+        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(230px, 1fr))">
           <template v-for="file in files" :key="file.id">
             <FileImage
               v-if="file.type === 'image'"

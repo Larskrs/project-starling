@@ -43,6 +43,7 @@ export const storageFolders = pgTable('storage_folders', {
   companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
   parentId:  uuid('parent_id').references((): AnyPgColumn => storageFolders.id, { onDelete: 'cascade' }),
   name:      text('name').notNull(),
+  hue:       integer('hue'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 

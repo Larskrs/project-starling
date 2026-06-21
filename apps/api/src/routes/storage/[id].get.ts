@@ -8,11 +8,26 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id');
   if (!id) throw createError({ statusCode: 400, message: 'Missing file id' });
 
-  const [file] = await db.select().from(storageFiles).where(eq(storageFiles.id, id)).limit(1);
+  const [file] = await db.select({
+    id:        storageFiles.id,
+    companyId: storageFiles.companyId,
+    folderId:  storageFiles.folderId,
+    name:      storageFiles.name,
+    mimeType:  storageFiles.mimeType,
+    size:      storageFiles.size,
+    type:      storageFiles.type,
+    createdAt: storageFiles.createdAt,
+  }).from(storageFiles).where(eq(storageFiles.id, id)).limit(1);
   if (!file) throw createError({ statusCode: 404, message: 'File not found' });
 
   const versions = file.type === 'image'
-    ? await db.select().from(storageImageVersions).where(eq(storageImageVersions.fileId, id))
+    ? await db.select({
+        id:        storageImageVersions.id,
+        fileId:    storageImageVersions.fileId,
+        quality:   storageImageVersions.quality,
+        size:      storageImageVersions.size,
+        createdAt: storageImageVersions.createdAt,
+      }).from(storageImageVersions).where(eq(storageImageVersions.fileId, id))
     : undefined;
 
   return { file, versions };

@@ -13,8 +13,8 @@ onMounted(async () => {
 
 <template>
   <div class="relative w-full flex flex-col h-full">
-    <div class="max-w-5xl w-full mx-auto">
-      <div class="px-6 py-3 flex flex-row items-center justify-between">
+    <div class="container w-full mx-auto">
+      <div class="px-4 py-3 flex flex-row items-center justify-between">
         <BreadcrumbNav />
         <authenticated-badge />
       </div>
