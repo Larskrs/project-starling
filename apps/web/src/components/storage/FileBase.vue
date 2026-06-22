@@ -17,7 +17,7 @@ import Label                from '../ui/Label.vue'
 const props = defineProps({ file: { type: Object, required: true } })
 const emit  = defineEmits(['select', 'delete', 'renamed', 'moved'])
 
-const companyId = inject('storage-company-id', null)
+const productionId = inject('storage-production-id', null)
 const menu      = useContextMenu()
 
 // ── Selection ─────────────────────────────────────────────────────────────────
@@ -192,9 +192,9 @@ async function doDelete() {
 
   <!-- Move to folder dialog -->
   <SelectFolderDialog
-    v-if="companyId"
+    v-if="productionId"
     :open="moveOpen"
-    :company-id="companyId"
+    :production-id="productionId"
     title="Move file to folder"
     @select="doMove"
     @close="moveOpen = false"

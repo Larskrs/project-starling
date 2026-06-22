@@ -39,17 +39,17 @@ export const productions = pgTable('productions', {
 export const storageFileTypeEnum = pgEnum('storage_file_type', ['image', 'audio']);
 
 export const storageFolders = pgTable('storage_folders', {
-  id:        uuid('id').primaryKey().defaultRandom(),
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  parentId:  uuid('parent_id').references((): AnyPgColumn => storageFolders.id, { onDelete: 'cascade' }),
-  name:      text('name').notNull(),
-  hue:       integer('hue'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  id:           uuid('id').primaryKey().defaultRandom(),
+  productionId: uuid('production_id').notNull().references(() => productions.id, { onDelete: 'cascade' }),
+  parentId:     uuid('parent_id').references((): AnyPgColumn => storageFolders.id, { onDelete: 'cascade' }),
+  name:         text('name').notNull(),
+  hue:          integer('hue'),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
 });
 
 export const storageFiles = pgTable('storage_files', {
   id:           uuid('id').primaryKey().defaultRandom(),
-  companyId:    uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  productionId: uuid('production_id').notNull().references(() => productions.id, { onDelete: 'cascade' }),
   folderId:     uuid('folder_id').references(() => storageFolders.id, { onDelete: 'set null' }),
   name:         text('name').notNull(),
   mimeType:     text('mime_type').notNull(),

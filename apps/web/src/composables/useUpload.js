@@ -2,12 +2,12 @@ import { ref } from 'vue'
 
 /**
  * @param {object} opts
- * @param {string | (() => string) | import('vue').Ref<string>}  opts.companyId
+ * @param {string | (() => string) | import('vue').Ref<string>}  opts.productionId
  * @param {string | (() => string) | import('vue').Ref<string>}  opts.folderId
  * @param {(file: object, versions: object[]) => void}           [opts.onUploaded]
  * @param {(message: string) => void}                            [opts.onError]
  */
-export function useUpload({ companyId, folderId, onUploaded, onError } = {}) {
+export function useUpload({ productionId, folderId, onUploaded, onError } = {}) {
   const queue = ref([])
   let nextId  = 0
 
@@ -25,7 +25,7 @@ export function useUpload({ companyId, folderId, onUploaded, onError } = {}) {
     queue.value = [...queue.value, entry]
 
     const body = new FormData()
-    body.append('company_id', get(companyId))
+    body.append('production_id', get(productionId))
     const fid = get(folderId)
     if (fid) body.append('folder_id', fid)
     body.append('file', file)

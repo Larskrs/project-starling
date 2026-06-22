@@ -7,13 +7,13 @@ import FileAudio   from './FileAudio.vue'
 import FileDefault from './FileDefault.vue'
 
 const props = defineProps({
-  companyId:    { type: String, required: true },
+  productionId: { type: String, required: true },
   rootFolderId: { type: String, default: null },
 })
 
 const emit = defineEmits(['navigate', 'select', 'deleted', 'crumbs-change', 'nav-change'])
 
-provide('storage-company-id', props.companyId)
+provide('storage-production-id', props.productionId)
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ async function load(folderId) {
   loading.value = true
   error.value   = ''
   try {
-    const params = new URLSearchParams({ cid: props.companyId })
+    const params = new URLSearchParams({ pid: props.productionId })
     if (folderId) params.set('folder_id', folderId)
 
     const res = await fetch(`/api/storage?${params}`, { credentials: 'include' })

@@ -8,6 +8,7 @@ const route = useRoute()
 
 const segmentTranslations = new Map<string, string>([
   ['c', 'Produksjonshus'],
+  ['p', 'Produksjon'],
 ])
 
 const items = computed(() => {

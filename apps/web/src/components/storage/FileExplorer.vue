@@ -14,7 +14,7 @@ import { useUpload }            from '../../composables/useUpload'
 import { provideFileSelection } from '../../composables/useFileSelection.js'
 
 const props = defineProps({
-  companyId: { type: String, required: true },
+  productionId: { type: String, required: true },
 })
 
 const emit = defineEmits(['select'])
@@ -33,10 +33,10 @@ const currentFolderId  = ref(null)
 
 // ── Upload ─────────────────────────────────────────────────────────────────
 const { queue, uploadFiles } = useUpload({
-  companyId:  () => props.companyId,
-  folderId:   currentFolderId,
-  onUploaded: () => fileListRef.value?.refresh(),
-  onError:    (msg) => console.warn('[FileExplorer]', msg),
+  productionId: () => props.productionId,
+  folderId:     currentFolderId,
+  onUploaded:   () => fileListRef.value?.refresh(),
+  onError:      (msg) => console.warn('[FileExplorer]', msg),
 })
 
 function onFileInput(e) {
@@ -64,9 +64,9 @@ async function submitCreateFolder() {
       headers:     { 'Content-Type': 'application/json' },
       credentials: 'include',
       body:        JSON.stringify({
-        company_id: props.companyId,
-        name:       folderName.value.trim(),
-        parent_id:  currentFolderId.value,
+        production_id: props.productionId,
+        name:          folderName.value.trim(),
+        parent_id:     currentFolderId.value,
       }),
     })
     const data = await res.json()
@@ -228,14 +228,14 @@ async function moveSelected(folderId) {
 
     <!-- File grid / list — also a drop target -->
     <DropUpload
-      :company-id="companyId"
+      :production-id="productionId"
       :folder-id="currentFolderId"
       @uploaded="fileListRef?.refresh()"
       @error="(msg) => console.warn('[FileExplorer drop]', msg)"
     >
       <FileList
         ref="fileListRef"
-        :company-id="companyId"
+        :production-id="productionId"
         @navigate="onNavigate"
         @crumbs-change="fileCrumbs = $event"
         @nav-change="navState = $event"
@@ -282,7 +282,7 @@ async function moveSelected(folderId) {
     <!-- Move to folder dialog -->
     <SelectFolderDialog
       :open="moveFolderOpen"
-      :company-id="companyId"
+      :production-id="productionId"
       title="Move files to folder"
       @select="moveSelected"
       @close="moveFolderOpen = false"

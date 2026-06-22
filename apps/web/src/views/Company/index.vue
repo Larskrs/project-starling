@@ -1,27 +1,12 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import ProductionList from './ProductionList.vue'
-import FileExplorer   from '../../components/storage/FileExplorer.vue'
-import Tabs           from '../../components/ui/Tabs.vue'
 
 const route  = useRoute()
-const router = useRouter()
 const company = ref(null)
 const loading = ref(true)
 const error   = ref('')
-
-const VALID_TABS = ['productions', 'files']
-
-const activeTab = computed({
-  get: () => VALID_TABS.includes(route.query.tab) ? route.query.tab : 'productions',
-  set: (tab) => router.replace({ query: { ...route.query, tab } }),
-})
-
-const TABS = [
-  { id: 'productions', label: 'Productions', icon: 'mdi:film' },
-  { id: 'files',       label: 'Files',       icon: 'mdi:folder-outline' },
-]
 
 async function load(slug) {
   loading.value = true
@@ -56,12 +41,12 @@ watch(() => route.params.slug, (slug) => { if (slug) load(slug) })
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
     <template v-else-if="company">
 
-      <Tabs v-model="activeTab" :tabs="TABS" />
-
-      <div class="mt-6">
-        <ProductionList v-if="activeTab === 'productions'" :company="company" />
-        <FileExplorer   v-else-if="activeTab === 'files'"  :company-id="company.id" />
+      <div class="mb-8">
+        <h1 class="text-2xl font-bold text-foreground">{{ company.name }}</h1>
+        <p class="text-sm text-muted-foreground font-mono mt-0.5">{{ company.slug }}</p>
       </div>
+
+      <ProductionList :company="company" />
 
     </template>
   </div>

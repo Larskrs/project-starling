@@ -9,14 +9,14 @@ export default defineEventHandler(async (event) => {
   if (!id) throw createError({ statusCode: 400, message: 'Missing file id' });
 
   const [file] = await db.select({
-    id:        storageFiles.id,
-    companyId: storageFiles.companyId,
-    folderId:  storageFiles.folderId,
-    name:      storageFiles.name,
-    mimeType:  storageFiles.mimeType,
-    size:      storageFiles.size,
-    type:      storageFiles.type,
-    createdAt: storageFiles.createdAt,
+    id:           storageFiles.id,
+    productionId: storageFiles.productionId,
+    folderId:     storageFiles.folderId,
+    name:         storageFiles.name,
+    mimeType:     storageFiles.mimeType,
+    size:         storageFiles.size,
+    type:         storageFiles.type,
+    createdAt:    storageFiles.createdAt,
   }).from(storageFiles).where(eq(storageFiles.id, id)).limit(1);
   if (!file) throw createError({ statusCode: 404, message: 'File not found' });
 

@@ -1,12 +1,12 @@
 import z from 'zod';
 import { eq } from 'drizzle-orm';
-import { db, companies, storageFolders, storageFiles, storageImageVersions } from '@starling/db';
+import { db, productions, storageFolders, storageFiles, storageImageVersions } from '@starling/db';
 import { defineEventHandler, readMultipart, createError, ApiError, requireAuth } from '../../lib/handler.js';
-import { isImage, isAudio, processImage, writeAudio } from '../../lib/storage.js';
+import { isImage, isAudio, processImage, writeAudio, imagePhysicalPath } from '../../lib/storage.js';
 
 const metaSchema = z.object({
-  company_id: z.uuid(),
-  folder_id:  z.uuid().optional(),
+  production_id: z.uuid(),
+  folder_id:     z.uuid().optional(),
 });
 
 export default defineEventHandler(async (event) => {
@@ -17,18 +17,22 @@ export default defineEventHandler(async (event) => {
   const meta = metaSchema.safeParse(fields);
   if (!meta.success) throw new ApiError(422, 'Invalid fields', meta.error.flatten());
 
-  const { company_id, folder_id } = meta.data;
+  const { production_id, folder_id } = meta.data;
   const upload = files['file'];
   if (!upload) throw new ApiError(400, 'No file field in request');
 
-  const [company] = await db.select({ id: companies.id }).from(companies).where(eq(companies.id, company_id)).limit(1);
-  if (!company) throw createError({ statusCode: 404, message: 'Company not found' });
+  const [production] = await db
+    .select({ id: productions.id, companyId: productions.companyId })
+    .from(productions)
+    .where(eq(productions.id, production_id))
+    .limit(1);
+  if (!production) throw createError({ statusCode: 404, message: 'Production not found' });
 
   if (folder_id) {
-    const [folder] = await db.select({ companyId: storageFolders.companyId })
+    const [folder] = await db.select({ productionId: storageFolders.productionId })
       .from(storageFolders).where(eq(storageFolders.id, folder_id)).limit(1);
-    if (!folder)                         throw createError({ statusCode: 404, message: 'Folder not found' });
-    if (folder.companyId !== company_id) throw createError({ statusCode: 403, message: 'Folder belongs to a different company' });
+    if (!folder)                               throw createError({ statusCode: 404, message: 'Folder not found' });
+    if (folder.productionId !== production_id) throw createError({ statusCode: 403, message: 'Folder belongs to a different production' });
   }
 
   const { filename, mimeType, data } = upload;
@@ -40,32 +44,36 @@ export default defineEventHandler(async (event) => {
   const type = isImage(mimeType) ? 'image' : 'audio';
 
   const [file] = await db.insert(storageFiles).values({
-    companyId:    company_id,
+    productionId: production_id,
     folderId:     folder_id ?? null,
     name:         filename,
     mimeType,
     size:         data.length,
     type,
-    physicalPath: '', // filled in below
+    physicalPath: '',
   }).returning();
 
   let physicalPath: string;
   let size = data.length;
   let versions: typeof storageImageVersions.$inferSelect[] = [];
 
+  const { companyId } = production;
+
   if (type === 'image') {
-    const imageVersions = await processImage(data, company_id, file.id);
+    const imageVersions = await processImage(
+      data,
+      (q) => imagePhysicalPath(companyId, production_id, file.id, q),
+    );
 
     await db.insert(storageImageVersions).values(
       imageVersions.map((v) => ({ fileId: file.id, ...v })),
     );
 
-    // physicalPath points to the highest quality version; size is the total across all versions
     physicalPath = imageVersions.reduce((best, v) => v.quality > best.quality ? v : best).physicalPath;
     size = imageVersions.reduce((sum, v) => sum + v.size, 0);
     versions = await db.select().from(storageImageVersions).where(eq(storageImageVersions.fileId, file.id));
   } else {
-    physicalPath = await writeAudio(data, company_id, file.id, mimeType);
+    physicalPath = await writeAudio(data, companyId, production_id, file.id, mimeType);
   }
 
   const [updated] = await db.update(storageFiles)

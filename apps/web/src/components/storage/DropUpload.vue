@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useUpload } from '../../composables/useUpload'
 
 const props = defineProps({
-  companyId: { type: String,  required: true },
+  productionId: { type: String,  required: true },
   folderId:  { type: String,  default: null },
   multiple:  { type: Boolean, default: true },
 })
@@ -11,7 +11,7 @@ const props = defineProps({
 const emit = defineEmits(['uploaded', 'error'])
 
 const { queue, uploadFiles } = useUpload({
-  companyId:  () => props.companyId,
+  productionId:  () => props.productionId,
   folderId:   () => props.folderId,
   onUploaded: (file, versions) => emit('uploaded', file, versions),
   onError:    (msg) => emit('error', msg),

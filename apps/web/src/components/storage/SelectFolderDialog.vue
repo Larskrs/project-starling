@@ -8,9 +8,9 @@ import Label      from '../ui/Label.vue'
 import Breadcrumb from '../ui/Breadcrumb.vue'
 
 const props = defineProps({
-  open:      { type: Boolean, required: true },
-  companyId: { type: String,  required: true },
-  title:     { type: String,  default: 'Select folder' },
+  open:         { type: Boolean, required: true },
+  productionId: { type: String,  required: true },
+  title:        { type: String,  default: 'Select folder' },
 })
 
 const emit = defineEmits(['select', 'close'])
@@ -33,7 +33,7 @@ const breadcrumbItems = computed(() => [
 async function load(id) {
   loading.value = true
   try {
-    const params = new URLSearchParams({ cid: props.companyId })
+    const params = new URLSearchParams({ pid: props.productionId })
     if (id) params.set('folder_id', id)
     const res  = await fetch(`/api/storage?${params}`, { credentials: 'include' })
     if (!res.ok) throw new Error()
@@ -86,9 +86,9 @@ async function submitCreate() {
       headers:     { 'Content-Type': 'application/json' },
       credentials: 'include',
       body:        JSON.stringify({
-        company_id: props.companyId,
-        name:       newName.value.trim(),
-        parent_id:  currentId.value,
+        production_id: props.productionId,
+        name:          newName.value.trim(),
+        parent_id:     currentId.value,
       }),
     })
     const data = await res.json()

@@ -36,6 +36,13 @@
       "when": 1750499200000,
       "tag": "0004_folder_hue",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1750636800000,
+      "tag": "0005_production_scoped_storage",
+      "breakpoints": true
     }
   ]
 }

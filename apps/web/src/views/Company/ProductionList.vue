@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import Button from '../../components/ui/Button.vue'
 import CreateProductionDialog from './CreateProductionDialog.vue'
 import { Icon } from '@iconify/vue'
@@ -7,6 +8,12 @@ import { Icon } from '@iconify/vue'
 const props = defineProps({
   company: { type: Object, required: true },
 })
+
+const router = useRouter()
+
+function openProduction(production) {
+  router.push(`/c/${props.company.slug}/p/${production.slug}`)
+}
 
 const productions = ref([])
 const loading     = ref(true)
@@ -54,7 +61,8 @@ onMounted(load)
       <li
         v-for="p in productions"
         :key="p.id"
-        class="border border-border rounded-lg flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
+        class="border border-border rounded-lg flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer"
+        @click="openProduction(p)"
       >
         <div>
           <p class="text-sm font-medium text-foreground">{{ p.name }}</p>

@@ -1,64 +1,58 @@
 import z from 'zod';
 import { eq, and, isNull, getTableColumns } from 'drizzle-orm';
-import { db, storageFiles, storageFolders, storageImageVersions } from '@starling/db';
+import { db, storageFiles, storageFolders, storageImageVersions, productions } from '@starling/db';
 import { defineEventHandler, getValidatedQuery, requireAuth } from '../../lib/handler.js';
 import { createError } from '../../lib/handler.js';
-import { companies } from '@starling/db';
 
 const querySchema = z.object({
-  cid:       z.uuid(),
+  pid:       z.uuid(),
   folder_id: z.uuid().optional(),
 });
 
 export default defineEventHandler(async (event) => {
   await requireAuth(event);
 
-  const { cid, folder_id } = getValidatedQuery(event, querySchema);
+  const { pid, folder_id } = getValidatedQuery(event, querySchema);
 
-  const [company] = await db.select({ id: companies.id }).from(companies).where(eq(companies.id, cid)).limit(1);
-  if (!company) throw createError({ statusCode: 404, message: 'Company not found' });
+  const [production] = await db.select({ id: productions.id }).from(productions).where(eq(productions.id, pid)).limit(1);
+  if (!production) throw createError({ statusCode: 404, message: 'Production not found' });
 
   const folderFilter = folder_id
     ? eq(storageFolders.parentId, folder_id)
     : isNull(storageFolders.parentId);
 
   const [directFolders, allFolderIndex, allFileIndex, files] = await Promise.all([
-    // Direct child folders (for rendering)
     db.select(getTableColumns(storageFolders))
       .from(storageFolders)
-      .where(and(eq(storageFolders.companyId, cid), folderFilter))
+      .where(and(eq(storageFolders.productionId, pid), folderFilter))
       .orderBy(storageFolders.name),
 
-    // All company folders → parent→children map for recursive counting
     db.select({ id: storageFolders.id, parentId: storageFolders.parentId })
       .from(storageFolders)
-      .where(eq(storageFolders.companyId, cid)),
+      .where(eq(storageFolders.productionId, pid)),
 
-    // All company files → folder→count map for recursive counting
     db.select({ id: storageFiles.id, folderId: storageFiles.folderId })
       .from(storageFiles)
-      .where(eq(storageFiles.companyId, cid)),
+      .where(eq(storageFiles.productionId, pid)),
 
-    // FILES in current folder (for rendering)
     db.select({
-      id:        storageFiles.id,
-      companyId: storageFiles.companyId,
-      folderId:  storageFiles.folderId,
-      name:      storageFiles.name,
-      mimeType:  storageFiles.mimeType,
-      size:      storageFiles.size,
-      type:      storageFiles.type,
-      createdAt: storageFiles.createdAt,
+      id:           storageFiles.id,
+      productionId: storageFiles.productionId,
+      folderId:     storageFiles.folderId,
+      name:         storageFiles.name,
+      mimeType:     storageFiles.mimeType,
+      size:         storageFiles.size,
+      type:         storageFiles.type,
+      createdAt:    storageFiles.createdAt,
     }).from(storageFiles)
       .where(
         and(
-          eq(storageFiles.companyId, cid),
+          eq(storageFiles.productionId, pid),
           folder_id ? eq(storageFiles.folderId, folder_id) : isNull(storageFiles.folderId),
         ),
       ),
   ]);
 
-  // Build in-memory indices for O(n) recursive counting
   const childrenOf = new Map<string, string[]>();
   for (const f of allFolderIndex) {
     if (!f.parentId) continue;

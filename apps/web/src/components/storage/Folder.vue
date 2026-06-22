@@ -18,13 +18,13 @@ const emit  = defineEmits(['open', 'hue-change', 'deleted', 'renamed'])
 const menu  = useContextMenu()
 
 // ── File peek previews ────────────────────────────────────────────────────────
-const companyId    = inject('storage-company-id', null)
+const productionId = inject('storage-production-id', null)
 const previewFiles = ref([])
 
 onMounted(async () => {
-  if (!companyId || !props.folder.fileCount) return
+  if (!productionId || !props.folder.fileCount) return
   try {
-    const params = new URLSearchParams({ cid: companyId, folder_id: props.folder.id })
+    const params = new URLSearchParams({ pid: productionId, folder_id: props.folder.id })
     const res    = await fetch(`/api/storage?${params}`, { credentials: 'include' })
     if (!res.ok) return
     const data = await res.json()

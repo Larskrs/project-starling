@@ -3,7 +3,7 @@ import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { eq, inArray } from 'drizzle-orm';
-import { db, storageFolders, storageFiles, storageImageVersions } from '@starling/db';
+import { db, productions, storageFolders, storageFiles, storageImageVersions } from '@starling/db';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const STORAGE_ROOT = join(here, '..', '..', '..', '..', 'storage');
@@ -20,14 +20,24 @@ export const ALLOWED_AUDIO_TYPES = new Set([
 export function isImage(mimeType: string) { return ALLOWED_IMAGE_TYPES.has(mimeType); }
 export function isAudio(mimeType: string) { return ALLOWED_AUDIO_TYPES.has(mimeType); }
 
-// storage/c/{companyId}/images/{fileId}@{quality}.webp
-export function imagePhysicalPath(companyId: string, fileId: string, quality: number): string {
-  return join(STORAGE_ROOT, 'c', companyId, 'images', `${fileId}@${quality}.webp`);
+// storage/c/{companyId}/p/{productionId}/images/{fileId}@{quality}.webp
+export function imagePhysicalPath(companyId: string, productionId: string, fileId: string, quality: number): string {
+  return join(STORAGE_ROOT, 'c', companyId, 'p', productionId, 'images', `${fileId}@${quality}.webp`);
 }
 
-// storage/c/{companyId}/audio/{fileId}{ext}
-export function audioPhysicalPath(companyId: string, fileId: string, ext: string): string {
-  return join(STORAGE_ROOT, 'c', companyId, 'audio', `${fileId}${ext}`);
+// storage/c/{companyId}/p/{productionId}/audio/{fileId}{ext}
+export function audioPhysicalPath(companyId: string, productionId: string, fileId: string, ext: string): string {
+  return join(STORAGE_ROOT, 'c', companyId, 'p', productionId, 'audio', `${fileId}${ext}`);
+}
+
+// storage/c/{companyId}/profile/{slot}/{fileId}@{quality}.webp
+export function companyProfileImagePath(companyId: string, slot: 'profile' | 'banner', fileId: string, quality: number): string {
+  return join(STORAGE_ROOT, 'c', companyId, 'profile', slot, `${fileId}@${quality}.webp`);
+}
+
+// storage/c/{companyId}/p/{productionId}/profile/{slot}/{fileId}@{quality}.webp
+export function productionProfileImagePath(companyId: string, productionId: string, slot: 'profile' | 'banner', fileId: string, quality: number): string {
+  return join(STORAGE_ROOT, 'c', companyId, 'p', productionId, 'profile', slot, `${fileId}@${quality}.webp`);
 }
 
 /** How many quality versions to generate based on raw file size. */
@@ -52,14 +62,14 @@ export interface ImageVersion {
   size:         number;
 }
 
-/** Process an image buffer into N versions, each with reduced JPEG quality AND pixel dimensions.
- *  Each version is also capped at (quality / 100) MB — e.g. @75 ≤ 0.75 MB, @67 ≤ 0.67 MB.
- *  If the initial render exceeds the cap, dimensions are iteratively reduced until it fits.
+/**
+ * Process an image buffer into N quality/dimension versions.
+ * `getPath(quality)` returns the physical path for each version — callers
+ * supply this so the same processor works for production media and profile images.
  */
 export async function processImage(
-  data:      Buffer,
-  companyId: string,
-  fileId:    string,
+  data:    Buffer,
+  getPath: (quality: number) => string,
 ): Promise<ImageVersion[]> {
   const n       = versionCount(data.length);
   const levels  = qualityLevels(n);
@@ -69,7 +79,6 @@ export async function processImage(
   const origWidth  = meta.width  ?? 1920;
   const origHeight = meta.height ?? 1080;
 
-  // Clamp longest edge to 1920, preserving aspect ratio
   const maxDim  = 1920;
   const longest = Math.max(origWidth, origHeight);
   const ratio   = longest > maxDim ? maxDim / longest : 1;
@@ -78,20 +87,19 @@ export async function processImage(
 
   for (const quality of levels) {
     const scale    = quality / 100;
-    const maxBytes = Math.round(scale * 1024 * 1024); // quality% of 1 MB
+    const maxBytes = Math.round(scale * 1024 * 1024);
 
     let w   = Math.max(1, Math.round(baseWidth  * scale));
     let h   = Math.max(1, Math.round(baseHeight * scale));
     let out = await sharp(data).resize(w, h, { fit: 'fill' }).webp({ quality }).toBuffer();
 
-    // Shrink dimensions by 15% per iteration until the output fits within the cap
     while (out.length > maxBytes && w > 64) {
       w   = Math.max(64, Math.round(w * 0.85));
       h   = Math.max(64, Math.round(h * 0.85));
       out = await sharp(data).resize(w, h, { fit: 'fill' }).webp({ quality }).toBuffer();
     }
 
-    const physicalPath = imagePhysicalPath(companyId, fileId, quality);
+    const physicalPath = getPath(quality);
     await mkdir(dirname(physicalPath), { recursive: true });
     await writeFile(physicalPath, out);
     versions.push({ quality, physicalPath, size: out.length });
@@ -102,10 +110,11 @@ export async function processImage(
 
 /** Write an audio file to disk as-is and return its physical path. */
 export async function writeAudio(
-  data:      Buffer,
-  companyId: string,
-  fileId:    string,
-  mimeType:  string,
+  data:         Buffer,
+  companyId:    string,
+  productionId: string,
+  fileId:       string,
+  mimeType:     string,
 ): Promise<string> {
   const extMap: Record<string, string> = {
     'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/wav': '.wav',
@@ -113,12 +122,30 @@ export async function writeAudio(
     'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a',
   };
   const ext          = extMap[mimeType] ?? extname(mimeType).replace('/', '.') ?? '.bin';
-  const physicalPath = audioPhysicalPath(companyId, fileId, ext);
+  const physicalPath = audioPhysicalPath(companyId, productionId, fileId, ext);
 
   await mkdir(dirname(physicalPath), { recursive: true });
   await writeFile(physicalPath, data);
 
   return physicalPath;
+}
+
+/**
+ * Write a profile or banner image for a company or production.
+ * Pass `productionId: null` for company-level images.
+ */
+export async function writeProfileImage(
+  data:         Buffer,
+  companyId:    string,
+  productionId: string | null,
+  slot:         'profile' | 'banner',
+  fileId:       string,
+): Promise<ImageVersion[]> {
+  const getPath = productionId
+    ? (q: number) => productionProfileImagePath(companyId, productionId, slot, fileId, q)
+    : (q: number) => companyProfileImagePath(companyId, slot, fileId, q);
+
+  return processImage(data, getPath);
 }
 
 /** Remove a file from disk, ignoring not-found errors. */
@@ -184,26 +211,44 @@ export async function deleteFolder(folderId: string): Promise<{ deleted: string;
   return { deleted: folderId, filesRemoved: files.length };
 }
 
-export async function deleteCompanyStorage(companyId: string): Promise<{ foldersRemoved: number; filesRemoved: number }> {
+export async function deleteProductionStorage(productionId: string): Promise<{ foldersRemoved: number; filesRemoved: number }> {
   const files = await db
     .select()
     .from(storageFiles)
-    .where(eq(storageFiles.companyId, companyId));
+    .where(eq(storageFiles.productionId, productionId));
 
   await purgeFilesFromDisk(files);
 
   if (files.length) {
-    await db.delete(storageFiles).where(eq(storageFiles.companyId, companyId));
+    await db.delete(storageFiles).where(eq(storageFiles.productionId, productionId));
   }
 
   const folders = await db
     .select({ id: storageFolders.id })
     .from(storageFolders)
-    .where(eq(storageFolders.companyId, companyId));
+    .where(eq(storageFolders.productionId, productionId));
 
   if (folders.length) {
-    await db.delete(storageFolders).where(eq(storageFolders.companyId, companyId));
+    await db.delete(storageFolders).where(eq(storageFolders.productionId, productionId));
   }
 
   return { foldersRemoved: folders.length, filesRemoved: files.length };
+}
+
+export async function deleteCompanyStorage(companyId: string): Promise<{ foldersRemoved: number; filesRemoved: number }> {
+  const prods = await db
+    .select({ id: productions.id })
+    .from(productions)
+    .where(eq(productions.companyId, companyId));
+
+  let foldersRemoved = 0;
+  let filesRemoved   = 0;
+
+  for (const prod of prods) {
+    const result = await deleteProductionStorage(prod.id);
+    foldersRemoved += result.foldersRemoved;
+    filesRemoved   += result.filesRemoved;
+  }
+
+  return { foldersRemoved, filesRemoved };
 }
