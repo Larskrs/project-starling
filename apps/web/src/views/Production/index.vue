@@ -84,7 +84,7 @@ const crumbs = computed(() => {
     <!-- Sidebar -->
     <aside
       class="flex flex-col border-r border-border bg-background duration-400 transition-[width] ease-in-out shrink-0"
-      :class="collapsed ? 'w-14' : 'w-56'"
+      :class="collapsed ? 'w-14' : 'w-64'"
     >
       <!-- Logo / collapse toggle -->
       <div
@@ -113,19 +113,20 @@ const crumbs = computed(() => {
         </button>
       </div>
 
-      <!-- Production banner + avatar -->
-      <div class="border-b border-border">
+      <!-- Production Header -->
+      <div class="h-14 border-b border-border relative">
         <!-- Banner collapses via max-height -->
         <div
-          class="overflow-hidden transition-all duration-200 ease-in-out"
+          class="inset-0 h-full absolute overflow-hidden transition-all duration-200 ease-in-out"
           :class="collapsed ? 'max-h-0 opacity-0' : 'max-h-20 opacity-100'"
         >
-          <ProductionBanner :src="bannerSrc" :height="72" />
+          <ProductionBanner :src="bannerSrc" class="h-full"/>
+          <div class="z-0 absolute inset-0 bg-gradient-to-l from-background/25 via-background/75 via-40% to-background" />
         </div>
 
         <!-- Avatar + name row -->
         <div
-          class="flex items-center gap-2.5 px-2.5 py-2.5 overflow-hidden"
+          class="z-1 absolute inset-x-0 bottom-0 flex items-center gap-2.5 px-2.5 py-2.5 overflow-hidden"
           :class="collapsed ? 'justify-center' : ''"
         >
           <SquircleAvatar :src="profileSrc" :size="36" class="shrink-0">
@@ -162,9 +163,9 @@ const crumbs = computed(() => {
       </nav>
 
       <!-- User -->
-      <div class="border-t border-border">
+      <div class="p-2">
         <div
-          class="flex items-center gap-2.5 px-2 py-3"
+          class="bg-secondary/25 rounded-xl flex items-center gap-2.5 px-2 py-3"
           :class="collapsed ? 'justify-center' : ''"
         >
           <div
@@ -177,7 +178,7 @@ const crumbs = computed(() => {
             <div v-if="!collapsed" class="flex-1 min-w-0 flex items-center gap-1">
               <div class="flex-1 min-w-0">
                 <p class="text-xs font-medium text-foreground truncate">
-                  {{ user?.first_name ? `${user.first_name} ${user.last_name ?? ''}`.trim() : user?.name }}
+                  {{ user?.first_name ? `${user.first_name}`.trim() : user?.name }}
                 </p>
                 <p class="text-[11px] text-muted-foreground truncate">{{ user?.email }}</p>
               </div>

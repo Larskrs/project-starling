@@ -2,7 +2,7 @@
 defineProps({
   src:    { type: String, default: null },
   alt:    { type: String, default: '' },
-  height: { type: Number, default: 160 },
+  height: { type: Number, default: undefined },
 })
 </script>
 
