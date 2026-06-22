@@ -50,6 +50,7 @@ export default defineEventHandler(async (event) => {
   }).returning();
 
   let physicalPath: string;
+  let size = data.length;
   let versions: typeof storageImageVersions.$inferSelect[] = [];
 
   if (type === 'image') {
@@ -59,15 +60,16 @@ export default defineEventHandler(async (event) => {
       imageVersions.map((v) => ({ fileId: file.id, ...v })),
     );
 
-    // physicalPath for the file record points to the highest quality version
+    // physicalPath points to the highest quality version; size is the total across all versions
     physicalPath = imageVersions.reduce((best, v) => v.quality > best.quality ? v : best).physicalPath;
+    size = imageVersions.reduce((sum, v) => sum + v.size, 0);
     versions = await db.select().from(storageImageVersions).where(eq(storageImageVersions.fileId, file.id));
   } else {
     physicalPath = await writeAudio(data, company_id, file.id, mimeType);
   }
 
   const [updated] = await db.update(storageFiles)
-    .set({ physicalPath })
+    .set({ physicalPath, size })
     .where(eq(storageFiles.id, file.id))
     .returning();
 

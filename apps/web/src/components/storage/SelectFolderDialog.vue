@@ -156,22 +156,24 @@ async function submitCreate() {
         </template>
 
         <!-- Inline create form -->
-        <form
-          v-if="creating"
-          class="flex flex-col gap-2 px-3 py-2.5 rounded-md border border-border bg-card mt-1"
-          @submit.prevent="submitCreate"
-        >
-          <Label for="sfd-name" class="text-sm">Folder name</Label>
+      </div>
+      <form
+        v-if="creating"
+        class="flex flex-col gap-2 px-3 py-2.5 border-t border-border bg-card mt-1"
+        @submit.prevent="submitCreate"
+      >
+        <Label for="sfd-name" class="text-sm">Folder name</Label>
+        <div class="flex gap-1">
           <Input id="sfd-name" v-model="newName" placeholder="My folder" autofocus class="h-9 text-sm" />
           <p v-if="createError" class="text-sm text-destructive">{{ createError }}</p>
           <div class="flex gap-2 justify-end">
-            <Button type="button" size="sm" variant="ghost" @click="creating = false; newName = ''">Cancel</Button>
+            <Button type="button" size="sm" variant="ghost" @click="creating = false; newName = ''"><Icon icon="mdi:close" /></Button>
             <Button type="submit" size="sm" :disabled="!newName.trim() || createLoading">
               {{ createLoading ? 'Creating…' : 'Create' }}
             </Button>
           </div>
-        </form>
-      </div>
+        </div>
+      </form>
 
       <!-- Footer -->
       <div class="flex items-center justify-between px-4 py-3 border-t border-border">

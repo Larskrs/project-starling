@@ -7,12 +7,12 @@ export function useAuth() {
 
   async function login(email, password) {
     await auth.login(email, password)
-    await router.push('/chat')
+    await router.push('/home')
   }
 
   async function register(email, first_name, last_name, password) {
     await auth.register(email, first_name, last_name, password)
-    await router.push('/chat')
+    await router.push('/home')
   }
 
   async function logout() {

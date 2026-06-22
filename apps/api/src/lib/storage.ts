@@ -2,6 +2,8 @@ import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { eq, inArray } from 'drizzle-orm';
+import { db, storageFolders, storageFiles, storageImageVersions } from '@starling/db';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const STORAGE_ROOT = join(here, '..', '..', '..', '..', 'storage');
@@ -122,4 +124,86 @@ export async function writeAudio(
 /** Remove a file from disk, ignoring not-found errors. */
 export async function removeFile(physicalPath: string): Promise<void> {
   await unlink(physicalPath).catch((e) => { if (e?.code !== 'ENOENT') throw e; });
+}
+
+export async function collectFolderIds(rootId: string): Promise<string[]> {
+  const ids = [rootId];
+  const children = await db
+    .select({ id: storageFolders.id })
+    .from(storageFolders)
+    .where(eq(storageFolders.parentId, rootId));
+  for (const child of children) {
+    ids.push(...await collectFolderIds(child.id));
+  }
+  return ids;
+}
+
+export async function purgeFilesFromDisk(files: Array<{ id: string; type: string; physicalPath: string }>) {
+  await Promise.all(
+    files.map(async (file) => {
+      if (file.type === 'image') {
+        const versions = await db
+          .select()
+          .from(storageImageVersions)
+          .where(eq(storageImageVersions.fileId, file.id));
+        await Promise.all(versions.map((v) => removeFile(v.physicalPath)));
+        await db.delete(storageImageVersions).where(eq(storageImageVersions.fileId, file.id));
+      } else {
+        await removeFile(file.physicalPath);
+      }
+    }),
+  );
+}
+
+export async function deleteFile(fileId: string): Promise<{ deleted: string }> {
+  const [file] = await db.select().from(storageFiles).where(eq(storageFiles.id, fileId)).limit(1);
+  if (!file) return { deleted: fileId };
+
+  await purgeFilesFromDisk([file]);
+  await db.delete(storageFiles).where(eq(storageFiles.id, fileId));
+
+  return { deleted: fileId };
+}
+
+export async function deleteFolder(folderId: string): Promise<{ deleted: string; filesRemoved: number }> {
+  const folderIds = await collectFolderIds(folderId);
+
+  const files = await db
+    .select()
+    .from(storageFiles)
+    .where(inArray(storageFiles.folderId, folderIds));
+
+  await purgeFilesFromDisk(files);
+
+  if (files.length) {
+    await db.delete(storageFiles).where(inArray(storageFiles.id, files.map((f) => f.id)));
+  }
+
+  await db.delete(storageFolders).where(eq(storageFolders.id, folderId));
+
+  return { deleted: folderId, filesRemoved: files.length };
+}
+
+export async function deleteCompanyStorage(companyId: string): Promise<{ foldersRemoved: number; filesRemoved: number }> {
+  const files = await db
+    .select()
+    .from(storageFiles)
+    .where(eq(storageFiles.companyId, companyId));
+
+  await purgeFilesFromDisk(files);
+
+  if (files.length) {
+    await db.delete(storageFiles).where(eq(storageFiles.companyId, companyId));
+  }
+
+  const folders = await db
+    .select({ id: storageFolders.id })
+    .from(storageFolders)
+    .where(eq(storageFolders.companyId, companyId));
+
+  if (folders.length) {
+    await db.delete(storageFolders).where(eq(storageFolders.companyId, companyId));
+  }
+
+  return { foldersRemoved: folders.length, filesRemoved: files.length };
 }
