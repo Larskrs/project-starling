@@ -1,9 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import Button from '../../components/ui/Button.vue'
-import CreateProductionDialog from './CreateProductionDialog.vue'
 import { Icon } from '@iconify/vue'
+import Button from '../../components/ui/Button.vue'
+import SquircleAvatar from '../../components/ui/SquircleAvatar.vue'
+import CreateProductionDialog from './CreateProductionDialog.vue'
 
 const props = defineProps({
   company: { type: Object, required: true },
@@ -38,11 +39,19 @@ function onCreated(production) {
   productions.value = [production, ...productions.value]
 }
 
+function bannerUrl(p) {
+  return p.bannerImageId ? `/api/storage/${p.bannerImageId}/serve?quality=67` : null
+}
+
+function profileUrl(p) {
+  return p.profileImageId ? `/api/storage/${p.profileImageId}/serve?quality=67` : null
+}
+
 onMounted(load)
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-6">
     <div class="flex items-center justify-between">
       <h2 class="text-lg font-semibold text-foreground">Productions</h2>
       <Button size="sm" @click="dialogOpen = true">New production</Button>
@@ -52,25 +61,48 @@ onMounted(load)
 
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
 
-    <div v-else-if="productions.length === 0" class="rounded-lg border border-dashed border-border py-12 text-center">
+    <div v-else-if="productions.length === 0" class="rounded-xl border border-dashed border-border py-16 text-center">
       <p class="text-sm text-muted-foreground">No productions yet.</p>
       <Button variant="ghost" size="sm" class="mt-2" @click="dialogOpen = true">Create the first</Button>
     </div>
 
-    <ul v-else class="flex flex-col gap-2">
-      <li
+    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative">
+      <div
         v-for="p in productions"
         :key="p.id"
-        class="border border-border rounded-lg flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer"
+        class="group h-64 relative rounded-xl border border-border bg-background overflow-hidden cursor-pointer hover:border-border/80 hover:shadow-sm transition-all"
         @click="openProduction(p)"
       >
-        <div>
-          <p class="text-sm font-medium text-foreground">{{ p.name }}</p>
-          <p class="text-xs text-muted-foreground font-mono">{{ p.slug }}</p>
+        <!-- Banner strip -->
+        <div class="absolute z-0 inset-0 overflow-hidden bg-secondary">
+          <img
+            v-if="bannerUrl(p)"
+            :src="bannerUrl(p)"
+            :alt="p.name"
+            class="absolute inset-0 w-full h-full object-cover"
+          />
+          <!-- Gradient that bleeds the banner into the card body -->
+          <div class="absolute inset-0 bg-gradient-to-b from-transparent via-background/30 to-background" />
         </div>
-        <Icon icon="mdi:arrow-right" class="text-muted-foreground/50" />
-      </li>
-    </ul>
+
+        <!-- Card body -->
+        <div class="z-10 px-4 pb-4 absolute inset-x bottom-0 -mt-4 flex items-center gap-3">
+          <SquircleAvatar :src="profileUrl(p)" :size="52" class="shrink-0 ring-2 ring-background">
+            <span class="text-base font-bold">{{ p.name.charAt(0).toUpperCase() }}</span>
+          </SquircleAvatar>
+
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold text-foreground leading-tight truncate">{{ p.name }}</p>
+            <p class="text-[11px] text-muted-foreground font-mono truncate">{{ p.slug }}</p>
+          </div>
+
+          <Icon
+            icon="mdi:arrow-right"
+            class="shrink-0 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors"
+          />
+        </div>
+      </div>
+    </div>
   </div>
 
   <CreateProductionDialog

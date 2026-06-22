@@ -43,6 +43,13 @@
       "when": 1750636800000,
       "tag": "0005_production_scoped_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1750723200000,
+      "tag": "0006_production_profile_images",
+      "breakpoints": true
     }
   ]
 }

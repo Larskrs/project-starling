@@ -3,6 +3,8 @@ import { ref, computed, provide, onMounted, watch } from 'vue'
 import { useRoute, useRouter, RouterView } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { useAuth } from '../../composables/useAuth'
+import ProductionBanner from '../../components/ui/ProductionBanner.vue'
+import SquircleAvatar from '../../components/ui/SquircleAvatar.vue'
 
 const route  = useRoute()
 const router = useRouter()
@@ -61,6 +63,10 @@ function navigate(id) {
   router.push(`/c/${route.params.cslug}/p/${route.params.pslug}/${id}`)
 }
 
+// ── Images ────────────────────────────────────────────────────────────────────
+const bannerSrc  = computed(() => data.value?.production?.bannerImageId  ? `/api/storage/${data.value.production.bannerImageId}/serve?quality=80`  : null)
+const profileSrc = computed(() => data.value?.production?.profileImageId ? `/api/storage/${data.value.production.profileImageId}/serve?quality=80` : null)
+
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 const crumbs = computed(() => {
   const items = [
@@ -73,11 +79,11 @@ const crumbs = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-screen w-full overflow-hidden bg-background">
+  <div class="flex h-dvh w-full overflow-hidden bg-background">
 
     <!-- Sidebar -->
     <aside
-      class="flex flex-col border-r border-border bg-background transition-[width] duration-200 ease-in-out shrink-0"
+      class="flex flex-col border-r border-border bg-background duration-400 transition-[width] ease-in-out shrink-0"
       :class="collapsed ? 'w-14' : 'w-56'"
     >
       <!-- Logo / collapse toggle -->
@@ -85,16 +91,18 @@ const crumbs = computed(() => {
         class="flex items-center border-b border-border"
         :class="collapsed ? 'justify-center px-0 h-14' : 'justify-between px-3 h-14'"
       >
-        <router-link
-          v-if="!collapsed"
-          :to="`/c/${route.params.cslug}`"
-          class="flex items-center gap-2 min-w-0"
-        >
-          <Icon icon="mdi:star-four-points" class="text-primary shrink-0 text-lg" />
-          <span class="text-sm font-semibold truncate text-foreground">
-            {{ data?.company.name ?? '…' }}
-          </span>
-        </router-link>
+        <Transition name="fade">
+          <router-link
+            v-if="!collapsed"
+            :to="`/c/${route.params.cslug}`"
+            class="flex items-center gap-2 min-w-0"
+          >
+            <Icon icon="mdi:star-four-points" class="text-primary shrink-0 text-lg" />
+            <span class="text-sm font-semibold truncate text-foreground">
+              {{ data?.company.name ?? '…' }}
+            </span>
+          </router-link>
+        </Transition>
 
         <button
           class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
@@ -105,23 +113,30 @@ const crumbs = computed(() => {
         </button>
       </div>
 
-      <!-- Production name -->
-      <div
-        class="border-b border-border overflow-hidden transition-all duration-200"
-        :class="collapsed ? 'px-0 py-3 flex items-center justify-center' : 'px-3 py-3'"
-      >
-        <template v-if="collapsed">
-          <Icon icon="mdi:film" class="text-muted-foreground text-base" />
-        </template>
-        <template v-else>
-          <p class="text-[10px] font-medium uppercase tracking-widest text-muted-foreground mb-0.5">Production</p>
-          <p class="text-sm font-semibold text-foreground truncate">
-            {{ data?.production.name ?? '…' }}
-          </p>
-          <p class="text-[11px] text-muted-foreground font-mono truncate">
-            {{ data?.production.slug ?? '' }}
-          </p>
-        </template>
+      <!-- Production banner + avatar -->
+      <div class="border-b border-border">
+        <!-- Banner collapses via max-height -->
+        <div
+          class="overflow-hidden transition-all duration-200 ease-in-out"
+          :class="collapsed ? 'max-h-0 opacity-0' : 'max-h-20 opacity-100'"
+        >
+          <ProductionBanner :src="bannerSrc" :height="72" />
+        </div>
+
+        <!-- Avatar + name row -->
+        <div
+          class="flex items-center gap-2.5 px-2.5 py-2.5 overflow-hidden"
+          :class="collapsed ? 'justify-center' : ''"
+        >
+          <SquircleAvatar :src="profileSrc" :size="36" class="shrink-0">
+            <Icon icon="mdi:film" class="text-sm" />
+          </SquircleAvatar>
+          <Transition name="fade">
+            <p v-if="!collapsed" class="text-sm font-semibold text-foreground truncate leading-tight min-w-0 flex-1">
+              {{ data?.production.name ?? '…' }}
+            </p>
+          </Transition>
+        </div>
       </div>
 
       <!-- Nav -->
@@ -140,7 +155,9 @@ const crumbs = computed(() => {
           @click="navigate(item.id)"
         >
           <Icon :icon="item.icon" class="text-xl shrink-0" :class="{'size-6': collapsed}" />
-          <span v-if="!collapsed" class="truncate text-sm">{{ item.label }}</span>
+          <Transition name="fade">
+            <span v-if="!collapsed" class="truncate text-sm">{{ item.label }}</span>
+          </Transition>
         </button>
       </nav>
 
@@ -156,21 +173,23 @@ const crumbs = computed(() => {
           >
             {{ (user?.first_name ?? user?.name ?? '?').charAt(0).toUpperCase() }}
           </div>
-          <template v-if="!collapsed">
-            <div class="flex-1 min-w-0">
-              <p class="text-xs font-medium text-foreground truncate">
-                {{ user?.first_name ? `${user.first_name} ${user.last_name ?? ''}`.trim() : user?.name }}
-              </p>
-              <p class="text-[11px] text-muted-foreground truncate">{{ user?.email }}</p>
+          <Transition name="fade">
+            <div v-if="!collapsed" class="flex-1 min-w-0 flex items-center gap-1">
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-medium text-foreground truncate">
+                  {{ user?.first_name ? `${user.first_name} ${user.last_name ?? ''}`.trim() : user?.name }}
+                </p>
+                <p class="text-[11px] text-muted-foreground truncate">{{ user?.email }}</p>
+              </div>
+              <button
+                class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                title="Log out"
+                @click="logout"
+              >
+                <Icon icon="mdi:logout" class="text-base" />
+              </button>
             </div>
-            <button
-              class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-              title="Log out"
-              @click="logout"
-            >
-              <Icon icon="mdi:logout" class="text-base" />
-            </button>
-          </template>
+          </Transition>
         </div>
       </div>
     </aside>
@@ -205,3 +224,17 @@ const crumbs = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Text fades out immediately, fades in after the sidebar has finished widening */
+.fade-leave-active {
+  transition: opacity 120ms ease;
+}
+.fade-enter-active {
+  transition: opacity 80ms ease 130ms;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

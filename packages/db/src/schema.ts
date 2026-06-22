@@ -29,11 +29,13 @@ export const companies = pgTable('companies', {
 });
 
 export const productions = pgTable('productions', {
-  id:        uuid('id').primaryKey().defaultRandom(),
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  name:      text('name').notNull(),
-  slug:      text('slug').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  id:             uuid('id').primaryKey().defaultRandom(),
+  companyId:      uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  name:           text('name').notNull(),
+  slug:           text('slug').notNull(),
+  profileImageId: uuid('profile_image_id'),
+  bannerImageId:  uuid('banner_image_id'),
+  createdAt:      timestamp('created_at').notNull().defaultNow(),
 }, (t) => [uniqueIndex('prod_slug_uq').on(t.companyId, t.slug)]);
 
 export const storageFileTypeEnum = pgEnum('storage_file_type', ['image', 'audio']);
@@ -56,6 +58,7 @@ export const storageFiles = pgTable('storage_files', {
   size:         integer('size').notNull(),
   type:         storageFileTypeEnum('type').notNull(),
   physicalPath: text('physical_path').notNull(),
+  hidden:       boolean('hidden').notNull().default(false),
   createdAt:    timestamp('created_at').notNull().defaultNow(),
 });
 

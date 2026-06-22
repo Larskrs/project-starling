@@ -1,5 +1,5 @@
 import z from 'zod';
-import { eq, and, isNull, getTableColumns } from 'drizzle-orm';
+import { eq, and, isNull, ne, getTableColumns } from 'drizzle-orm';
 import { db, storageFiles, storageFolders, storageImageVersions, productions } from '@starling/db';
 import { defineEventHandler, getValidatedQuery, requireAuth } from '../../lib/handler.js';
 import { createError } from '../../lib/handler.js';
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
 
     db.select({ id: storageFiles.id, folderId: storageFiles.folderId })
       .from(storageFiles)
-      .where(eq(storageFiles.productionId, pid)),
+      .where(and(eq(storageFiles.productionId, pid), ne(storageFiles.hidden, true))),
 
     db.select({
       id:           storageFiles.id,
@@ -48,6 +48,7 @@ export default defineEventHandler(async (event) => {
       .where(
         and(
           eq(storageFiles.productionId, pid),
+          ne(storageFiles.hidden, true),
           folder_id ? eq(storageFiles.folderId, folder_id) : isNull(storageFiles.folderId),
         ),
       ),
