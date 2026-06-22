@@ -41,18 +41,47 @@ export default defineEventHandler(async (event) => {
   }
 
   const mime = file.type === 'image' ? 'image/webp' : file.mimeType;
+  const rangeHeader = event.req.headers['range'];
 
-  event.res.statusCode = 200;
   event.res.setHeader('Content-Type', mime);
-  event.res.setHeader('Content-Length', fileSize);
+  event.res.setHeader('Accept-Ranges', 'bytes');
   event.res.setHeader('Cache-Control', 'private, max-age=3600');
 
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(physicalPath);
-    stream.pipe(event.res, { end: false });
-    stream.on('end', resolve);
-    stream.on('error', reject);
-  });
+  if (rangeHeader) {
+    const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+    if (!match) throw createError({ statusCode: 416, message: 'Invalid Range header' });
+
+    const start = match[1] ? parseInt(match[1], 10) : 0;
+    const end = match[2] ? Math.min(parseInt(match[2], 10), fileSize - 1) : fileSize - 1;
+
+    if (start > end || start >= fileSize) {
+      event.res.statusCode = 416;
+      event.res.setHeader('Content-Range', `bytes */${fileSize}`);
+      event.res.end();
+      return;
+    }
+
+    event.res.statusCode = 206;
+    event.res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+    event.res.setHeader('Content-Length', end - start + 1);
+
+    await new Promise<void>((resolve, reject) => {
+      const stream = createReadStream(physicalPath, { start, end });
+      stream.pipe(event.res, { end: false });
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+  } else {
+    event.res.statusCode = 200;
+    event.res.setHeader('Content-Length', fileSize);
+
+    await new Promise<void>((resolve, reject) => {
+      const stream = createReadStream(physicalPath);
+      stream.pipe(event.res, { end: false });
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+  }
 
   event.res.end();
 });
