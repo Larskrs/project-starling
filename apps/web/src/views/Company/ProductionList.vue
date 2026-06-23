@@ -70,7 +70,7 @@ onMounted(load)
       <div
         v-for="p in productions"
         :key="p.id"
-        class="group h-64 relative rounded-xl border border-border bg-background overflow-hidden cursor-pointer hover:border-border/80 hover:shadow-sm transition-all"
+        class="group h-64 relative rounded-2xl border border-border bg-background overflow-hidden cursor-pointer hover:border-border/80 hover:shadow-sm transition-all"
         @click="openProduction(p)"
       >
         <!-- Banner strip -->
@@ -79,26 +79,25 @@ onMounted(load)
             v-if="bannerUrl(p)"
             :src="bannerUrl(p)"
             :alt="p.name"
-            class="absolute inset-0 w-full h-full object-cover"
+            class="absolute opacity-75 dark:opacity-100 inset-0 w-full h-full object-cover"
           />
           <!-- Gradient that bleeds the banner into the card body -->
-          <div class="absolute inset-0 bg-gradient-to-b from-transparent via-background/30 to-background" />
+          <div class=" absolute inset-0 bg-gradient-to-b from-transparent via-background/25 to-background/50" />
         </div>
 
         <!-- Card body -->
-        <div class="z-10 px-4 pb-4 absolute inset-x bottom-0 -mt-4 flex items-center gap-3">
-          <SquircleAvatar :src="profileUrl(p)" :size="52" class="shrink-0 ring-2 ring-background">
+        <div class="bg-background border transition-all duration-500 z-10 p-2 rounded-xl absolute inset-x-2 bottom-2 flex items-center gap-3">
+          <SquircleAvatar :src="profileUrl(p)" :size="52" class="shrink-0">
             <span class="text-base font-bold">{{ p.name.charAt(0).toUpperCase() }}</span>
           </SquircleAvatar>
 
           <div class="min-w-0 flex-1">
-            <p class="text-sm font-semibold text-foreground leading-tight truncate">{{ p.name }}</p>
-            <p class="text-[11px] text-muted-foreground font-mono truncate">{{ p.slug }}</p>
+            <p class="text-base font-semibold text-foreground leading-tight truncate">{{ p.name }}</p>
           </div>
 
           <Icon
             icon="mdi:arrow-right"
-            class="shrink-0 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors"
+            class="absolute group-hover:bg-foreground/5 rounded-lg size-10 p-2 group-hover:translate-x-1 duration-150 right-4 shrink-0 text-xl text-muted-foreground group-hover:text-foreground transition-all"
           />
         </div>
       </div>

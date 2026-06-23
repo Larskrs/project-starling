@@ -149,7 +149,7 @@ async function submitCreate() {
             class="flex items-center gap-3 px-3 py-2 rounded-md text-left hover:bg-muted transition-colors"
             @click="enterFolder(folder)"
           >
-            <Icon icon="mdi:folder" class="text-blue-400 text-lg shrink-0" />
+            <Icon icon="mdi:folder" class="text-primary text-lg shrink-0" />
             <span class="flex-1 truncate text-foreground text-sm">{{ folder.name }}</span>
             <Icon icon="mdi:chevron-right" class="text-muted-foreground/40 text-base shrink-0" />
           </button>

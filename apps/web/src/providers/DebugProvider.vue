@@ -2,12 +2,14 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { provideDebugMenu } from './useDebugProvider'
+import { useColorMode } from '../composables/useColorMode.js'
 
 const props = withDefaults(defineProps<{ triggerKey?: string }>(), {
   triggerKey: 'd',
 })
 
 const { visible, toggle } = provideDebugMenu()
+const { toggle: toggleColorMode } = useColorMode()
 const router = useRouter()
 const route = useRoute()
 
@@ -56,9 +58,16 @@ function onKeydown(e: KeyboardEvent) {
     }
   }
 
-  if (e.key !== props.triggerKey) return
   if (e.metaKey || e.ctrlKey || e.altKey) return
-  if (!isEditableTarget(e.target) || visible.value) {
+  if (isEditableTarget(e.target)) return
+
+  if (e.key === 't') {
+    e.preventDefault()
+    toggleColorMode()
+    return
+  }
+
+  if (e.key === props.triggerKey) {
     e.preventDefault()
     toggle()
   }

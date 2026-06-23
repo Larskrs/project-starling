@@ -11,7 +11,7 @@ const props = defineProps({
   rootFolderId: { type: String, default: null },
 })
 
-const emit = defineEmits(['navigate', 'select', 'deleted', 'crumbs-change', 'nav-change'])
+const emit = defineEmits(['navigate', 'preview', 'deleted', 'crumbs-change', 'nav-change'])
 
 provide('storage-production-id', props.productionId)
 
@@ -154,7 +154,7 @@ const breadcrumbItems = computed(() => [
 watch(breadcrumbItems, (items) => emit('crumbs-change', items), { immediate: true })
 watch([canGoBack, canGoForward], ([back, forward]) => emit('nav-change', { canGoBack: back, canGoForward: forward }), { immediate: true })
 
-defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, goForward, getFileIds: () => files.value.map(f => f.id) })
+defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, goForward, getFileIds: () => files.value.map(f => f.id), getFiles: () => files.value })
 </script>
 
 <template>
@@ -203,7 +203,7 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
             <FileImage
               v-if="file.type === 'image'"
               :file="file"
-              @select="emit('select', file)"
+              @select="emit('preview', { file, files })"
               @delete="deleteFile"
               @renamed="onFileRenamed"
               @moved="onFileMoved"
@@ -211,7 +211,7 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
             <FileAudio
               v-else-if="file.type === 'audio'"
               :file="file"
-              @select="emit('select', file)"
+              @select="emit('preview', { file, files })"
               @delete="deleteFile"
               @renamed="onFileRenamed"
               @moved="onFileMoved"
@@ -219,7 +219,7 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
             <FileDefault
               v-else
               :file="file"
-              @select="emit('select', file)"
+              @select="emit('preview', { file, files })"
               @delete="deleteFile"
               @renamed="onFileRenamed"
               @moved="onFileMoved"

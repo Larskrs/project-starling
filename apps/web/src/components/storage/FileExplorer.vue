@@ -1,7 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
-import FileList           from './FileList.vue'
+import FileList              from './FileList.vue'
+import FilePreviewOverlay    from './FilePreviewOverlay.vue'
 import FileBreadcrumb     from './FileBreadcrumb.vue'
 import DropUpload         from './DropUpload.vue'
 import SelectFolderDialog from './SelectFolderDialog.vue'
@@ -18,6 +19,15 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select'])
+
+// ── Preview ────────────────────────────────────────────────────────────────
+const previewFile  = ref(null)
+const previewFiles = ref([])
+
+function openPreview({ file, files }) {
+  previewFile.value  = file
+  previewFiles.value = files
+}
 
 const ACCEPTED = 'image/jpeg,image/png,image/webp,image/gif,image/avif,audio/mpeg,audio/wav,audio/ogg,audio/flac,audio/aac,audio/x-m4a'
 
@@ -132,7 +142,7 @@ async function moveSelected(folderId) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="relative flex flex-col gap-4">
 
     <!-- Header -->
     <div class="flex flex-col lg:flex-row items-start justify-start lg:justify-between gap-2">
@@ -239,9 +249,20 @@ async function moveSelected(folderId) {
         @navigate="onNavigate"
         @crumbs-change="fileCrumbs = $event"
         @nav-change="navState = $event"
-        @select="emit('select', $event)"
+        @preview="openPreview($event)"
       />
     </DropUpload>
+
+    <!-- File preview overlay -->
+    <Transition name="preview">
+      <FilePreviewOverlay
+        v-if="previewFile"
+        :file="previewFile"
+        :files="previewFiles"
+        @close="previewFile = null"
+        @navigate="previewFile = $event"
+      />
+    </Transition>
 
     <!-- Create folder dialog -->
     <Dialog :open="createFolderOpen" class="max-w-sm" @close="createFolderOpen = false">
@@ -297,4 +318,7 @@ async function moveSelected(folderId) {
 
 .sel-bar-enter-active, .sel-bar-leave-active { transition: opacity 0.15s, transform 0.15s; }
 .sel-bar-enter-from,   .sel-bar-leave-to     { opacity: 0; transform: translateY(-6px); }
+
+.preview-enter-active, .preview-leave-active { transition: opacity 0.15s; }
+.preview-enter-from,   .preview-leave-to     { opacity: 0; }
 </style>

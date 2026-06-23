@@ -2,6 +2,7 @@
 import { ref, computed, inject, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useContextMenu } from '../../composables/useContextMenu.js'
+import { useColorMode } from '../../composables/useColorMode.js'
 import ContextMenuRoot      from '../ui/ContextMenuRoot.vue'
 import ContextMenuItem      from '../ui/ContextMenuItem.vue'
 import ContextMenuSub       from '../ui/ContextMenuSub.vue'
@@ -16,6 +17,7 @@ import Label                from '../ui/Label.vue'
 const props = defineProps({ folder: { type: Object, required: true } })
 const emit  = defineEmits(['open', 'hue-change', 'deleted', 'renamed'])
 const menu  = useContextMenu()
+const { isDark } = useColorMode()
 
 // ── File peek previews ────────────────────────────────────────────────────────
 const productionId = inject('storage-production-id', null)
@@ -140,11 +142,15 @@ function swatchStyle(hue) {
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
     @contextmenu.prevent="menu.open($event)"
-    :style="folder.hue != null ? {
+    :style="folder.hue != null ? (isDark ? {
       '--bg':    `oklch(0.40 0.15 ${folder.hue} / 0.3)`,
       '--hover': `oklch(0.50 0.15 ${folder.hue} / 0.5)`,
       '--icon':  `oklch(0.72 0.20 ${folder.hue})`,
-    } : null"
+    } : {
+      '--bg':    `oklch(0.93 0.06 ${folder.hue} / 0.6)`,
+      '--hover': `oklch(0.88 0.09 ${folder.hue} / 0.8)`,
+      '--icon':  `oklch(0.52 0.18 ${folder.hue})`,
+    }) : null"
   >
     <!-- File peek previews -->
     <Transition name="peek">
@@ -180,19 +186,19 @@ function swatchStyle(hue) {
       <Icon
         icon="mdi:folder"
         class="text-xl shrink-0"
-        :class="folder.hue == null ? 'text-blue-400' : ''"
+        :class="folder.hue == null ? 'text-primary' : ''"
         :style="folder.hue != null ? { color: 'var(--icon)' } : null"
       />
       <span class="text-base font-medium text-foreground truncate">{{ folder.name }}</span>
     </button>
 
     <button
-      class="group shrink-0 mx-1.5 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-background/50 dark:hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      :class="{ 'bg-background/50 text-foreground': menu.isOpen.value }"
+      class="group shrink-0 mx-1.5 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      :class="{ 'bg-foreground/10 text-foreground': menu.isOpen.value }"
       aria-label="Folder options"
       @click.stop="menu.toggle($event)"
     >
-      <Icon icon="mdi:dots-horizontal" class="text-white/50 group-hover:text-white/75 size-5" />
+      <Icon icon="mdi:dots-horizontal" class="size-5" />
     </button>
   </div>
 

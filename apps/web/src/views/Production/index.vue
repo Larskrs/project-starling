@@ -3,12 +3,14 @@ import { ref, computed, provide, onMounted, watch } from 'vue'
 import { useRoute, useRouter, RouterView } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { useAuth } from '../../composables/useAuth'
+import { useColorMode } from '../../composables/useColorMode'
 import ProductionBanner from '../../components/ui/ProductionBanner.vue'
 import SquircleAvatar from '../../components/ui/SquircleAvatar.vue'
 
 const route  = useRoute()
 const router = useRouter()
 const { user, logout, fetchUser } = useAuth()
+const { isDark, toggle: toggleColorMode } = useColorMode()
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 const data    = ref(null)
@@ -46,7 +48,9 @@ watch(
 provide('production-data', data)
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
-const collapsed = ref(false)
+const SIDEBAR_KEY = 'starling-sidebar-collapsed'
+const collapsed = ref(localStorage.getItem(SIDEBAR_KEY) === 'true')
+watch(collapsed, v => localStorage.setItem(SIDEBAR_KEY, String(v)))
 
 const NAV = [
   { id: 'files',    label: 'Files',    icon: 'mdi:folder-outline' },
@@ -120,8 +124,8 @@ const crumbs = computed(() => {
           class="inset-0 h-full absolute overflow-hidden transition-all duration-200 ease-in-out"
           :class="collapsed ? 'max-h-0 opacity-0' : 'max-h-20 opacity-100'"
         >
-          <ProductionBanner :src="bannerSrc" class="h-full"/>
-          <div class="z-0 absolute inset-0 bg-gradient-to-l from-background/25 via-background/75 via-40% to-background" />
+          <ProductionBanner :src="bannerSrc" class="h-full opacity-50 dark:opacity-100"/>
+          <div class="z-0 absolute inset-0 bg-gradient-to-l from-background/50 via-background/75 via-40% to-background" />
         </div>
 
         <!-- Avatar + name row -->
@@ -182,6 +186,13 @@ const crumbs = computed(() => {
                 </p>
                 <p class="text-[11px] text-muted-foreground truncate">{{ user?.email }}</p>
               </div>
+              <button
+                class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+                @click="toggleColorMode"
+              >
+                <Icon :icon="isDark ? 'mdi:weather-sunny' : 'mdi:weather-night'" class="text-base" />
+              </button>
               <button
                 class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
                 title="Log out"
