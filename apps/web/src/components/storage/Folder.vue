@@ -143,12 +143,12 @@ function swatchStyle(hue) {
     @mouseleave="isHovered = false"
     @contextmenu.prevent="menu.open($event)"
     :style="folder.hue != null ? (isDark ? {
-      '--bg':    `oklch(0.40 0.15 ${folder.hue} / 0.3)`,
-      '--hover': `oklch(0.50 0.15 ${folder.hue} / 0.5)`,
+      '--bg':    `oklch(0.58 0.25 ${folder.hue} / 0.3)`,
+      '--hover': `oklch(0.64 0.25 ${folder.hue} / 0.5)`,
       '--icon':  `oklch(0.72 0.20 ${folder.hue})`,
     } : {
-      '--bg':    `oklch(0.93 0.06 ${folder.hue} / 0.6)`,
-      '--hover': `oklch(0.88 0.09 ${folder.hue} / 0.8)`,
+      '--bg':    `oklch(0.88 0.07 ${folder.hue} / 0.6)`,
+      '--hover': `oklch(0.85 0.09 ${folder.hue} / 0.8)`,
       '--icon':  `oklch(0.52 0.18 ${folder.hue})`,
     }) : null"
   >

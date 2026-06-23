@@ -67,26 +67,25 @@ onMounted(load)
     </div>
 
     <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative">
+
       <div
         v-for="p in productions"
         :key="p.id"
-        class="group h-64 relative rounded-2xl border border-border bg-background overflow-hidden cursor-pointer hover:border-border/80 hover:shadow-sm transition-all"
+        class="group flex flex-col border border-border/50 hover:border-border shadow-xs hover:shadow-lg transition-all duration-500 rounded-xl relative bg-background cursor-pointer"
         @click="openProduction(p)"
       >
         <!-- Banner strip -->
-        <div class="absolute z-0 inset-0 overflow-hidden bg-secondary">
+        <div class="h-48 relative p-3 pb-0 z-0 overflow-hidden">
           <img
             v-if="bannerUrl(p)"
             :src="bannerUrl(p)"
             :alt="p.name"
-            class="absolute opacity-75 dark:opacity-100 inset-0 w-full h-full object-cover"
+            class="opacity-75 h-full w-full rounded-lg dark:opacity-100 inset-0 object-cover"
           />
-          <!-- Gradient that bleeds the banner into the card body -->
-          <div class=" absolute inset-0 bg-gradient-to-b from-transparent via-background/25 to-background/50" />
         </div>
 
         <!-- Card body -->
-        <div class="bg-background border transition-all duration-500 z-10 p-2 rounded-xl absolute inset-x-2 bottom-2 flex items-center gap-3">
+        <div class="z-1 bg-background p-3 rounded-b-xl flex items-center gap-3">
           <SquircleAvatar :src="profileUrl(p)" :size="52" class="shrink-0">
             <span class="text-base font-bold">{{ p.name.charAt(0).toUpperCase() }}</span>
           </SquircleAvatar>
