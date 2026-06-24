@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { companies, db } from '@starling/db';
+import { companies, companyMembers, db } from '@starling/db';
 import { defineEventHandler, readValidatedBody, ApiError, requireAuth } from '../../lib/handler.js';
 
 const schema = z.object({
@@ -9,7 +9,7 @@ const schema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event);
+  const auth = await requireAuth(event);
 
   const { name, slug } = await readValidatedBody(event, schema);
 
@@ -17,5 +17,6 @@ export default defineEventHandler(async (event) => {
   if (existing) throw new ApiError(409, 'A company with that slug already exists');
 
   const [company] = await db.insert(companies).values({ name, slug }).returning();
+  await db.insert(companyMembers).values({ companyId: company.id, userId: auth.userId, role: 'owner' });
   return { company };
 });
