@@ -1,6 +1,8 @@
-import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
+export const companyRoleEnum = pgEnum('company_role', ['owner', 'admin', 'member']);
 
 export const users = pgTable('users', {
   id:              uuid('id').primaryKey().defaultRandom(),
@@ -70,3 +72,28 @@ export const storageImageVersions = pgTable('storage_image_versions', {
   size:         integer('size').notNull(),
   createdAt:    timestamp('created_at').notNull().defaultNow(),
 });
+
+export const productionRoles = pgTable('production_roles', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  productionId: uuid('production_id').notNull().references(() => productions.id, { onDelete: 'cascade' }),
+  name:         text('name').notNull(),
+  hue:          integer('hue').notNull(),                 // OKLCH hue 0–360
+  permissions: bigint('permissions', { mode: 'bigint' }).notNull().default(sql`0`),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+}, (t) => [uniqueIndex('role_name_uq').on(t.productionId, t.name)]);
+
+export const productionMembers = pgTable('production_members', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  productionId: uuid('production_id').notNull().references(() => productions.id, { onDelete: 'cascade' }),
+  userId:       uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  roleId:       uuid('role_id').references(() => productionRoles.id, { onDelete: 'set null' }),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+}, (t) => [uniqueIndex('prod_member_uq').on(t.productionId, t.userId)]);
+
+export const companyMembers = pgTable('company_members', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  companyId:    uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  userId:       uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role:         companyRoleEnum('role').notNull().default('member'),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+}, (t) => [uniqueIndex('company_member_uq').on(t.companyId, t.userId)]);

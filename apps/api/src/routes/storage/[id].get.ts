@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm';
 import { db, storageFiles, storageImageVersions } from '@starling/db';
-import { defineEventHandler, getRouterParam, createError, requireAuth } from '../../lib/handler.js';
+import { defineEventHandler, getRouterParam, createError } from '../../lib/handler.js';
+import { requireProductionAccess, requirePermission } from '../../lib/production.js';
+import { Permission } from '@starling/auth/permissions';
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event);
-
   const id = getRouterParam(event, 'id');
   if (!id) throw createError({ statusCode: 400, message: 'Missing file id' });
 
@@ -19,6 +19,9 @@ export default defineEventHandler(async (event) => {
     createdAt:    storageFiles.createdAt,
   }).from(storageFiles).where(eq(storageFiles.id, id)).limit(1);
   if (!file) throw createError({ statusCode: 404, message: 'File not found' });
+
+  const ctx = await requireProductionAccess(event, { productionId: file.productionId });
+  await requirePermission(ctx, Permission.VIEW);
 
   const versions = file.type === 'image'
     ? await db.select({

@@ -5,50 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1781704393599,
-      "tag": "0000_bright_hemingway",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1781730685951,
-      "tag": "0001_thick_stryfe",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1781872756307,
-      "tag": "0002_tense_wraith",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1781960000000,
-      "tag": "0003_image_version_quality",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1750499200000,
-      "tag": "0004_folder_hue",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1750636800000,
-      "tag": "0005_production_scoped_storage",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1750723200000,
-      "tag": "0006_production_profile_images",
+      "when": 1782337757986,
+      "tag": "0000_right_trauma",
       "breakpoints": true
     }
   ]

@@ -5,7 +5,7 @@ import { Icon } from '@iconify/vue'
 import { useAuth } from '../../composables/useAuth'
 import { useColorMode } from '../../composables/useColorMode'
 import ProductionBanner from '../../components/ui/ProductionBanner.vue'
-import SquircleAvatar from '../../components/ui/SquircleAvatar.vue'
+import Avatar from '../../components/ui/Avatar.vue'
 
 const route  = useRoute()
 const router = useRouter()
@@ -23,6 +23,7 @@ async function load(cslug, pslug) {
   try {
     const res = await fetch(`/api/company/${cslug}/production/${pslug}`, { credentials: 'include' })
     if (res.status === 404) { error.value = 'Production not found'; return }
+    if (res.status === 403) { error.value = 'You don\'t have access to this production'; return }
     if (!res.ok) throw new Error()
     data.value = await res.json()
   } catch {
@@ -56,6 +57,7 @@ const NAV = [
   { id: 'files',    label: 'Files',    icon: 'mdi:folder-outline' },
   { id: 'settings', label: 'Settings', icon: 'mdi:cog-outline' },
   { id: 'members',  label: 'Members',  icon: 'mdi:account-group-outline' },
+  { id: 'roles',    label: 'Roles',    icon: 'mdi:shield-account-outline' },
 ]
 
 const activeSection = computed(() => {
@@ -133,9 +135,9 @@ const crumbs = computed(() => {
           class="z-1 absolute inset-x-0 bottom-0 flex items-center gap-2.5 px-2.5 py-2.5 overflow-hidden"
           :class="collapsed ? 'justify-center' : ''"
         >
-          <SquircleAvatar :src="profileSrc" :size="36" class="shrink-0">
+          <Avatar :src="profileSrc" :size="36" class="shrink-0">
             <Icon icon="mdi:film" class="text-sm" />
-          </SquircleAvatar>
+          </Avatar>
           <Transition name="fade">
             <p v-if="!collapsed" class="text-sm font-semibold text-foreground truncate leading-tight min-w-0 flex-1">
               {{ data?.production.name ?? '…' }}
@@ -169,7 +171,7 @@ const crumbs = computed(() => {
       <!-- User -->
       <div class="p-2">
         <div
-          class="bg-secondary/25 rounded-xl flex items-center gap-2.5 px-2 py-3"
+          class="bg-card rounded-xl flex items-center gap-2.5 px-2 py-3"
           :class="collapsed ? 'justify-center' : ''"
         >
           <div

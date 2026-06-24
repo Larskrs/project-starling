@@ -2,8 +2,9 @@
 import { inject, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import SquircleAvatar from '../../components/ui/SquircleAvatar.vue'
+import Avatar from '../../components/ui/Avatar.vue'
 import ProductionBanner from '../../components/ui/ProductionBanner.vue'
+import ImageCropper from '../../components/ui/ImageCropper.vue'
 import Button from '../../components/ui/Button.vue'
 import Input from '../../components/ui/Input.vue'
 import Label from '../../components/ui/Label.vue'
@@ -96,8 +97,34 @@ async function uploadImage(slot, file) {
   }
 }
 
-function onProfilePick(e) { const f = e.target.files?.[0]; if (f) uploadImage('profile', f); e.target.value = '' }
-function onBannerPick(e)  { const f = e.target.files?.[0]; if (f) uploadImage('banner',  f); e.target.value = '' }
+// ── Crop flow ─────────────────────────────────────────────────────────────────
+
+const cropFile = ref(null)
+const cropSlot = ref('')
+
+function onProfilePick(e) {
+  const f = e.target.files?.[0]
+  if (f) { cropFile.value = f; cropSlot.value = 'profile' }
+  e.target.value = ''
+}
+
+function onBannerPick(e) {
+  const f = e.target.files?.[0]
+  if (f) { cropFile.value = f; cropSlot.value = 'banner' }
+  e.target.value = ''
+}
+
+function onCropped(blob) {
+  const file = new File([blob], 'image.jpg', { type: 'image/jpeg' })
+  uploadImage(cropSlot.value, file)
+  cropFile.value = null
+  cropSlot.value = ''
+}
+
+function onCropCancel() {
+  cropFile.value = null
+  cropSlot.value = ''
+}
 
 const nameChanged = computed(() =>
   nameInput.value.trim() !== '' && nameInput.value !== data.value?.production?.name,
@@ -111,20 +138,24 @@ const nameChanged = computed(() =>
     <div class="relative items-center">
 
       <!-- Avatar -->
-      <label class="absolute z-10 left-4 bottom-4 size-32 aspect-square cursor-pointer group">
-        <SquircleAvatar :src="profileSrc" />
-        <div class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/45 transition-colors rounded-2xl">
-          <Icon
-            :icon="profileUploading ? 'mdi:loading' : 'mdi:camera-outline'"
-            :class="{ 'animate-spin': profileUploading }"
-            class="text-white text-sm opacity-0 group-hover:opacity-100 transition-opacity"
-          />
+      <label class="absolute z-10 left-4 bottom-4 size-32 cursor-pointer group">
+        <div class="relative w-full h-full">
+          <Avatar :src="profileSrc" class="w-full h-full rounded-2xl ring-2 ring-white">
+            <Icon icon="mdi:image-outline" class="size-12 text-muted-foreground/75" />
+          </Avatar>
+          <div class="absolute inset-0 rounded-2xl flex items-center justify-center bg-black/0 group-hover:bg-black/45 transition-colors">
+            <Icon
+              :icon="profileUploading ? 'mdi:loading' : 'mdi:camera-outline'"
+              :class="{ 'animate-spin': profileUploading }"
+              class="text-white text-sm opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+          </div>
         </div>
         <input type="file" accept="image/*" class="sr-only" @change="onProfilePick" />
       </label>
 
       <!-- Banner -->
-      <label class="relative h-60 cursor-pointer group overflow-hidden rounded-xl block">
+      <label class="relative h-60 cursor-pointer group overflow-hidden rounded-2xl block">
         <ProductionBanner :src="bannerSrc" class="h-full w-full object-cover" />
         <div class="absolute inset-0 flex items-center justify-center transition-colors bg-black/0 group-hover:bg-black/25">
           <div class="flex items-center gap-1.5 bg-black/60 text-white text-xs px-2.5 py-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
@@ -139,6 +170,14 @@ const nameChanged = computed(() =>
     </div>
 
     <p v-if="profileError" class="text-xs text-destructive">{{ profileError }}</p>
+
+    <ImageCropper
+      :file="cropFile"
+      :aspect-ratio="cropSlot === 'banner' ? 3 : 1"
+      :max-output="cropSlot === 'banner' ? 1800 : 600"
+      @crop="onCropped"
+      @cancel="onCropCancel"
+    />
 
     <div class="border-t border-border" />
 

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import DefaultLayout from './layouts/DefaultLayout.vue'
 import DebugProvider from './providers/DebugProvider.vue'
+import Toast from './components/ui/Toast.vue'
 
 const route = useRoute()
 
@@ -22,5 +23,6 @@ const layout = computed(() => {
     <component :is="layout">
       <RouterView />
     </component>
+    <Toast />
   </DebugProvider>
 </template>

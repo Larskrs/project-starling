@@ -23,8 +23,11 @@ const router = createRouter({
         { path: 'files',    component: () => import('../views/Production/FilesView.vue') },
         { path: 'settings', component: () => import('../views/Production/SettingsView.vue') },
         { path: 'members',  component: () => import('../views/Production/MembersView.vue') },
+        { path: 'roles',    component: () => import('../views/Production/RolesView.vue') },
       ],
     },
+
+    { path: '/:pathMatch(.*)*', component: () => import('../views/NotFoundView.vue'), meta: { layout: EmptyLayout } },
   ],
 })
 

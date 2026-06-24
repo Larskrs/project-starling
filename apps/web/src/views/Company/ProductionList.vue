@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Button from '../../components/ui/Button.vue'
-import SquircleAvatar from '../../components/ui/SquircleAvatar.vue'
+import Avatar from '../../components/ui/Avatar.vue'
 import CreateProductionDialog from './CreateProductionDialog.vue'
 
 const props = defineProps({
@@ -86,9 +86,9 @@ onMounted(load)
 
         <!-- Card body -->
         <div class="z-1 p-3 rounded-b-xl flex items-center gap-3">
-          <SquircleAvatar :src="profileUrl(p)" :size="52" class="shrink-0">
+          <Avatar :src="profileUrl(p)" :size="52" class="shrink-0">
             <span class="text-base font-bold">{{ p.name.charAt(0).toUpperCase() }}</span>
-          </SquircleAvatar>
+          </Avatar>
 
           <div class="min-w-0 flex-1">
             <p class="text-base font-semibold text-foreground leading-tight truncate">{{ p.name }}</p>

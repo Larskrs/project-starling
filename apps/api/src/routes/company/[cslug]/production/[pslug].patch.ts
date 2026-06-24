@@ -1,7 +1,9 @@
 import z from 'zod';
-import { eq, and } from 'drizzle-orm';
-import { db, companies, productions } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError, requireAuth } from '../../../../lib/handler.js';
+import { eq } from 'drizzle-orm';
+import { db, productions } from '@starling/db';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../../../lib/handler.js';
+import { requireProductionAccess, requirePermission } from '../../../../lib/production.js';
+import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -9,21 +11,14 @@ const bodySchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event);
-
   const cslug = getRouterParam(event, 'cslug');
   const pslug = getRouterParam(event, 'pslug');
   if (!cslug || !pslug) throw createError({ statusCode: 400, message: 'Missing slugs' });
 
-  const [company] = await db.select({ id: companies.id }).from(companies).where(eq(companies.slug, cslug)).limit(1);
-  if (!company) throw createError({ statusCode: 404, message: 'Company not found' });
+  const ctx = await requireProductionAccess(event, { cslug, pslug });
+  await requirePermission(ctx, Permission.ADMINISTRATOR);
 
-  const [production] = await db.select()
-    .from(productions)
-    .where(and(eq(productions.companyId, company.id), eq(productions.slug, pslug)))
-    .limit(1);
-  if (!production) throw createError({ statusCode: 404, message: 'Production not found' });
-
+  const { production } = ctx;
   const body = await readValidatedBody(event, bodySchema);
 
   const update: Record<string, unknown> = {};

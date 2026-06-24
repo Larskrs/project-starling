@@ -1,8 +1,9 @@
 import z from 'zod';
 import { eq, and, isNull, ne, getTableColumns } from 'drizzle-orm';
-import { db, storageFiles, storageFolders, storageImageVersions, productions } from '@starling/db';
-import { defineEventHandler, getValidatedQuery, requireAuth } from '../../lib/handler.js';
-import { createError } from '../../lib/handler.js';
+import { db, storageFiles, storageFolders, storageImageVersions } from '@starling/db';
+import { defineEventHandler, getValidatedQuery } from '../../lib/handler.js';
+import { requireProductionAccess, requirePermission } from '../../lib/production.js';
+import { Permission } from '@starling/auth/permissions';
 
 const querySchema = z.object({
   pid:       z.uuid(),
@@ -10,12 +11,12 @@ const querySchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event);
-
   const { pid, folder_id } = getValidatedQuery(event, querySchema);
 
-  const [production] = await db.select({ id: productions.id }).from(productions).where(eq(productions.id, pid)).limit(1);
-  if (!production) throw createError({ statusCode: 404, message: 'Production not found' });
+  const ctx = await requireProductionAccess(event, { productionId: pid });
+  await requirePermission(ctx, Permission.VIEW);
+
+  const { production } = ctx;
 
   const folderFilter = folder_id
     ? eq(storageFolders.parentId, folder_id)
@@ -24,16 +25,16 @@ export default defineEventHandler(async (event) => {
   const [directFolders, allFolderIndex, allFileIndex, files] = await Promise.all([
     db.select(getTableColumns(storageFolders))
       .from(storageFolders)
-      .where(and(eq(storageFolders.productionId, pid), folderFilter))
+      .where(and(eq(storageFolders.productionId, production.id), folderFilter))
       .orderBy(storageFolders.name),
 
     db.select({ id: storageFolders.id, parentId: storageFolders.parentId })
       .from(storageFolders)
-      .where(eq(storageFolders.productionId, pid)),
+      .where(eq(storageFolders.productionId, production.id)),
 
     db.select({ id: storageFiles.id, folderId: storageFiles.folderId })
       .from(storageFiles)
-      .where(and(eq(storageFiles.productionId, pid), ne(storageFiles.hidden, true))),
+      .where(and(eq(storageFiles.productionId, production.id), ne(storageFiles.hidden, true))),
 
     db.select({
       id:           storageFiles.id,
@@ -47,7 +48,7 @@ export default defineEventHandler(async (event) => {
     }).from(storageFiles)
       .where(
         and(
-          eq(storageFiles.productionId, pid),
+          eq(storageFiles.productionId, production.id),
           ne(storageFiles.hidden, true),
           folder_id ? eq(storageFiles.folderId, folder_id) : isNull(storageFiles.folderId),
         ),
