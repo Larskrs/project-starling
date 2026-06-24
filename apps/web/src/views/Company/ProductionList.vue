@@ -71,7 +71,7 @@ onMounted(load)
       <div
         v-for="p in productions"
         :key="p.id"
-        class="group flex flex-col border border-border/50 hover:border-border shadow-xs hover:shadow-lg transition-all duration-500 rounded-xl relative bg-background cursor-pointer"
+        class="group hover:bg-card flex flex-col border border-border/50 hover:border-border shadow-xs hover:shadow-lg transition-all duration-100 ease-in-out rounded-xl relative bg-background cursor-pointer"
         @click="openProduction(p)"
       >
         <!-- Banner strip -->
@@ -80,12 +80,12 @@ onMounted(load)
             v-if="bannerUrl(p)"
             :src="bannerUrl(p)"
             :alt="p.name"
-            class="opacity-75 h-full w-full rounded-lg dark:opacity-100 inset-0 object-cover"
+            class="h-full w-full rounded-lg inset-0 object-cover"
           />
         </div>
 
         <!-- Card body -->
-        <div class="z-1 bg-background p-3 rounded-b-xl flex items-center gap-3">
+        <div class="z-1 p-3 rounded-b-xl flex items-center gap-3">
           <SquircleAvatar :src="profileUrl(p)" :size="52" class="shrink-0">
             <span class="text-base font-bold">{{ p.name.charAt(0).toUpperCase() }}</span>
           </SquircleAvatar>

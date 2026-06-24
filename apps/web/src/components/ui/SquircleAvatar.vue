@@ -2,22 +2,22 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  src:  { type: String, default: null },
-  alt:  { type: String, default: '' },
-  size: { type: Number, default: 64 },
+  src:  { type: String,  default: null },
+  alt:  { type: String,  default: '' },
+  size: { type: Number,  default: null },
 })
 
 // Unique ID so multiple instances don't share the same clipPath
 const clipId = `squircle-${Math.random().toString(36).slice(2)}`
 
-const style = computed(() => ({
-  width:  props.size + 'px',
-  height: props.size + 'px',
-}))
+const style = computed(() => props.size
+  ? { width: props.size + 'px', height: props.size + 'px' }
+  : {}
+)
 </script>
 
 <template>
-  <div class="relative shrink-0" :style="style">
+  <div :class="size ? 'relative shrink-0' : 'relative w-full h-full'" :style="style">
     <!-- Hidden SVG just to register the squircle clipPath -->
     <svg width="0" height="0" style="position:absolute;overflow:hidden">
       <defs>

@@ -4,15 +4,18 @@ import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import SquircleAvatar from '../../components/ui/SquircleAvatar.vue'
 import ProductionBanner from '../../components/ui/ProductionBanner.vue'
+import Button from '../../components/ui/Button.vue'
+import Input from '../../components/ui/Input.vue'
+import Label from '../../components/ui/Label.vue'
 
 const route = useRoute()
 const data  = inject('production-data')
 
-// ── Name editing ─────────────────────────────────────────────────────────────
+// ── Name ──────────────────────────────────────────────────────────────────────
 
-const nameInput  = ref('')
-const nameSaving = ref(false)
-const nameError  = ref('')
+const nameInput   = ref('')
+const nameSaving  = ref(false)
+const nameError   = ref('')
 const nameSuccess = ref(false)
 
 watch(
@@ -23,8 +26,8 @@ watch(
 
 async function saveName() {
   if (!nameInput.value.trim() || nameInput.value === data.value?.production?.name) return
-  nameSaving.value = true
-  nameError.value  = ''
+  nameSaving.value  = true
+  nameError.value   = ''
   nameSuccess.value = false
   try {
     const res = await fetch(
@@ -37,12 +40,10 @@ async function saveName() {
       },
     )
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      nameError.value = err.message ?? 'Failed to save'
+      nameError.value = (await res.json().catch(() => ({}))).message ?? 'Failed to save'
       return
     }
-    const updated = await res.json()
-    data.value.production.name = updated.name
+    data.value.production.name = (await res.json()).name
     nameSuccess.value = true
     setTimeout(() => { nameSuccess.value = false }, 2000)
   } catch {
@@ -52,17 +53,13 @@ async function saveName() {
   }
 }
 
-// ── Image helpers ─────────────────────────────────────────────────────────────
+// ── Images ────────────────────────────────────────────────────────────────────
 
-function imageUrl(fileId, quality = 67) {
-  if (!fileId) return null
-  return `/api/storage/${fileId}/serve?quality=${quality}`
-}
+const profileSrc = computed(() => data.value?.production?.profileImageId
+  ? `/api/storage/${data.value.production.profileImageId}/serve?quality=67` : null)
 
-const profileSrc = computed(() => imageUrl(data.value?.production?.profileImageId))
-const bannerSrc  = computed(() => imageUrl(data.value?.production?.bannerImageId))
-
-// ── Image upload ─────────────────────────────────────────────────────────────
+const bannerSrc = computed(() => data.value?.production?.bannerImageId
+  ? `/api/storage/${data.value.production.bannerImageId}/serve?quality=67` : null)
 
 const profileUploading = ref(false)
 const bannerUploading  = ref(false)
@@ -73,25 +70,20 @@ async function uploadImage(slot, file) {
   const isProfile = slot === 'profile'
   if (isProfile) { profileUploading.value = true; profileError.value = '' }
   else           { bannerUploading.value  = true; bannerError.value  = '' }
-
   try {
     const fd = new FormData()
     fd.append('slot', slot)
     fd.append('file', file)
-
     const res = await fetch(
       `/api/company/${route.params.cslug}/production/${route.params.pslug}/profile`,
       { method: 'POST', body: fd, credentials: 'include' },
     )
-
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      const msg = err.message ?? 'Upload failed'
+      const msg = (await res.json().catch(() => ({}))).message ?? 'Upload failed'
       if (isProfile) profileError.value = msg
       else           bannerError.value  = msg
       return
     }
-
     const { fileId } = await res.json()
     if (isProfile) data.value.production.profileImageId = fileId
     else           data.value.production.bannerImageId  = fileId
@@ -104,17 +96,8 @@ async function uploadImage(slot, file) {
   }
 }
 
-function onProfilePick(e) {
-  const file = e.target.files?.[0]
-  if (file) uploadImage('profile', file)
-  e.target.value = ''
-}
-
-function onBannerPick(e) {
-  const file = e.target.files?.[0]
-  if (file) uploadImage('banner', file)
-  e.target.value = ''
-}
+function onProfilePick(e) { const f = e.target.files?.[0]; if (f) uploadImage('profile', f); e.target.value = '' }
+function onBannerPick(e)  { const f = e.target.files?.[0]; if (f) uploadImage('banner',  f); e.target.value = '' }
 
 const nameChanged = computed(() =>
   nameInput.value.trim() !== '' && nameInput.value !== data.value?.production?.name,
@@ -122,98 +105,68 @@ const nameChanged = computed(() =>
 </script>
 
 <template>
-  <div class="p-6 max-w-2xl space-y-10">
+  <div class="max-w-3xl mx-auto px-6 py-8 space-y-6">
 
-    <!-- Header -->
-    <div>
-      <h2 class="text-lg font-semibold text-foreground mb-0.5">Settings</h2>
-      <p class="text-sm text-muted-foreground">Manage your production details and branding.</p>
+    <!-- Images -->
+    <div class="relative items-center">
+
+      <!-- Avatar -->
+      <label class="absolute z-10 left-4 bottom-4 size-32 aspect-square cursor-pointer group">
+        <SquircleAvatar :src="profileSrc" />
+        <div class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/45 transition-colors rounded-2xl">
+          <Icon
+            :icon="profileUploading ? 'mdi:loading' : 'mdi:camera-outline'"
+            :class="{ 'animate-spin': profileUploading }"
+            class="text-white text-sm opacity-0 group-hover:opacity-100 transition-opacity"
+          />
+        </div>
+        <input type="file" accept="image/*" class="sr-only" @change="onProfilePick" />
+      </label>
+
+      <!-- Banner -->
+      <label class="relative h-60 cursor-pointer group overflow-hidden rounded-xl block">
+        <ProductionBanner :src="bannerSrc" class="h-full w-full object-cover" />
+        <div class="absolute inset-0 flex items-center justify-center transition-colors bg-black/0 group-hover:bg-black/25">
+          <div class="flex items-center gap-1.5 bg-black/60 text-white text-xs px-2.5 py-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
+            <Icon :icon="bannerUploading ? 'mdi:loading' : 'mdi:camera-outline'" :class="{ 'animate-spin': bannerUploading }" />
+            {{ bannerUploading ? 'Uploading…' : 'Change banner' }}
+          </div>
+        </div>
+        <input type="file" accept="image/*" class="sr-only" @change="onBannerPick" />
+        <p v-if="bannerError" class="absolute bottom-2 right-2 text-xs bg-destructive text-destructive-foreground px-2 py-0.5 rounded">{{ bannerError }}</p>
+      </label>
+
     </div>
 
-    <!-- Banner -->
-    <section class="space-y-3">
-      <div>
-        <p class="text-sm font-medium text-foreground">Banner</p>
-        <p class="text-xs text-muted-foreground mt-0.5">Wide image shown at the top of your production page.</p>
-      </div>
+    <p v-if="profileError" class="text-xs text-destructive">{{ profileError }}</p>
 
-      <ProductionBanner :src="bannerSrc" :height="140">
-        <Icon icon="mdi:image-outline" class="text-4xl" />
-      </ProductionBanner>
+    <div class="border-t border-border" />
 
-      <div class="flex items-center gap-3">
-        <label class="cursor-pointer">
-          <input type="file" accept="image/*" class="sr-only" @change="onBannerPick" />
-          <span
-            class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-background hover:bg-secondary transition-colors"
-            :class="bannerUploading ? 'opacity-50 pointer-events-none' : ''"
-          >
-            <Icon v-if="bannerUploading" icon="mdi:loading" class="animate-spin" />
-            <Icon v-else icon="mdi:upload" />
-            {{ bannerUploading ? 'Uploading…' : 'Upload banner' }}
-          </span>
-        </label>
-        <p v-if="bannerError" class="text-xs text-destructive">{{ bannerError }}</p>
-      </div>
-    </section>
-
-    <!-- Profile image -->
-    <section class="space-y-3">
-      <div>
-        <p class="text-sm font-medium text-foreground">Profile image</p>
-        <p class="text-xs text-muted-foreground mt-0.5">Square image used as the production icon.</p>
-      </div>
-
-      <SquircleAvatar :src="profileSrc" :size="96">
-        <Icon icon="mdi:image-outline" class="text-2xl" />
-      </SquircleAvatar>
-
-      <div class="flex items-center gap-3">
-        <label class="cursor-pointer">
-          <input type="file" accept="image/*" class="sr-only" @change="onProfilePick" />
-          <span
-            class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-background hover:bg-secondary transition-colors"
-            :class="profileUploading ? 'opacity-50 pointer-events-none' : ''"
-          >
-            <Icon v-if="profileUploading" icon="mdi:loading" class="animate-spin" />
-            <Icon v-else icon="mdi:upload" />
-            {{ profileUploading ? 'Uploading…' : 'Upload image' }}
-          </span>
-        </label>
-        <p v-if="profileError" class="text-xs text-destructive">{{ profileError }}</p>
-      </div>
-    </section>
-
-    <hr class="border-border" />
-
-    <!-- Production name -->
-    <section class="space-y-3">
-      <div>
-        <p class="text-sm font-medium text-foreground">Production name</p>
-        <p class="text-xs text-muted-foreground mt-0.5">The display name for this production.</p>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <input
+    <!-- Name -->
+    <div class="space-y-1.5">
+      <Label for="production-name">Production name</Label>
+      <div class="flex gap-2">
+        <Input
+          id="production-name"
           v-model="nameInput"
-          type="text"
           maxlength="255"
           placeholder="Production name"
-          class="flex-1 h-8 px-3 text-sm rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          class="h-9 text-sm"
           @keydown.enter="saveName"
         />
-        <button
+        <Button
+          size="sm"
           :disabled="!nameChanged || nameSaving"
-          class="h-8 px-3 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+          class="shrink-0 gap-1.5"
           @click="saveName"
         >
           <Icon v-if="nameSaving" icon="mdi:loading" class="animate-spin" />
           <Icon v-else-if="nameSuccess" icon="mdi:check" />
           {{ nameSaving ? 'Saving…' : nameSuccess ? 'Saved' : 'Save' }}
-        </button>
+        </Button>
       </div>
       <p v-if="nameError" class="text-xs text-destructive">{{ nameError }}</p>
-    </section>
+    </div>
 
   </div>
 </template>
