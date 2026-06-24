@@ -4,12 +4,15 @@ import Dialog from '../../components/ui/Dialog.vue'
 import Input  from '../../components/ui/Input.vue'
 import Label  from '../../components/ui/Label.vue'
 import Button from '../../components/ui/Button.vue'
+import { useApi } from '../../composables/useApi.js'
 
 const props = defineProps({
   open: { type: Boolean, required: true },
 })
 
 const emit = defineEmits(['close', 'created'])
+
+const { $fetch } = useApi()
 
 const name    = ref('')
 const slug    = ref('')
@@ -35,24 +38,17 @@ watch(() => props.open, (open) => {
 })
 
 async function handleSubmit() {
-  error.value = ''
+  error.value   = ''
   loading.value = true
-  try {
-    const res = await fetch('/api/company', {
-      method:      'POST',
-      headers:     { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body:        JSON.stringify({ name: name.value, slug: slug.value }),
-    })
-    const data = await res.json()
-    if (!res.ok) { error.value = data.error ?? 'Feilet ved oppretting av produksjonshus'; return }
-    emit('created', data.company)
-    emit('close')
-  } catch {
-    error.value = 'Feil ved nettverksforespørsel'
-  } finally {
-    loading.value = false
-  }
+  const { ok, data, error: fetchErr } = await $fetch('/api/company', {
+    method: 'POST',
+    json:   { name: name.value, slug: slug.value },
+    silent: true,
+  })
+  loading.value = false
+  if (!ok) { error.value = fetchErr ?? 'Feilet ved oppretting av produksjonshus'; return }
+  emit('created', data.company)
+  emit('close')
 }
 </script>
 

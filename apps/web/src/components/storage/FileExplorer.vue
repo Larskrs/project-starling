@@ -13,6 +13,7 @@ import Dialog             from '../ui/Dialog.vue'
 import ConfirmDialog      from '../ui/ConfirmDialog.vue'
 import { useUpload }            from '../../composables/useUpload'
 import { provideFileSelection } from '../../composables/useFileSelection.js'
+import { useApi }               from '../../composables/useApi.js'
 
 const props = defineProps({
   productionId: { type: String, required: true },
@@ -33,6 +34,7 @@ const ACCEPTED = 'image/jpeg,image/png,image/webp,image/gif,image/avif,audio/mpe
 
 // ── File selection ─────────────────────────────────────────────────────────
 const { selectedIds, selectedCount, selectionActive, clearSelection, selectAll } = provideFileSelection()
+const { $fetch } = useApi()
 
 // ── Nav / UI state ─────────────────────────────────────────────────────────
 const fileListRef      = ref(null)
@@ -68,27 +70,16 @@ const folderLoading    = ref(false)
 async function submitCreateFolder() {
   folderError.value   = ''
   folderLoading.value = true
-  try {
-    const res  = await fetch('/api/storage', {
-      method:      'POST',
-      headers:     { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body:        JSON.stringify({
-        production_id: props.productionId,
-        name:          folderName.value.trim(),
-        parent_id:     currentFolderId.value,
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) { folderError.value = data.error ?? 'Failed to create folder'; return }
-    createFolderOpen.value = false
-    folderName.value       = ''
-    fileListRef.value?.refresh()
-  } catch {
-    folderError.value = 'Network error'
-  } finally {
-    folderLoading.value = false
-  }
+  const { ok, error } = await $fetch('/api/storage', {
+    method: 'POST',
+    json:   { production_id: props.productionId, name: folderName.value.trim(), parent_id: currentFolderId.value },
+    silent: true,
+  })
+  folderLoading.value = false
+  if (!ok) { folderError.value = error ?? 'Failed to create folder'; return }
+  createFolderOpen.value = false
+  folderName.value       = ''
+  fileListRef.value?.refresh()
 }
 
 function openCreateFolder() {
@@ -103,17 +94,12 @@ const deleting          = ref(false)
 
 async function deleteSelected() {
   deleting.value = true
-  try {
-    const ids = [...selectedIds.value]
-    await Promise.all(ids.map(id =>
-      fetch(`/api/storage/${id}`, { method: 'DELETE', credentials: 'include' })
-    ))
-    clearSelection()
-    fileListRef.value?.refresh()
-  } finally {
-    deleting.value          = false
-    confirmDeleteOpen.value = false
-  }
+  const ids = [...selectedIds.value]
+  await Promise.all(ids.map(id => $fetch(`/api/storage/${id}`, { method: 'DELETE' })))
+  deleting.value          = false
+  confirmDeleteOpen.value = false
+  clearSelection()
+  fileListRef.value?.refresh()
 }
 
 // ── Move to folder ─────────────────────────────────────────────────────────
@@ -122,22 +108,12 @@ const moving         = ref(false)
 
 async function moveSelected(folderId) {
   moving.value = true
-  try {
-    const ids = [...selectedIds.value]
-    await Promise.all(ids.map(id =>
-      fetch(`/api/storage/${id}`, {
-        method:      'PATCH',
-        credentials: 'include',
-        headers:     { 'Content-Type': 'application/json' },
-        body:        JSON.stringify({ folder_id: folderId }),
-      })
-    ))
-    clearSelection()
-    fileListRef.value?.refresh()
-  } finally {
-    moving.value         = false
-    moveFolderOpen.value = false
-  }
+  const ids = [...selectedIds.value]
+  await Promise.all(ids.map(id => $fetch(`/api/storage/${id}`, { method: 'PATCH', json: { folder_id: folderId } })))
+  moving.value         = false
+  moveFolderOpen.value = false
+  clearSelection()
+  fileListRef.value?.refresh()
 }
 </script>
 

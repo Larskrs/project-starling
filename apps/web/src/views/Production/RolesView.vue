@@ -2,9 +2,11 @@
 import { inject, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
+import { useApi } from '../../composables/useApi.js'
 
 const route = useRoute()
 const data  = inject('production-data')
+const { $fetch } = useApi()
 
 const PERMISSIONS = [
   { name: 'VIEW',           label: 'View',           bit: 1n },
@@ -23,18 +25,13 @@ const error   = ref('')
 async function loadRoles() {
   loading.value = true
   error.value   = ''
-  try {
-    const res = await fetch(
-      `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
-      { credentials: 'include' },
-    )
-    if (!res.ok) throw new Error()
-    roles.value = (await res.json()).map(r => ({ ...r, permissions: BigInt(r.permissions) }))
-  } catch {
-    error.value = 'Could not load roles'
-  } finally {
-    loading.value = false
-  }
+  const { ok, data: resData } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
+    { silent: true },
+  )
+  loading.value = false
+  if (!ok) { error.value = 'Could not load roles'; return }
+  roles.value = resData.map(r => ({ ...r, permissions: BigInt(r.permissions) }))
 }
 
 onMounted(loadRoles)
@@ -49,29 +46,19 @@ async function createRole() {
   if (!newName.value.trim()) return
   creating.value  = true
   createErr.value = ''
-  try {
-    const res = await fetch(
-      `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ name: newName.value.trim(), hue: newHue.value, permissions: '0' }),
-        credentials: 'include',
-      },
-    )
-    if (!res.ok) {
-      createErr.value = (await res.json().catch(() => ({}))).message ?? 'Failed to create role'
-      return
-    }
-    const role = await res.json()
-    roles.value.push({ ...role, permissions: BigInt(role.permissions) })
-    newName.value = ''
-    newHue.value  = 200
-  } catch {
-    createErr.value = 'Network error'
-  } finally {
-    creating.value = false
-  }
+  const { ok, data: resData, error } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
+    {
+      method: 'POST',
+      json:   { name: newName.value.trim(), hue: newHue.value, permissions: '0' },
+      silent: true,
+    },
+  )
+  creating.value = false
+  if (!ok) { createErr.value = error ?? 'Failed to create role'; return }
+  roles.value.push({ ...resData, permissions: BigInt(resData.permissions) })
+  newName.value = ''
+  newHue.value  = 200
 }
 
 // ── Edit ──────────────────────────────────────────────────────────────────────
@@ -87,30 +74,24 @@ function togglePerm(bit) { editing.value.permissions ^= bit }
 
 async function saveRole() {
   const e = editing.value
-  const res = await fetch(
+  const { ok, data: resData } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles/${e.id}`,
-    {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name: e.name, hue: e.hue, permissions: e.permissions.toString() }),
-      credentials: 'include',
-    },
+    { method: 'PATCH', json: { name: e.name, hue: e.hue, permissions: e.permissions.toString() } },
   )
-  if (!res.ok) return
-  const updated = await res.json()
-  const idx = roles.value.findIndex(r => r.id === updated.id)
-  if (idx !== -1) roles.value[idx] = { ...updated, permissions: BigInt(updated.permissions) }
+  if (!ok) return
+  const idx = roles.value.findIndex(r => r.id === resData.id)
+  if (idx !== -1) roles.value[idx] = { ...resData, permissions: BigInt(resData.permissions) }
   editing.value = null
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 async function deleteRole(role) {
   if (!confirm(`Delete role "${role.name}"? Members with this role will become unassigned.`)) return
-  const res = await fetch(
+  const { ok } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles/${role.id}`,
-    { method: 'DELETE', credentials: 'include' },
+    { method: 'DELETE' },
   )
-  if (res.ok) roles.value = roles.value.filter(r => r.id !== role.id)
+  if (ok) roles.value = roles.value.filter(r => r.id !== role.id)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

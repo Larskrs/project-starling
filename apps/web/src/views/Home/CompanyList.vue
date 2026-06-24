@@ -3,6 +3,9 @@ import { ref, onMounted } from 'vue'
 import Button              from '../../components/ui/Button.vue'
 import CreateCompanyDialog from './CreateCompanyDialog.vue'
 import { Icon } from '@iconify/vue'
+import { useApi } from '../../composables/useApi.js'
+
+const { $fetch } = useApi()
 
 const companies    = ref([])
 const loading      = ref(true)
@@ -12,16 +15,10 @@ const dialogOpen   = ref(false)
 async function load() {
   loading.value = true
   error.value   = ''
-  try {
-    const res = await fetch('/api/company', { credentials: 'include' })
-    if (!res.ok) throw new Error('Feil ved lasting av selskaper')
-    const data = await res.json()
-    companies.value = data.companyList
-  } catch {
-    error.value = 'Feil ved lasting av selskaper'
-  } finally {
-    loading.value = false
-  }
+  const { ok, data } = await $fetch('/api/company', { silent: true })
+  loading.value = false
+  if (!ok) { error.value = 'Feil ved lasting av selskaper'; return }
+  companies.value = data.companyList
 }
 
 function onCreated(company) {

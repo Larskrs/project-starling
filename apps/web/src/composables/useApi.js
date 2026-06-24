@@ -44,8 +44,12 @@ export function useApi() {
     }
 
     if (!res.ok) {
-      const error = data?.message ?? `Request failed (${res.status})`
-      if (!silent) toast.error(error)
+      const error = data?.message ?? data?.error ?? `Request failed (${res.status})`
+      if (!silent) {
+        if (res.status === 401) toast.auth('Sign in required')
+        else if (res.status === 403) toast.auth(error)
+        else toast.error(error)
+      }
       return { ok: false, status: res.status, data: null, error }
     }
 

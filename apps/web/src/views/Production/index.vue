@@ -4,6 +4,7 @@ import { useRoute, useRouter, RouterView } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { useAuth } from '../../composables/useAuth'
 import { useColorMode } from '../../composables/useColorMode'
+import { useApi } from '../../composables/useApi.js'
 import ProductionBanner from '../../components/ui/ProductionBanner.vue'
 import Avatar from '../../components/ui/Avatar.vue'
 
@@ -11,6 +12,7 @@ const route  = useRoute()
 const router = useRouter()
 const { user, logout, fetchUser } = useAuth()
 const { isDark, toggle: toggleColorMode } = useColorMode()
+const { $fetch } = useApi()
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 const data    = ref(null)
@@ -20,17 +22,15 @@ const error   = ref('')
 async function load(cslug, pslug) {
   loading.value = !data.value  // only show spinner on initial load
   error.value   = ''
-  try {
-    const res = await fetch(`/api/company/${cslug}/production/${pslug}`, { credentials: 'include' })
-    if (res.status === 404) { error.value = 'Production not found'; return }
-    if (res.status === 403) { error.value = 'You don\'t have access to this production'; return }
-    if (!res.ok) throw new Error()
-    data.value = await res.json()
-  } catch {
-    error.value = 'Could not load production'
-  } finally {
-    loading.value = false
-  }
+  const { ok, data: resData, status } = await $fetch(
+    `/api/company/${cslug}/production/${pslug}`,
+    { silent: true },
+  )
+  loading.value = false
+  if (status === 404) { error.value = 'Production not found'; return }
+  if (status === 403) { error.value = "You don't have access to this production"; return }
+  if (!ok) { error.value = 'Could not load production'; return }
+  data.value = resData
 }
 
 onMounted(() => {

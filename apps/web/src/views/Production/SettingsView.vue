@@ -8,9 +8,11 @@ import ImageCropper from '../../components/ui/ImageCropper.vue'
 import Button from '../../components/ui/Button.vue'
 import Input from '../../components/ui/Input.vue'
 import Label from '../../components/ui/Label.vue'
+import { useApi } from '../../composables/useApi.js'
 
 const route = useRoute()
 const data  = inject('production-data')
+const { $fetch } = useApi()
 
 // ── Name ──────────────────────────────────────────────────────────────────────
 
@@ -30,28 +32,15 @@ async function saveName() {
   nameSaving.value  = true
   nameError.value   = ''
   nameSuccess.value = false
-  try {
-    const res = await fetch(
-      `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
-      {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ name: nameInput.value.trim() }),
-        credentials: 'include',
-      },
-    )
-    if (!res.ok) {
-      nameError.value = (await res.json().catch(() => ({}))).message ?? 'Failed to save'
-      return
-    }
-    data.value.production.name = (await res.json()).name
-    nameSuccess.value = true
-    setTimeout(() => { nameSuccess.value = false }, 2000)
-  } catch {
-    nameError.value = 'Network error'
-  } finally {
-    nameSaving.value = false
-  }
+  const { ok, data: resData, error } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
+    { method: 'PATCH', json: { name: nameInput.value.trim() }, silent: true },
+  )
+  nameSaving.value = false
+  if (!ok) { nameError.value = error ?? 'Failed to save'; return }
+  data.value.production.name = resData.name
+  nameSuccess.value = true
+  setTimeout(() => { nameSuccess.value = false }, 2000)
 }
 
 // ── Images ────────────────────────────────────────────────────────────────────
@@ -71,30 +60,22 @@ async function uploadImage(slot, file) {
   const isProfile = slot === 'profile'
   if (isProfile) { profileUploading.value = true; profileError.value = '' }
   else           { bannerUploading.value  = true; bannerError.value  = '' }
-  try {
-    const fd = new FormData()
-    fd.append('slot', slot)
-    fd.append('file', file)
-    const res = await fetch(
-      `/api/company/${route.params.cslug}/production/${route.params.pslug}/profile`,
-      { method: 'POST', body: fd, credentials: 'include' },
-    )
-    if (!res.ok) {
-      const msg = (await res.json().catch(() => ({}))).message ?? 'Upload failed'
-      if (isProfile) profileError.value = msg
-      else           bannerError.value  = msg
-      return
-    }
-    const { fileId } = await res.json()
-    if (isProfile) data.value.production.profileImageId = fileId
-    else           data.value.production.bannerImageId  = fileId
-  } catch {
-    if (isProfile) profileError.value = 'Network error'
-    else           bannerError.value  = 'Network error'
-  } finally {
-    if (isProfile) profileUploading.value = false
-    else           bannerUploading.value  = false
+  const fd = new FormData()
+  fd.append('slot', slot)
+  fd.append('file', file)
+  const { ok, data: resData, error } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}/profile`,
+    { method: 'POST', body: fd, silent: true },
+  )
+  if (isProfile) profileUploading.value = false
+  else           bannerUploading.value  = false
+  if (!ok) {
+    if (isProfile) profileError.value = error ?? 'Upload failed'
+    else           bannerError.value  = error ?? 'Upload failed'
+    return
   }
+  if (isProfile) data.value.production.profileImageId = resData.fileId
+  else           data.value.production.bannerImageId  = resData.fileId
 }
 
 // ── Crop flow ─────────────────────────────────────────────────────────────────

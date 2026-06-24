@@ -1,8 +1,8 @@
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, inArray } from 'drizzle-orm';
 import { db, companies, productions, companyMembers, productionMembers, productionRoles } from '@starling/db';
 import { type ApiEvent, createError, requireAuth } from './handler.js';
 import { can } from './permissions.js';
-import { type PermissionName, Permission } from '@starling/auth/permissions';
+import { type PermissionName, Permission, PERMISSION_MESSAGES } from '@starling/auth/permissions';
 
 export interface ProductionContext {
   auth:         { userId: string; role: 'admin' | 'user' };
@@ -84,19 +84,48 @@ export async function requireProductionAccess(
   return { auth, company, production, privileged: false, memberRoleId: prodMem.roleId };
 }
 
-const PERMISSION_LABELS: Record<PermissionName, string> = {
-  VIEW:           'View',
-  EDIT_TIMELINE:  'Edit timeline',
-  MANAGE_STORAGE: 'Manage storage',
-  MANAGE_MEMBERS: 'Manage members',
-  MANAGE_ROLES:   'Manage roles',
-  ADMINISTRATOR:  'Administrator',
-};
+/**
+ * Returns a WHERE clause fragment that limits a `productions` query to rows
+ * the given user can access, mirroring the same rules as requireProductionAccess:
+ * - global admin  → undefined (no filter, caller sees everything)
+ * - company admin/owner → filter by their admin company IDs
+ * - regular member → filter to productions they're explicitly a member of
+ *
+ * Returns null when the user has no access to anything.
+ */
+export async function productionAccessFilter(
+  auth: { userId: string; role: 'admin' | 'user' },
+) {
+  if (auth.role === 'admin') return undefined;
+
+  const [adminCompanies, memberships] = await Promise.all([
+    db.select({ companyId: companyMembers.companyId })
+      .from(companyMembers)
+      .where(and(
+        eq(companyMembers.userId, auth.userId),
+        or(eq(companyMembers.role, 'owner'), eq(companyMembers.role, 'admin')),
+      )),
+    db.select({ productionId: productionMembers.productionId })
+      .from(productionMembers)
+      .where(eq(productionMembers.userId, auth.userId)),
+  ]);
+
+  const adminCompanyIds    = adminCompanies.map(c => c.companyId);
+  const memberProductionIds = memberships.map(m => m.productionId);
+
+  const conditions = [
+    ...(adminCompanyIds.length     > 0 ? [inArray(productions.companyId, adminCompanyIds)]    : []),
+    ...(memberProductionIds.length > 0 ? [inArray(productions.id, memberProductionIds)]       : []),
+  ];
+
+  return conditions.length > 0 ? or(...conditions) : null;
+}
 
 /**
  * Asserts the caller holds a specific production permission.
  * Privileged users (global admin, company owner/admin) always pass.
- * Throws 403 with a descriptive message if the check fails.
+ * Throws 403 with a human-readable message and data.missingPermission set to
+ * the permission key (e.g. "MANAGE_MEMBERS") for structured client handling.
  */
 export async function requirePermission(
   ctx: ProductionContext,
@@ -116,7 +145,11 @@ export async function requirePermission(
   if (!can(ctx.auth.role, rolePermissions, required)) {
     const name = (Object.entries(Permission) as [PermissionName, bigint][])
       .find(([, bit]) => bit === required)?.[0];
-    const label = name ? PERMISSION_LABELS[name] : 'Unknown';
-    throw createError({ statusCode: 403, message: `Forbidden: missing permission "${label}"` });
+    const description = name ? PERMISSION_MESSAGES[name] : 'perform this action';
+    throw createError({
+      statusCode: 403,
+      message:    `You don't have permission to ${description}`,
+      data:       { missingPermission: name ?? 'UNKNOWN' },
+    });
   }
 }

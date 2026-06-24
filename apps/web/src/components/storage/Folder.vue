@@ -2,7 +2,8 @@
 import { ref, computed, inject, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useContextMenu } from '../../composables/useContextMenu.js'
-import { useColorMode } from '../../composables/useColorMode.js'
+import { useColorMode }  from '../../composables/useColorMode.js'
+import { useApi }        from '../../composables/useApi.js'
 import ContextMenuRoot      from '../ui/ContextMenuRoot.vue'
 import ContextMenuItem      from '../ui/ContextMenuItem.vue'
 import ContextMenuSub       from '../ui/ContextMenuSub.vue'
@@ -18,6 +19,7 @@ const props = defineProps({ folder: { type: Object, required: true } })
 const emit  = defineEmits(['open', 'hue-change', 'deleted', 'renamed'])
 const menu  = useContextMenu()
 const { isDark } = useColorMode()
+const { $fetch } = useApi()
 
 // ── File peek previews ────────────────────────────────────────────────────────
 const productionId = inject('storage-production-id', null)
@@ -25,13 +27,9 @@ const previewFiles = ref([])
 
 onMounted(async () => {
   if (!productionId || !props.folder.fileCount) return
-  try {
-    const params = new URLSearchParams({ pid: productionId, folder_id: props.folder.id })
-    const res    = await fetch(`/api/storage?${params}`, { credentials: 'include' })
-    if (!res.ok) return
-    const data = await res.json()
-    previewFiles.value = data.files.slice(0, 3)
-  } catch {}
+  const params = new URLSearchParams({ pid: productionId, folder_id: props.folder.id })
+  const { ok, data } = await $fetch(`/api/storage?${params}`, { silent: true })
+  if (ok) previewFiles.value = data.files.slice(0, 3)
 })
 
 const isHovered = ref(false)
@@ -79,22 +77,13 @@ async function submitRename() {
   if (!name || name === props.folder.name) { renameOpen.value = false; return }
   renameLoading.value = true
   renameError.value   = ''
-  try {
-    const res  = await fetch(`/api/storage/folders/${props.folder.id}`, {
-      method:      'PATCH',
-      credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify({ name }),
-    })
-    const data = await res.json()
-    if (!res.ok) { renameError.value = data.message ?? 'Rename failed'; return }
-    renameOpen.value = false
-    emit('renamed', { id: props.folder.id, name })
-  } catch {
-    renameError.value = 'Network error'
-  } finally {
-    renameLoading.value = false
-  }
+  const { ok, error } = await $fetch(`/api/storage/folders/${props.folder.id}`, {
+    method: 'PATCH', json: { name }, silent: true,
+  })
+  renameLoading.value = false
+  if (!ok) { renameError.value = error ?? 'Rename failed'; return }
+  renameOpen.value = false
+  emit('renamed', { id: props.folder.id, name })
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -103,17 +92,11 @@ const deleting      = ref(false)
 
 async function deleteFolder() {
   deleting.value = true
-  try {
-    const res = await fetch(`/api/storage/folders/${props.folder.id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    })
-    if (!res.ok) return
-    confirmDelete.value = false
-    emit('deleted', props.folder.id)
-  } finally {
-    deleting.value = false
-  }
+  const { ok } = await $fetch(`/api/storage/folders/${props.folder.id}`, { method: 'DELETE' })
+  deleting.value = false
+  if (!ok) return
+  confirmDelete.value = false
+  emit('deleted', props.folder.id)
 }
 
 const HUE_PRESETS = [

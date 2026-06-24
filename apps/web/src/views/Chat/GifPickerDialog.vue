@@ -2,12 +2,15 @@
 import { ref, watch } from 'vue'
 import Dialog from '../../components/ui/Dialog.vue'
 import Input  from '../../components/ui/Input.vue'
+import { useApi } from '../../composables/useApi.js'
 
 const props = defineProps({
   open: { type: Boolean, required: true },
 })
 
 const emit = defineEmits(['close', 'select'])
+
+const { $fetch } = useApi()
 
 const query   = ref('')
 const results = ref([])
@@ -19,17 +22,11 @@ let debounceTimer = null
 async function fetchGifs(path, params = {}) {
   loading.value = true
   error.value   = ''
-  try {
-    const qs  = new URLSearchParams(params)
-    const res = await fetch(`/api/chat/gifs/${path}?${qs}`, { credentials: 'include' })
-    if (!res.ok) throw new Error(res.statusText)
-    const { data } = await res.json()
-    results.value = data ?? []
-  } catch {
-    error.value = 'Failed to load GIFs'
-  } finally {
-    loading.value = false
-  }
+  const qs = new URLSearchParams(params)
+  const { ok, data } = await $fetch(`/api/chat/gifs/${path}?${qs}`, { silent: true })
+  loading.value = false
+  if (!ok) { error.value = 'Failed to load GIFs'; return }
+  results.value = data?.data ?? []
 }
 
 function loadTrending() {

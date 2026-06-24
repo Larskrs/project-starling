@@ -8,12 +8,16 @@ const ICONS = {
   error:   'mdi:alert-circle-outline',
   success: 'mdi:check-circle-outline',
   info:    'mdi:information-outline',
+  warning: 'mdi:shield-alert-outline',
+  auth:    'mdi:lock-outline',
 }
 
 const STYLES = {
   error:   'border-destructive/30 bg-card text-foreground [--icon-color:oklch(var(--destructive))]',
   success: 'border-green-500/30 bg-card text-foreground [--icon-color:oklch(0.62_0.19_145)]',
   info:    'border-border bg-card text-foreground [--icon-color:oklch(var(--muted-foreground))]',
+  warning: 'border-yellow-500/30 bg-card text-foreground [--icon-color:oklch(0.78_0.17_85)]',
+  auth:    'border-orange-500/30 bg-card text-foreground [--icon-color:oklch(0.72_0.15_55)]',
 }
 </script>
 

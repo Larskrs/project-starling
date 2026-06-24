@@ -2,21 +2,21 @@
 import { inject, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
+import { useApi } from '../../composables/useApi.js'
 
 const route = useRoute()
 const data  = inject('production-data')
+const { $fetch } = useApi()
 
 // ── Roles (needed for role selector + badges) ─────────────────────────────────
 const roles = ref([])
 
 async function loadRoles() {
-  try {
-    const res = await fetch(
-      `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
-      { credentials: 'include' },
-    )
-    if (res.ok) roles.value = (await res.json()).map(r => ({ ...r, permissions: BigInt(r.permissions) }))
-  } catch {}
+  const { ok, data: resData } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
+    { silent: true },
+  )
+  if (ok) roles.value = resData.map(r => ({ ...r, permissions: BigInt(r.permissions) }))
 }
 
 // ── Members ───────────────────────────────────────────────────────────────────
@@ -27,18 +27,13 @@ const error   = ref('')
 async function loadMembers() {
   loading.value = true
   error.value   = ''
-  try {
-    const res = await fetch(
-      `/api/company/${route.params.cslug}/production/${route.params.pslug}/members`,
-      { credentials: 'include' },
-    )
-    if (!res.ok) throw new Error()
-    members.value = await res.json()
-  } catch {
-    error.value = 'Could not load members'
-  } finally {
-    loading.value = false
-  }
+  const { ok, data: resData } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}/members`,
+    { silent: true },
+  )
+  loading.value = false
+  if (!ok) { error.value = 'Could not load members'; return }
+  members.value = resData
 }
 
 onMounted(() => { loadRoles(); loadMembers() })
@@ -53,53 +48,35 @@ async function addMember() {
   if (!addEmail.value.trim()) return
   addSaving.value = true
   addError.value  = ''
-  try {
-    const body = { email: addEmail.value.trim() }
-    if (addRoleId.value) body.roleId = addRoleId.value
-    const res = await fetch(
-      `/api/company/${route.params.cslug}/production/${route.params.pslug}/members`,
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
-        credentials: 'include',
-      },
-    )
-    if (!res.ok) {
-      addError.value = (await res.json().catch(() => ({}))).message ?? 'Failed to add member'
-      return
-    }
-    addEmail.value  = ''
-    addRoleId.value = ''
-    await loadMembers()
-  } catch {
-    addError.value = 'Network error'
-  } finally {
-    addSaving.value = false
-  }
+  const body = { email: addEmail.value.trim() }
+  if (addRoleId.value) body.roleId = addRoleId.value
+  const { ok, error } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}/members`,
+    { method: 'POST', json: body, silent: true },
+  )
+  addSaving.value = false
+  if (!ok) { addError.value = error ?? 'Failed to add member'; return }
+  addEmail.value  = ''
+  addRoleId.value = ''
+  await loadMembers()
 }
 
 async function changeMemberRole(member, roleId) {
-  const res = await fetch(
+  const { ok } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/members/${member.id}`,
-    {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ roleId: roleId || null }),
-      credentials: 'include',
-    },
+    { method: 'PATCH', json: { roleId: roleId || null } },
   )
-  if (res.ok) await loadMembers()
+  if (ok) await loadMembers()
 }
 
 async function removeMember(member) {
   const name = member.user.firstName || member.user.name
   if (!confirm(`Remove ${name} from this production?`)) return
-  const res = await fetch(
+  const { ok } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/members/${member.id}`,
-    { method: 'DELETE', credentials: 'include' },
+    { method: 'DELETE' },
   )
-  if (res.ok) members.value = members.value.filter(m => m.id !== member.id)
+  if (ok) members.value = members.value.filter(m => m.id !== member.id)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { useApi } from './useApi.js'
 
 /**
  * @param {object} opts
@@ -8,6 +9,7 @@ import { ref } from 'vue'
  * @param {(message: string) => void}                            [opts.onError]
  */
 export function useUpload({ productionId, folderId, onUploaded, onError } = {}) {
+  const { $fetch } = useApi()
   const queue = ref([])
   let nextId  = 0
 
@@ -30,24 +32,16 @@ export function useUpload({ productionId, folderId, onUploaded, onError } = {}) 
     if (fid) body.append('folder_id', fid)
     body.append('file', file)
 
-    try {
-      const res  = await fetch('/api/storage/upload', { method: 'POST', credentials: 'include', body })
-      const data = await res.json()
-
-      if (!res.ok) {
-        entry.status = 'error'
-        onError?.(data.error ?? `Failed to upload ${file.name}`)
-      } else {
-        entry.status = 'done'
-        onUploaded?.(data.file, data.versions ?? [])
-      }
-    } catch {
+    const { ok, data, error } = await $fetch('/api/storage/upload', { method: 'POST', body })
+    if (!ok) {
       entry.status = 'error'
-      onError?.(`Network error uploading ${file.name}`)
-    } finally {
-      queue.value = [...queue.value]
-      setTimeout(() => { queue.value = queue.value.filter(u => u.id !== entry.id) }, 3000)
+      onError?.(error ?? `Failed to upload ${file.name}`)
+    } else {
+      entry.status = 'done'
+      onUploaded?.(data.file, data.versions ?? [])
     }
+    queue.value = [...queue.value]
+    setTimeout(() => { queue.value = queue.value.filter(u => u.id !== entry.id) }, 3000)
   }
 
   return { queue, uploadFiles }

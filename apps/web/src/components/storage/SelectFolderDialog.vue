@@ -6,6 +6,7 @@ import Button     from '../ui/Button.vue'
 import Input      from '../ui/Input.vue'
 import Label      from '../ui/Label.vue'
 import Breadcrumb from '../ui/Breadcrumb.vue'
+import { useApi } from '../../composables/useApi.js'
 
 const props = defineProps({
   open:         { type: Boolean, required: true },
@@ -14,6 +15,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select', 'close'])
+
+const { $fetch } = useApi()
 
 const folders       = ref([])
 const loading       = ref(false)
@@ -32,18 +35,11 @@ const breadcrumbItems = computed(() => [
 
 async function load(id) {
   loading.value = true
-  try {
-    const params = new URLSearchParams({ pid: props.productionId })
-    if (id) params.set('folder_id', id)
-    const res  = await fetch(`/api/storage?${params}`, { credentials: 'include' })
-    if (!res.ok) throw new Error()
-    const data = await res.json()
-    folders.value = data.folders
-  } catch {
-    folders.value = []
-  } finally {
-    loading.value = false
-  }
+  const params = new URLSearchParams({ pid: props.productionId })
+  if (id) params.set('folder_id', id)
+  const { ok, data } = await $fetch(`/api/storage?${params}`, { silent: true })
+  folders.value = ok ? data.folders : []
+  loading.value = false
 }
 
 function enterFolder(folder) {
@@ -80,27 +76,16 @@ watch(() => props.open, (val) => {
 async function submitCreate() {
   createError.value   = ''
   createLoading.value = true
-  try {
-    const res = await fetch('/api/storage', {
-      method:      'POST',
-      headers:     { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body:        JSON.stringify({
-        production_id: props.productionId,
-        name:          newName.value.trim(),
-        parent_id:     currentId.value,
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) { createError.value = data.error ?? 'Failed to create folder'; return }
-    creating.value = false
-    newName.value  = ''
-    load(currentId.value)
-  } catch {
-    createError.value = 'Network error'
-  } finally {
-    createLoading.value = false
-  }
+  const { ok, error } = await $fetch('/api/storage', {
+    method: 'POST',
+    json:   { production_id: props.productionId, name: newName.value.trim(), parent_id: currentId.value },
+    silent: true,
+  })
+  createLoading.value = false
+  if (!ok) { createError.value = error ?? 'Failed to create folder'; return }
+  creating.value = false
+  newName.value  = ''
+  load(currentId.value)
 }
 </script>
 

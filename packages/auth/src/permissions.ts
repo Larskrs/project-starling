@@ -16,6 +16,16 @@ export type PermissionName = keyof typeof Permission;
 
 export const PERMISSIONS = Object.keys(Permission) as PermissionName[];
 
+/** Human-readable descriptions used in permission-denied error messages. */
+export const PERMISSION_MESSAGES: Record<PermissionName, string> = {
+  VIEW:           'view this production',
+  EDIT_TIMELINE:  'edit the timeline',
+  MANAGE_STORAGE: 'manage storage',
+  MANAGE_MEMBERS: 'manage members',
+  MANAGE_ROLES:   'manage roles',
+  ADMINISTRATOR:  'perform administrator actions',
+};
+
 export function encode(names: PermissionName[]): bigint {
   return names.reduce((acc, n) => acc | Permission[n], 0n);
 }

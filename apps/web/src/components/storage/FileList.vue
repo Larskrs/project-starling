@@ -5,6 +5,7 @@ import Folder      from './Folder.vue'
 import FileImage   from './FileImage.vue'
 import FileAudio   from './FileAudio.vue'
 import FileDefault from './FileDefault.vue'
+import { useApi }  from '../../composables/useApi.js'
 
 const props = defineProps({
   productionId: { type: String, required: true },
@@ -14,6 +15,8 @@ const props = defineProps({
 const emit = defineEmits(['navigate', 'preview', 'deleted', 'crumbs-change', 'nav-change'])
 
 provide('storage-production-id', props.productionId)
+
+const { $fetch } = useApi()
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -29,21 +32,13 @@ const currentFolderId = ref(props.rootFolderId)
 async function load(folderId) {
   loading.value = true
   error.value   = ''
-  try {
-    const params = new URLSearchParams({ pid: props.productionId })
-    if (folderId) params.set('folder_id', folderId)
-
-    const res = await fetch(`/api/storage?${params}`, { credentials: 'include' })
-    if (!res.ok) throw new Error()
-
-    const data    = await res.json()
-    folders.value = data.folders
-    files.value   = data.files
-  } catch {
-    error.value = 'Could not load files'
-  } finally {
-    loading.value = false
-  }
+  const params = new URLSearchParams({ pid: props.productionId })
+  if (folderId) params.set('folder_id', folderId)
+  const { ok, data } = await $fetch(`/api/storage?${params}`, { silent: true })
+  loading.value = false
+  if (!ok) { error.value = 'Could not load files'; return }
+  folders.value = data.folders
+  files.value   = data.files
 }
 
 // ── Navigation history ────────────────────────────────────────────────────────
@@ -123,13 +118,8 @@ function onFolderRenamed({ id, name }) {
 }
 
 async function setFolderHue({ folder, hue }) {
-  const res = await fetch(`/api/storage/folders/${folder.id}`, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hue }),
-  })
-  if (!res.ok) return
+  const { ok } = await $fetch(`/api/storage/folders/${folder.id}`, { method: 'PATCH', json: { hue } })
+  if (!ok) return
   const idx = folders.value.findIndex(f => f.id === folder.id)
   if (idx !== -1) folders.value[idx] = { ...folders.value[idx], hue }
 }

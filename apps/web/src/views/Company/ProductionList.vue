@@ -5,12 +5,14 @@ import { Icon } from '@iconify/vue'
 import Button from '../../components/ui/Button.vue'
 import Avatar from '../../components/ui/Avatar.vue'
 import CreateProductionDialog from './CreateProductionDialog.vue'
+import { useApi } from '../../composables/useApi.js'
 
 const props = defineProps({
   company: { type: Object, required: true },
 })
 
 const router = useRouter()
+const { $fetch } = useApi()
 
 function openProduction(production) {
   router.push(`/c/${props.company.slug}/p/${production.slug}`)
@@ -24,15 +26,10 @@ const dialogOpen  = ref(false)
 async function load() {
   loading.value = true
   error.value   = ''
-  try {
-    const res = await fetch(`/api/production?cid=${props.company.id}`, { credentials: 'include' })
-    if (!res.ok) throw new Error()
-    productions.value = await res.json()
-  } catch {
-    error.value = 'Could not load productions'
-  } finally {
-    loading.value = false
-  }
+  const { ok, data } = await $fetch(`/api/production?cid=${props.company.id}`, { silent: true })
+  loading.value = false
+  if (!ok) { error.value = 'Could not load productions'; return }
+  productions.value = data
 }
 
 function onCreated(production) {

@@ -3,6 +3,7 @@ import { ref, computed, inject } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useContextMenu }   from '../../composables/useContextMenu.js'
 import { useFileSelection } from '../../composables/useFileSelection.js'
+import { useApi }           from '../../composables/useApi.js'
 import ContextMenuRoot      from '../ui/ContextMenuRoot.vue'
 import ContextMenuItem      from '../ui/ContextMenuItem.vue'
 import ContextMenuSeparator from '../ui/ContextMenuSeparator.vue'
@@ -19,6 +20,7 @@ const emit  = defineEmits(['select', 'delete', 'renamed', 'moved'])
 
 const productionId = inject('storage-production-id', null)
 const menu      = useContextMenu()
+const { $fetch } = useApi()
 
 // ── Selection ─────────────────────────────────────────────────────────────────
 const selection       = useFileSelection()
@@ -55,22 +57,13 @@ async function submitRename() {
   if (!name || name === props.file.name) { renameOpen.value = false; return }
   renameLoading.value = true
   renameError.value   = ''
-  try {
-    const res  = await fetch(`/api/storage/${props.file.id}`, {
-      method:      'PATCH',
-      credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify({ name }),
-    })
-    const data = await res.json()
-    if (!res.ok) { renameError.value = data.message ?? 'Rename failed'; return }
-    renameOpen.value = false
-    emit('renamed', { id: props.file.id, name })
-  } catch {
-    renameError.value = 'Network error'
-  } finally {
-    renameLoading.value = false
-  }
+  const { ok, error } = await $fetch(`/api/storage/${props.file.id}`, {
+    method: 'PATCH', json: { name }, silent: true,
+  })
+  renameLoading.value = false
+  if (!ok) { renameError.value = error ?? 'Rename failed'; return }
+  renameOpen.value = false
+  emit('renamed', { id: props.file.id, name })
 }
 
 // ── Move ──────────────────────────────────────────────────────────────────────
@@ -79,19 +72,13 @@ const moveLoading = ref(false)
 
 async function doMove(folderId) {
   moveLoading.value = true
-  try {
-    const res = await fetch(`/api/storage/${props.file.id}`, {
-      method:      'PATCH',
-      credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify({ folder_id: folderId }),
-    })
-    if (!res.ok) return
-    moveOpen.value = false
-    emit('moved', props.file.id)
-  } finally {
-    moveLoading.value = false
-  }
+  const { ok } = await $fetch(`/api/storage/${props.file.id}`, {
+    method: 'PATCH', json: { folder_id: folderId },
+  })
+  moveLoading.value = false
+  if (!ok) return
+  moveOpen.value = false
+  emit('moved', props.file.id)
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -100,14 +87,11 @@ const deleting      = ref(false)
 
 async function doDelete() {
   deleting.value = true
-  try {
-    const res = await fetch(`/api/storage/${props.file.id}`, { method: 'DELETE', credentials: 'include' })
-    if (!res.ok) return
-    confirmDelete.value = false
-    emit('delete', props.file)
-  } finally {
-    deleting.value = false
-  }
+  const { ok } = await $fetch(`/api/storage/${props.file.id}`, { method: 'DELETE' })
+  deleting.value = false
+  if (!ok) return
+  confirmDelete.value = false
+  emit('delete', props.file)
 }
 </script>
 
