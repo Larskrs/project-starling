@@ -1,0 +1,137 @@
+{
+  "nav": {
+    "home": "Home",
+    "files": "Files",
+    "settings": "Settings",
+    "members": "Members",
+    "roles": "Roles",
+    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse sidebar",
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode",
+    "logOut": "Log out"
+  },
+  "greeting": {
+    "morning": "Good morning",
+    "afternoon": "Good afternoon",
+    "evening": "Good evening",
+    "night": "Good night"
+  },
+  "auth": {
+    "welcomeBack": "Welcome back",
+    "signInSubtitle": "Sign in to your account to continue",
+    "email": "Email",
+    "password": "Password",
+    "signingIn": "Signing in…",
+    "signIn": "Sign in",
+    "noAccount": "Don't have an account?",
+    "register": "Register",
+    "createAccount": "Create an account",
+    "createAccountSubtitle": "Enter your details to get started",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "creatingAccount": "Creating account…",
+    "alreadyHaveAccount": "Already have an account?"
+  },
+  "company": {
+    "title": "Companies",
+    "new": "New",
+    "noCompanies": "No companies yet",
+    "createOne": "Create one",
+    "failedToLoad": "Failed to load",
+    "couldNotLoad": "Could not load company"
+  },
+  "createCompany": {
+    "title": "New company",
+    "nameLabel": "Name",
+    "namePlaceholder": "Acme Inc.",
+    "slugLabel": "Slug",
+    "slugPlaceholder": "acme-inc",
+    "slugHint": "Used in URLs — lowercase letters, numbers, hyphens.",
+    "cancel": "Cancel",
+    "creating": "Creating…",
+    "create": "Create company",
+    "error": "Failed to create company"
+  },
+  "production": {
+    "title": "Productions",
+    "new": "New production",
+    "noProductions": "No productions yet",
+    "noProductionsHint": "Create one from your company page",
+    "createFirst": "Create the first",
+    "failedToLoad": "Failed to load productions",
+    "couldNotLoad": "Could not load productions",
+    "notFound": "Production not found",
+    "noAccess": "You don't have access to this production",
+    "couldNotLoadProd": "Could not load production"
+  },
+  "createProduction": {
+    "title": "New production",
+    "nameLabel": "Name",
+    "namePlaceholder": "My Production",
+    "slugLabel": "Slug",
+    "slugPlaceholder": "my-production",
+    "slugHint": "Used in URLs — lowercase letters, numbers, hyphens.",
+    "cancel": "Cancel",
+    "creating": "Creating…",
+    "create": "Create production",
+    "error": "Failed to create production"
+  },
+  "members": {
+    "title": "Members",
+    "addMember": "Add member",
+    "emailPlaceholder": "user@example.com",
+    "add": "Add",
+    "search": "search...",
+    "noMembers": "No members yet",
+    "couldNotLoad": "Could not load members",
+    "removeTitle": "Remove member",
+    "you": "you",
+    "failedToAdd": "Failed to add member",
+    "confirmRemove": "Remove {name} from this production?"
+  },
+  "settings": {
+    "productionName": "Production name",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "save": "Save",
+    "failedToSave": "Failed to save",
+    "changeBanner": "Change banner",
+    "uploading": "Uploading…",
+    "uploadFailed": "Upload failed"
+  },
+  "roles": {
+    "title": "Roles",
+    "description": "Manage roles and their permissions for",
+    "createRole": "Create role",
+    "roleNamePlaceholder": "Role name",
+    "create": "Create",
+    "failedToCreate": "Failed to create role",
+    "couldNotLoad": "Could not load roles",
+    "noRoles": "No roles yet.",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "deleteRole": "Delete role",
+    "save": "Save",
+    "noPermissions": "No permissions",
+    "confirmDelete": "Delete role \"{name}\"? Members with this role will become unassigned.",
+    "noRole": "No role",
+    "permissions": {
+      "view": "View",
+      "editTimeline": "Edit timeline",
+      "manageStorage": "Manage storage",
+      "manageMembers": "Manage members",
+      "manageRoles": "Manage roles",
+      "administrator": "Administrator"
+    }
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{n}m ago",
+    "hoursAgo": "{n}h ago",
+    "daysAgo": "{n}d ago",
+    "weeksAgo": "{n}w ago",
+    "monthsAgo": "{n}mo ago",
+    "yearsAgo": "{n}y ago"
+  }
+}

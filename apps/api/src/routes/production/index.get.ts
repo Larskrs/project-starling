@@ -21,7 +21,18 @@ export default defineEventHandler(async (event) => {
   const accessFilter = await productionAccessFilter(auth);
   if (accessFilter === null) return [];
 
-  const rows = await db.select().from(productions)
+  const rows = await db.select({
+    id:             productions.id,
+    name:           productions.name,
+    slug:           productions.slug,
+    companyId:      productions.companyId,
+    companyName:    companies.name,
+    companySlug:    companies.slug,
+    profileImageId: productions.profileImageId,
+    bannerImageId:  productions.bannerImageId,
+    createdAt:      productions.createdAt,
+  }).from(productions)
+    .innerJoin(companies, eq(productions.companyId, companies.id))
     .where(and(
       cid ? eq(productions.companyId, cid) : undefined,
       accessFilter,

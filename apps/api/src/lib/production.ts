@@ -149,7 +149,7 @@ export async function requirePermission(
     throw createError({
       statusCode: 403,
       message:    `You don't have permission to ${description}`,
-      data:       { missingPermission: name ?? 'UNKNOWN' },
+      data:       { missingPermission: name ?? 'UNKNOWN', role: ctx.auth.role },
     });
   }
 }

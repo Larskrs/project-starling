@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@starling/ui":   ["./src/index.js"],
+      "@starling/ui/*": ["./src/*"]
+    }
+  }
+}

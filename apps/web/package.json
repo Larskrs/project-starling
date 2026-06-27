@@ -11,11 +11,14 @@
   "dependencies": {
     "@iconify/vue": "^5.0.1",
     "@starling/auth": "*",
+    "@starling/ui": "*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "radix-vue": "^1.9.17",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^3.3.1",
     "vue": "^3.5.13",
+    "vue-i18n": "^9.14.5",
     "vue-router": "^4.5.1"
   },
   "devDependencies": {

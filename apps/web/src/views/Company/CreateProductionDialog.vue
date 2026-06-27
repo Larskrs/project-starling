@@ -1,9 +1,14 @@
 <script setup>
 import { ref, watch } from 'vue'
-import Dialog from '../../components/ui/Dialog.vue'
-import Input  from '../../components/ui/Input.vue'
-import Label  from '../../components/ui/Label.vue'
-import Button from '../../components/ui/Button.vue'
+import { useI18n } from 'vue-i18n'
+import Dialog        from '@starling/ui/Dialog'
+import DialogContent from '@starling/ui/DialogContent'
+import DialogHeader  from '@starling/ui/DialogHeader'
+import DialogTitle   from '@starling/ui/DialogTitle'
+import DialogFooter  from '@starling/ui/DialogFooter'
+import Input  from '@starling/ui/Input'
+import Label  from '@starling/ui/Label'
+import Button from '@starling/ui/Button'
 import { useApi } from '../../composables/useApi.js'
 
 const props = defineProps({
@@ -13,6 +18,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'created'])
 
+const { t } = useI18n()
 const { $fetch } = useApi()
 
 const name       = ref('')
@@ -47,41 +53,40 @@ async function handleSubmit() {
     silent: true,
   })
   loading.value = false
-  if (!ok) { error.value = fetchErr ?? 'Failed to create production'; return }
+  if (!ok) { error.value = fetchErr ?? t('createProduction.error'); return }
   emit('created', data.production)
   emit('close')
 }
 </script>
 
 <template>
-  <Dialog :open="open" class="max-w-md" @close="emit('close')">
-    <div class="p-6 flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-base font-semibold text-foreground">New production</h2>
-        <button class="text-muted-foreground hover:text-foreground transition-colors leading-none" @click="emit('close')">✕</button>
-      </div>
+  <Dialog :open="open" @update:open="!$event && emit('close')">
+    <DialogContent class="max-w-md p-6 flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle>{{ $t('createProduction.title') }}</DialogTitle>
+      </DialogHeader>
 
       <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
         <div class="flex flex-col gap-1.5">
-          <Label for="production-name">Name</Label>
-          <Input id="production-name" v-model="name" placeholder="My Production" autofocus required />
+          <Label for="production-name">{{ $t('createProduction.nameLabel') }}</Label>
+          <Input id="production-name" v-model="name" :placeholder="$t('createProduction.namePlaceholder')" autofocus required />
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <Label for="production-slug">Slug</Label>
-          <Input id="production-slug" v-model="slug" placeholder="my-production" @input="onSlugInput" required />
-          <p class="text-xs text-muted-foreground">Used in URLs — lowercase letters, numbers, hyphens.</p>
+          <Label for="production-slug">{{ $t('createProduction.slugLabel') }}</Label>
+          <Input id="production-slug" v-model="slug" :placeholder="$t('createProduction.slugPlaceholder')" @input="onSlugInput" required />
+          <p class="text-xs text-muted-foreground">{{ $t('createProduction.slugHint') }}</p>
         </div>
 
         <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
 
-        <div class="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="outline" @click="emit('close')">Cancel</Button>
+        <DialogFooter class="pt-1">
+          <Button type="button" variant="outline" @click="emit('close')">{{ $t('createProduction.cancel') }}</Button>
           <Button type="submit" :disabled="!name.trim() || !slug.trim() || loading">
-            {{ loading ? 'Creating…' : 'Create production' }}
+            {{ loading ? $t('createProduction.creating') : $t('createProduction.create') }}
           </Button>
-        </div>
+        </DialogFooter>
       </form>
-    </div>
+    </DialogContent>
   </Dialog>
 </template>

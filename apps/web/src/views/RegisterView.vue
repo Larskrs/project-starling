@@ -1,9 +1,9 @@
 <script setup>
 import { ref } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
-import Button from '../components/ui/Button.vue'
-import Input  from '../components/ui/Input.vue'
-import Label  from '../components/ui/Label.vue'
+import Button from '@starling/ui/Button'
+import Input  from '@starling/ui/Input'
+import Label  from '@starling/ui/Label'
 
 const { register } = useAuth()
 
@@ -36,8 +36,8 @@ async function handleSubmit() {
 
     <!-- Header -->
     <div class="mb-8 text-center">
-      <h1 class="text-2xl font-semibold tracking-tight text-foreground">Create an account</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Enter your details to get started</p>
+      <h1 class="text-2xl font-semibold tracking-tight text-foreground">{{ $t('auth.createAccount') }}</h1>
+      <p class="mt-1 text-sm text-muted-foreground">{{ $t('auth.createAccountSubtitle') }}</p>
     </div>
 
     <!-- Card -->
@@ -45,7 +45,7 @@ async function handleSubmit() {
       <form @submit.prevent="handleSubmit" class="space-y-4">
 
         <div class="space-y-1.5">
-          <Label for="name">First name</Label>
+          <Label for="first_name">{{ $t('auth.firstName') }}</Label>
           <Input
             id="first_name"
             v-model="first_name"
@@ -54,7 +54,7 @@ async function handleSubmit() {
             autocomplete="given-name"
             required
           />
-          <Label for="last_name">Last name</Label>
+          <Label for="last_name">{{ $t('auth.lastName') }}</Label>
           <Input
             id="last_name"
             v-model="last_name"
@@ -66,7 +66,7 @@ async function handleSubmit() {
         </div>
 
         <div class="space-y-1.5">
-          <Label for="email">Email</Label>
+          <Label for="email">{{ $t('auth.email') }}</Label>
           <Input
             id="email"
             v-model="email"
@@ -78,12 +78,12 @@ async function handleSubmit() {
         </div>
 
         <div class="space-y-1.5">
-          <Label for="password">Password</Label>
+          <Label for="password">{{ $t('auth.password') }}</Label>
           <Input
             id="password"
             v-model="password"
             type="password"
-            placeholder="Minimum 8 characters"
+            :placeholder="$t('auth.password')"
             autocomplete="new-password"
             required
             minlength="8"
@@ -93,7 +93,7 @@ async function handleSubmit() {
         <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
 
         <Button type="submit" class="w-full" :disabled="loading">
-          {{ loading ? 'Creating account…' : 'Create account' }}
+          {{ loading ? $t('auth.creatingAccount') : $t('auth.createAccount') }}
         </Button>
 
       </form>
@@ -101,9 +101,9 @@ async function handleSubmit() {
 
     <!-- Footer -->
     <p class="mt-4 text-center text-sm text-muted-foreground">
-      Already have an account?
+      {{ $t('auth.alreadyHaveAccount') }}
       <RouterLink to="/login" class="font-medium text-primary underline-offset-4 hover:underline">
-        Sign in
+        {{ $t('auth.signIn') }}
       </RouterLink>
     </p>
 

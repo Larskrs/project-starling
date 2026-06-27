@@ -1,20 +1,22 @@
 <script setup>
 import { inject, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { useApi } from '../../composables/useApi.js'
 
 const route = useRoute()
 const data  = inject('production-data')
+const { t } = useI18n()
 const { $fetch } = useApi()
 
 const PERMISSIONS = [
-  { name: 'VIEW',           label: 'View',           bit: 1n },
-  { name: 'EDIT_TIMELINE',  label: 'Edit timeline',  bit: 2n },
-  { name: 'MANAGE_STORAGE', label: 'Manage storage', bit: 4n },
-  { name: 'MANAGE_MEMBERS', label: 'Manage members', bit: 8n },
-  { name: 'MANAGE_ROLES',   label: 'Manage roles',   bit: 16n },
-  { name: 'ADMINISTRATOR',  label: 'Administrator',  bit: 32n },
+  { name: 'VIEW',           key: 'roles.permissions.view',          bit: 1n },
+  { name: 'EDIT_TIMELINE',  key: 'roles.permissions.editTimeline',  bit: 2n },
+  { name: 'MANAGE_STORAGE', key: 'roles.permissions.manageStorage', bit: 4n },
+  { name: 'MANAGE_MEMBERS', key: 'roles.permissions.manageMembers', bit: 8n },
+  { name: 'MANAGE_ROLES',   key: 'roles.permissions.manageRoles',   bit: 16n },
+  { name: 'ADMINISTRATOR',  key: 'roles.permissions.administrator',  bit: 32n },
 ]
 
 // ── Load ──────────────────────────────────────────────────────────────────────
@@ -30,7 +32,7 @@ async function loadRoles() {
     { silent: true },
   )
   loading.value = false
-  if (!ok) { error.value = 'Could not load roles'; return }
+  if (!ok) { error.value = t('roles.couldNotLoad'); return }
   roles.value = resData.map(r => ({ ...r, permissions: BigInt(r.permissions) }))
 }
 
@@ -55,7 +57,7 @@ async function createRole() {
     },
   )
   creating.value = false
-  if (!ok) { createErr.value = error ?? 'Failed to create role'; return }
+  if (!ok) { createErr.value = error ?? t('roles.failedToCreate'); return }
   roles.value.push({ ...resData, permissions: BigInt(resData.permissions) })
   newName.value = ''
   newHue.value  = 200
@@ -86,7 +88,7 @@ async function saveRole() {
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 async function deleteRole(role) {
-  if (!confirm(`Delete role "${role.name}"? Members with this role will become unassigned.`)) return
+  if (!confirm(t('roles.confirmDelete', { name: role.name }))) return
   const { ok } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles/${role.id}`,
     { method: 'DELETE' },
@@ -107,21 +109,21 @@ function badgeStyle(hue) {
   <div class="max-w-3xl mx-auto px-6 py-8 space-y-6">
 
     <div>
-      <h2 class="text-lg font-semibold text-foreground mb-1">Roles</h2>
+      <h2 class="text-lg font-semibold text-foreground mb-1">{{ $t('roles.title') }}</h2>
       <p class="text-sm text-muted-foreground">
-        Manage roles and their permissions for
+        {{ $t('roles.description') }}
         <span class="font-medium text-foreground">{{ data?.production?.name }}</span>.
       </p>
     </div>
 
     <!-- Create form -->
     <div class="rounded-xl border border-border p-4 space-y-3">
-      <p class="text-sm font-medium text-foreground">Create role</p>
+      <p class="text-sm font-medium text-foreground">{{ $t('roles.createRole') }}</p>
       <div class="flex gap-2">
         <input
           v-model="newName"
           type="text"
-          placeholder="Role name"
+          :placeholder="$t('roles.roleNamePlaceholder')"
           maxlength="64"
           class="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           @keydown.enter="createRole"
@@ -136,7 +138,7 @@ function badgeStyle(hue) {
           @click="createRole"
         >
           <Icon v-if="creating" icon="mdi:loading" class="animate-spin" />
-          Create
+          {{ $t('roles.create') }}
         </button>
       </div>
       <p v-if="createErr" class="text-xs text-destructive">{{ createErr }}</p>
@@ -148,7 +150,7 @@ function badgeStyle(hue) {
     </div>
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
     <div v-else-if="roles.length === 0" class="text-center py-8 text-sm text-muted-foreground">
-      No roles yet.
+      {{ $t('roles.noRoles') }}
     </div>
     <ul v-else class="space-y-3">
       <li
@@ -165,14 +167,14 @@ function badgeStyle(hue) {
           <span class="flex-1 text-sm font-medium text-foreground">{{ role.name }}</span>
           <button
             class="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors"
-            :title="editing?.id === role.id ? 'Cancel' : 'Edit'"
+            :title="editing?.id === role.id ? $t('roles.cancel') : $t('roles.edit')"
             @click="editing?.id === role.id ? cancelEdit() : startEdit(role)"
           >
             <Icon :icon="editing?.id === role.id ? 'mdi:close' : 'mdi:pencil-outline'" class="text-base" />
           </button>
           <button
             class="p-1.5 rounded text-muted-foreground hover:text-destructive transition-colors"
-            title="Delete role"
+            :title="$t('roles.deleteRole')"
             @click="deleteRole(role)"
           >
             <Icon icon="mdi:trash-can-outline" class="text-base" />
@@ -214,7 +216,7 @@ function badgeStyle(hue) {
                 />
               </div>
               <span class="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
-                {{ perm.label }}
+                {{ $t(perm.key) }}
               </span>
             </label>
           </div>
@@ -224,21 +226,21 @@ function badgeStyle(hue) {
               class="h-8 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
               @click="saveRole"
             >
-              Save
+              {{ $t('roles.save') }}
             </button>
           </div>
         </div>
 
         <!-- Permission summary -->
         <div v-else class="border-t border-border px-4 py-2 flex flex-wrap gap-1.5">
-          <span v-if="role.permissions === 0n" class="text-xs text-muted-foreground">No permissions</span>
+          <span v-if="role.permissions === 0n" class="text-xs text-muted-foreground">{{ $t('roles.noPermissions') }}</span>
           <span
             v-for="perm in PERMISSIONS.filter(p => (role.permissions & p.bit) !== 0n)"
             :key="perm.name"
             class="px-2 py-0.5 rounded-full text-[11px] font-medium"
             :style="badgeStyle(role.hue)"
           >
-            {{ perm.label }}
+            {{ $t(perm.key) }}
           </span>
         </div>
       </li>

@@ -1,10 +1,12 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import ProductionList from './ProductionList.vue'
 import { useApi } from '../../composables/useApi.js'
 
 const route  = useRoute()
+const { t } = useI18n()
 const { $fetch } = useApi()
 const company = ref(null)
 const loading = ref(true)
@@ -16,8 +18,8 @@ async function load(slug) {
   company.value = null
   const { ok, data, status } = await $fetch(`/api/company/${slug}`, { silent: true })
   loading.value = false
-  if (status === 404) { error.value = `Company "${slug}" could not be found`; return }
-  if (!ok) { error.value = 'Could not load company'; return }
+  if (status === 404) { error.value = `${t('company.couldNotLoad')}: "${slug}"`; return }
+  if (!ok) { error.value = t('company.couldNotLoad'); return }
   company.value = data
 }
 
@@ -27,7 +29,7 @@ watch(() => route.params.slug, (slug) => { if (slug) load(slug) })
 
 <template>
   <div class="container mx-auto px-6 py-10">
-    <p v-if="loading" class="text-sm text-muted-foreground">Loading...</p>
+    <p v-if="loading" class="text-sm text-muted-foreground">…</p>
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
     <template v-else-if="company">
 

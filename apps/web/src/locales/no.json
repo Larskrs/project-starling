@@ -1,0 +1,137 @@
+{
+  "nav": {
+    "home": "Hjem",
+    "files": "Filer",
+    "settings": "Innstillinger",
+    "members": "Medlemmer",
+    "roles": "Roller",
+    "expandSidebar": "Utvid sidepanel",
+    "collapseSidebar": "Skjul sidepanel",
+    "switchToLight": "Bytt til lyst tema",
+    "switchToDark": "Bytt til mørkt tema",
+    "logOut": "Logg ut"
+  },
+  "greeting": {
+    "morning": "God morgen",
+    "afternoon": "God ettermiddag",
+    "evening": "God kveld",
+    "night": "God natt"
+  },
+  "auth": {
+    "welcomeBack": "Velkommen tilbake",
+    "signInSubtitle": "Logg inn på kontoen din for å fortsette",
+    "email": "E-post",
+    "password": "Passord",
+    "signingIn": "Logger inn…",
+    "signIn": "Logg inn",
+    "noAccount": "Har du ikke en konto?",
+    "register": "Registrer deg",
+    "createAccount": "Opprett konto",
+    "createAccountSubtitle": "Skriv inn dine opplysninger for å komme i gang",
+    "firstName": "Fornavn",
+    "lastName": "Etternavn",
+    "creatingAccount": "Oppretter konto…",
+    "alreadyHaveAccount": "Har du allerede en konto?"
+  },
+  "company": {
+    "title": "Produksjonshus",
+    "new": "Ny",
+    "noCompanies": "Ingen produksjonshus ennå",
+    "createOne": "Opprett ett",
+    "failedToLoad": "Klarte ikke å laste",
+    "couldNotLoad": "Klarte ikke å laste produksjonshuset"
+  },
+  "createCompany": {
+    "title": "Nytt produksjonshus",
+    "nameLabel": "Navn",
+    "namePlaceholder": "Acme Inc.",
+    "slugLabel": "Slug",
+    "slugPlaceholder": "acme-inc",
+    "slugHint": "Brukes i URLer — små bokstaver, tall, bindestrek.",
+    "cancel": "Avbryt",
+    "creating": "Oppretter…",
+    "create": "Opprett produksjonshus",
+    "error": "Feilet ved oppretting av produksjonshus"
+  },
+  "production": {
+    "title": "Produksjoner",
+    "new": "Ny produksjon",
+    "noProductions": "Ingen produksjoner ennå",
+    "noProductionsHint": "Opprett en fra produksjonshussiden",
+    "createFirst": "Opprett den første",
+    "failedToLoad": "Klarte ikke å laste produksjoner",
+    "couldNotLoad": "Klarte ikke å laste produksjoner",
+    "notFound": "Produksjon ikke funnet",
+    "noAccess": "Du har ikke tilgang til denne produksjonen",
+    "couldNotLoadProd": "Klarte ikke å laste produksjonen"
+  },
+  "createProduction": {
+    "title": "Ny produksjon",
+    "nameLabel": "Navn",
+    "namePlaceholder": "Min produksjon",
+    "slugLabel": "Slug",
+    "slugPlaceholder": "min-produksjon",
+    "slugHint": "Brukes i URLer — små bokstaver, tall, bindestrek.",
+    "cancel": "Avbryt",
+    "creating": "Oppretter…",
+    "create": "Opprett produksjon",
+    "error": "Klarte ikke å opprette produksjon"
+  },
+  "members": {
+    "title": "Medlemmer",
+    "addMember": "Legg til medlem",
+    "emailPlaceholder": "bruker@eksempel.no",
+    "add": "Legg til",
+    "search": "søk...",
+    "noMembers": "Ingen medlemmer ennå",
+    "couldNotLoad": "Klarte ikke å laste medlemmer",
+    "removeTitle": "Fjern medlem",
+    "you": "deg",
+    "failedToAdd": "Klarte ikke å legge til medlem",
+    "confirmRemove": "Fjern {name} fra denne produksjonen?"
+  },
+  "roles": {
+    "title": "Roller",
+    "description": "Administrer roller og tilganger for",
+    "createRole": "Opprett rolle",
+    "roleNamePlaceholder": "Rollenavn",
+    "create": "Opprett",
+    "failedToCreate": "Klarte ikke å opprette rollen",
+    "couldNotLoad": "Klarte ikke å laste roller",
+    "noRoles": "Ingen roller ennå.",
+    "cancel": "Avbryt",
+    "edit": "Rediger",
+    "deleteRole": "Slett rolle",
+    "save": "Lagre",
+    "noPermissions": "Ingen tilganger",
+    "confirmDelete": "Slett rollen \"{name}\"? Medlemmer med denne rollen vil bli fratatt den.",
+    "noRole": "Ingen rolle",
+    "permissions": {
+      "view": "Se",
+      "editTimeline": "Rediger tidslinje",
+      "manageStorage": "Administrer lagring",
+      "manageMembers": "Administrer medlemmer",
+      "manageRoles": "Administrer roller",
+      "administrator": "Administrator"
+    }
+  },
+  "settings": {
+    "productionName": "Produksjonsnavn",
+    "saving": "Lagrer…",
+    "saved": "Lagret",
+    "save": "Lagre",
+    "failedToSave": "Klarte ikke å lagre",
+    "changeBanner": "Bytt banner",
+    "uploading": "Laster opp…",
+    "uploadFailed": "Opplasting feilet"
+  },
+  "time": {
+    "justNow": "nå nettopp",
+    "minutesAgo": "{n}m siden",
+    "hoursAgo": "{n}t siden",
+    "daysAgo": "{n}d siden",
+    "weeksAgo": "{n}u siden",
+    "monthsAgo": "{n}md siden",
+    "yearsAgo": "{n}å siden"
+  }
+}

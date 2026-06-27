@@ -2,8 +2,8 @@
 import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useAuth }        from '../../composables/useAuth.js'
 import { useSocket }      from '../../composables/useSocket.js'
-import Button             from '../../components/ui/Button.vue'
-import Input              from '../../components/ui/Input.vue'
+import Button             from '@starling/ui/Button'
+import Input              from '@starling/ui/Input'
 import GifPickerDialog     from './GifPickerDialog.vue'
 
 const { user, logout, fetchUser } = useAuth()

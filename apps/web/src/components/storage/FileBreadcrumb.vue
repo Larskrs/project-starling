@@ -1,6 +1,6 @@
 <script setup>
 import { Icon } from '@iconify/vue'
-import Breadcrumb from '../ui/Breadcrumb.vue'
+import Breadcrumb from '@starling/ui/Breadcrumb'
 
 defineProps({
   items: { type: Array, required: true }, // [{ id, label }]

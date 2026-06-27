@@ -1,9 +1,14 @@
 <script setup>
 import { ref, watch } from 'vue'
-import Dialog from '../../components/ui/Dialog.vue'
-import Input  from '../../components/ui/Input.vue'
-import Label  from '../../components/ui/Label.vue'
-import Button from '../../components/ui/Button.vue'
+import { useI18n } from 'vue-i18n'
+import Dialog        from '@starling/ui/Dialog'
+import DialogContent from '@starling/ui/DialogContent'
+import DialogHeader  from '@starling/ui/DialogHeader'
+import DialogTitle   from '@starling/ui/DialogTitle'
+import DialogFooter  from '@starling/ui/DialogFooter'
+import Input  from '@starling/ui/Input'
+import Label  from '@starling/ui/Label'
+import Button from '@starling/ui/Button'
 import { useApi } from '../../composables/useApi.js'
 
 const props = defineProps({
@@ -12,6 +17,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'created'])
 
+const { t } = useI18n()
 const { $fetch } = useApi()
 
 const name    = ref('')
@@ -46,41 +52,40 @@ async function handleSubmit() {
     silent: true,
   })
   loading.value = false
-  if (!ok) { error.value = fetchErr ?? 'Feilet ved oppretting av produksjonshus'; return }
+  if (!ok) { error.value = fetchErr ?? t('createCompany.error'); return }
   emit('created', data.company)
   emit('close')
 }
 </script>
 
 <template>
-  <Dialog :open="open" class="max-w-md" @close="emit('close')">
-    <div class="p-6 flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-base font-semibold text-foreground">Nytt produksjonshus</h2>
-        <button class="text-muted-foreground hover:text-foreground transition-colors leading-none" @click="emit('close')">✕</button>
-      </div>
+  <Dialog :open="open" @update:open="!$event && emit('close')">
+    <DialogContent class="max-w-md p-6 flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle>{{ $t('createCompany.title') }}</DialogTitle>
+      </DialogHeader>
 
       <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
         <div class="flex flex-col gap-1.5">
-          <Label for="company-name">Navn</Label>
-          <Input id="company-name" v-model="name" placeholder="Acme Inc." autofocus required />
+          <Label for="company-name">{{ $t('createCompany.nameLabel') }}</Label>
+          <Input id="company-name" v-model="name" :placeholder="$t('createCompany.namePlaceholder')" autofocus required />
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <Label for="company-slug">Sideaddresse</Label>
-          <Input id="company-slug" v-model="slug" placeholder="acme-inc" @input="onSlugInput" required />
-          <p class="text-xs text-muted-foreground">Brukes i URL-er — små bokstaver, tall, bindestreker.</p>
+          <Label for="company-slug">{{ $t('createCompany.slugLabel') }}</Label>
+          <Input id="company-slug" v-model="slug" :placeholder="$t('createCompany.slugPlaceholder')" @input="onSlugInput" required />
+          <p class="text-xs text-muted-foreground">{{ $t('createCompany.slugHint') }}</p>
         </div>
 
         <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
 
-        <div class="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="outline" @click="emit('close')">Avbryt</Button>
+        <DialogFooter class="pt-1">
+          <Button type="button" variant="outline" @click="emit('close')">{{ $t('createCompany.cancel') }}</Button>
           <Button type="submit" :disabled="!name.trim() || !slug.trim() || loading">
-            {{ loading ? 'Oppretter…' : 'Opprett produksjonshus' }}
+            {{ loading ? $t('createCompany.creating') : $t('createCompany.create') }}
           </Button>
-        </div>
+        </DialogFooter>
       </form>
-    </div>
+    </DialogContent>
   </Dialog>
 </template>

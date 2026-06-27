@@ -1,5 +1,5 @@
 <script setup>
-import { cn } from '../../lib/utils.js'
+import { cn } from './utils.js'
 const props = defineProps({ class: { type: String, default: '' } })
 </script>
 

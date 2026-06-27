@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { cn } from '../../lib/utils.js'
+import { cn } from './utils.js'
 
 const props = defineProps({
   src:   { type: String, default: null },

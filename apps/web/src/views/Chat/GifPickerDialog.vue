@@ -1,7 +1,10 @@
 <script setup>
 import { ref, watch } from 'vue'
-import Dialog from '../../components/ui/Dialog.vue'
-import Input  from '../../components/ui/Input.vue'
+import Dialog        from '@starling/ui/Dialog'
+import DialogContent from '@starling/ui/DialogContent'
+import DialogHeader  from '@starling/ui/DialogHeader'
+import DialogTitle   from '@starling/ui/DialogTitle'
+import Input  from '@starling/ui/Input'
 import { useApi } from '../../composables/useApi.js'
 
 const props = defineProps({
@@ -53,19 +56,12 @@ function select(gif) {
 </script>
 
 <template>
-  <Dialog :open="open" class="max-w-xl" @close="emit('close')">
-    <div class="flex flex-col gap-3 p-4" style="height: 480px">
+  <Dialog :open="open" @update:open="!$event && emit('close')">
+    <DialogContent class="max-w-xl flex flex-col gap-3 p-4" style="height: 480px">
 
-      <!-- Header -->
-      <div class="flex items-center justify-between shrink-0">
-        <span class="text-sm font-semibold text-foreground">
-          {{ query ? `"${query}"` : 'Trending GIFs' }}
-        </span>
-        <button
-          class="text-muted-foreground hover:text-foreground transition-colors leading-none"
-          @click="emit('close')"
-        >✕</button>
-      </div>
+      <DialogHeader class="shrink-0">
+        <DialogTitle>{{ query ? `"${query}"` : 'Trending GIFs' }}</DialogTitle>
+      </DialogHeader>
 
       <Input v-model="query" placeholder="Search Giphy…" autofocus class="shrink-0" />
 
@@ -93,6 +89,6 @@ function select(gif) {
       </div>
 
       <p class="shrink-0 text-right text-xs text-muted-foreground">Powered by GIPHY</p>
-    </div>
+    </DialogContent>
   </Dialog>
 </template>

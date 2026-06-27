@@ -11,7 +11,6 @@ const router = createRouter({
     { path: '/register', component: () => import('../views/RegisterView.vue'),  meta: { layout: AuthLayout } },
     { path: '/chat',     component: () => import('../views/Chat/index.vue'),    meta: { requiresAuth: true, layout: EmptyLayout } },
     { path: '/home',     component: () => import('../views/Home/index.vue'),    meta: { requiresAuth: true, layout: DefaultLayout } },
-    { path: '/c',        component: () => import('../views/Companies/index.vue'), meta: { requiresAuth: true, layout: DefaultLayout } },
     { path: '/c/:slug',  component: () => import('../views/Company/index.vue'), meta: { requiresAuth: true, layout: DefaultLayout } },
 
     {

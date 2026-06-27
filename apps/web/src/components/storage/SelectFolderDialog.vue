@@ -1,11 +1,14 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { Icon } from '@iconify/vue'
-import Dialog     from '../ui/Dialog.vue'
-import Button     from '../ui/Button.vue'
-import Input      from '../ui/Input.vue'
-import Label      from '../ui/Label.vue'
-import Breadcrumb from '../ui/Breadcrumb.vue'
+import Dialog        from '@starling/ui/Dialog'
+import DialogContent from '@starling/ui/DialogContent'
+import DialogHeader  from '@starling/ui/DialogHeader'
+import DialogTitle   from '@starling/ui/DialogTitle'
+import Button     from '@starling/ui/Button'
+import Input      from '@starling/ui/Input'
+import Label      from '@starling/ui/Label'
+import Breadcrumb from '@starling/ui/Breadcrumb'
 import { useApi } from '../../composables/useApi.js'
 
 const props = defineProps({
@@ -90,16 +93,12 @@ async function submitCreate() {
 </script>
 
 <template>
-  <Dialog :open="open" class="max-w-sm" @close="emit('close')">
-    <div class="flex flex-col">
+  <Dialog :open="open" @update:open="!$event && emit('close')">
+    <DialogContent class="max-w-sm flex flex-col p-0">
 
-      <!-- Header -->
-      <div class="flex items-center justify-between px-5 py-4 border-b border-border">
-        <h3 class="text-base font-semibold">{{ title }}</h3>
-        <button class="text-muted-foreground hover:text-foreground transition-colors" @click="emit('close')">
-          <Icon icon="mdi:close" class="text-lg" />
-        </button>
-      </div>
+      <DialogHeader class="px-5 py-4 border-b border-border">
+        <DialogTitle>{{ title }}</DialogTitle>
+      </DialogHeader>
 
       <!-- Breadcrumb -->
       <div class="px-4 py-2.5 border-b border-border">
@@ -176,6 +175,6 @@ async function submitCreate() {
         </div>
       </div>
 
-    </div>
+    </DialogContent>
   </Dialog>
 </template>

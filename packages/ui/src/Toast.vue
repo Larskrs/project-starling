@@ -1,6 +1,6 @@
 <script setup>
 import { Icon } from '@iconify/vue'
-import { useToast } from '../../composables/useToast.js'
+import { useToast } from './useToast.js'
 
 const { toasts, dismiss } = useToast()
 

@@ -1,23 +1,22 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import Button              from '../../components/ui/Button.vue'
+import { Icon }            from '@iconify/vue'
 import CreateCompanyDialog from './CreateCompanyDialog.vue'
-import { Icon } from '@iconify/vue'
-import { useApi } from '../../composables/useApi.js'
+import { useApi }          from '../../composables/useApi.js'
 
 const { $fetch } = useApi()
 
-const companies    = ref([])
-const loading      = ref(true)
-const error        = ref('')
-const dialogOpen   = ref(false)
+const companies  = ref([])
+const loading    = ref(true)
+const error      = ref('')
+const dialogOpen = ref(false)
 
 async function load() {
   loading.value = true
   error.value   = ''
   const { ok, data } = await $fetch('/api/company', { silent: true })
   loading.value = false
-  if (!ok) { error.value = 'Feil ved lasting av selskaper'; return }
+  if (!ok) { error.value = 'company.failedToLoad'; return }
   companies.value = data.companyList
 }
 
@@ -26,46 +25,63 @@ function onCreated(company) {
 }
 
 onMounted(load)
+
+function companyColor(slug) {
+  let h = 0
+  for (const ch of (slug || '')) h = (h * 31 + ch.charCodeAt(0)) & 0x7fffffff
+  return `oklch(62% 0.17 ${h % 360})`
+}
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <section class="rounded-xl border border-border bg-card overflow-hidden">
 
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-foreground">Produksjonshus</h2>
-      <Button size="sm" @click="dialogOpen = true">Nytt produksjonshus</Button>
+    <div class="flex items-center justify-between px-5 py-3.5 border-b border-border">
+      <h2 class="text-sm font-semibold">{{ $t('company.title') }}</h2>
+      <button
+        class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        @click="dialogOpen = true"
+      >
+        <Icon icon="mdi:plus" class="text-sm" />
+        {{ $t('company.new') }}
+      </button>
     </div>
 
-    <!-- Loading -->
-    <p v-if="loading" class="text-sm text-muted-foreground">Laster inn...</p>
-
-    <!-- Error -->
-    <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
-
-    <!-- Empty -->
-    <div v-else-if="companies.length === 0" class="rounded-lg border-1 border-dashed border-border py-12 text-center">
-      <p class="text-sm text-muted-foreground">Ingen produksjonshus ennå.</p>
-      <Button variant="ghost" size="sm" class="mt-2" @click="dialogOpen = true">Opprett det første</Button>
+    <div v-if="loading" class="flex items-center justify-center py-12 text-muted-foreground">
+      <Icon icon="mdi:loading" class="animate-spin text-xl" />
     </div>
 
-    <!-- List -->
-    <ul v-else class="flex flex-col gap-2">
-      <li v-for="c in companies" :key="c.id" class="hover:bg-muted/50 transition-colors">
+    <div v-else-if="error" class="px-5 py-4 text-sm text-destructive">{{ $t(error) }}</div>
+
+    <div v-else-if="!companies.length" class="flex flex-col items-center gap-2 py-12 text-center">
+      <p class="text-sm text-muted-foreground">{{ $t('company.noCompanies') }}</p>
+      <button class="text-xs text-primary hover:underline underline-offset-2" @click="dialogOpen = true">
+        {{ $t('company.createOne') }}
+      </button>
+    </div>
+
+    <ul v-else class="divide-y divide-border">
+      <li v-for="c in companies" :key="c.id">
         <router-link
           :to="`/c/${c.slug}`"
-          class="border border-border rounded-lg group flex items-center justify-between px-4 py-3"
+          class="group flex items-center gap-3 px-5 py-3 hover:bg-muted/40 transition-colors"
         >
-          <div>
-            <p class="text-sm font-medium text-foreground">{{ c.name }}</p>
-            <p class="text-xs text-muted-foreground font-mono">{{ c.slug }}</p>
-          </div>
-          <Icon icon="mdi:arrow-right" class="text-muted-foreground/50 group-hover:text-muted-foreground transition-colors duration-300" />
+          <span
+            class="size-6 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0 text-white"
+            :style="{ backgroundColor: companyColor(c.slug) }"
+          >
+            {{ c.name[0]?.toUpperCase() }}
+          </span>
+          <span class="text-sm text-foreground truncate flex-1">{{ c.name }}</span>
+          <Icon
+            icon="mdi:arrow-right"
+            class="text-sm text-muted-foreground/20 group-hover:text-muted-foreground/60 shrink-0 transition-colors"
+          />
         </router-link>
       </li>
     </ul>
 
-  </div>
+  </section>
 
   <CreateCompanyDialog
     :open="dialogOpen"

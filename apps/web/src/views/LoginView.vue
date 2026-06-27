@@ -1,9 +1,9 @@
 <script setup>
 import { ref } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
-import Button from '../components/ui/Button.vue'
-import Input  from '../components/ui/Input.vue'
-import Label  from '../components/ui/Label.vue'
+import Button from '@starling/ui/Button'
+import Input  from '@starling/ui/Input'
+import Label  from '@starling/ui/Label'
 
 const { login } = useAuth()
 
@@ -27,17 +27,15 @@ async function handleSubmit() {
 
 <template>
   <Teleport to="#auth-panel" defer>
-    <div >
-
-    </div>
+    <div />
   </Teleport>
 
   <div class="flex flex-col max-w-sm w-full">
 
     <!-- Header -->
     <div class="mb-8 text-center">
-      <h1 class="text-2xl font-semibold tracking-tight text-foreground">Welcome back</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Sign in to your account to continue</p>
+      <h1 class="text-2xl font-semibold tracking-tight text-foreground">{{ $t('auth.welcomeBack') }}</h1>
+      <p class="mt-1 text-sm text-muted-foreground">{{ $t('auth.signInSubtitle') }}</p>
     </div>
 
     <!-- Card -->
@@ -45,7 +43,7 @@ async function handleSubmit() {
       <form @submit.prevent="handleSubmit" class="space-y-4">
 
         <div class="space-y-1.5">
-          <Label for="email">Email</Label>
+          <Label for="email">{{ $t('auth.email') }}</Label>
           <Input
             id="email"
             v-model="email"
@@ -57,7 +55,7 @@ async function handleSubmit() {
         </div>
 
         <div class="space-y-1.5">
-          <Label for="password">Password</Label>
+          <Label for="password">{{ $t('auth.password') }}</Label>
           <Input
             id="password"
             v-model="password"
@@ -71,7 +69,7 @@ async function handleSubmit() {
         <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
 
         <Button type="submit" class="w-full" :disabled="loading">
-          {{ loading ? 'Signing in…' : 'Sign in' }}
+          {{ loading ? $t('auth.signingIn') : $t('auth.signIn') }}
         </Button>
 
       </form>
@@ -79,9 +77,9 @@ async function handleSubmit() {
 
     <!-- Footer -->
     <p class="mt-4 text-center text-sm text-muted-foreground">
-      Don't have an account?
+      {{ $t('auth.noAccount') }}
       <RouterLink to="/register" class="font-medium text-primary underline-offset-4 hover:underline">
-        Register
+        {{ $t('auth.register') }}
       </RouterLink>
     </p>
 

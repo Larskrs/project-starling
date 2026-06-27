@@ -1,6 +1,10 @@
 <script setup>
-import Dialog from './Dialog.vue'
-import Button from './Button.vue'
+import Dialog        from './Dialog.vue'
+import DialogContent from './DialogContent.vue'
+import DialogHeader  from './DialogHeader.vue'
+import DialogTitle   from './DialogTitle.vue'
+import DialogFooter  from './DialogFooter.vue'
+import Button        from './Button.vue'
 
 defineProps({
   open:         { type: Boolean, required: true },
@@ -15,15 +19,17 @@ defineEmits(['confirm', 'cancel'])
 </script>
 
 <template>
-  <Dialog :open="open" class="max-w-sm" @close="$emit('cancel')">
-    <div class="p-6 flex flex-col gap-4">
-      <h3 class="text-base font-semibold text-foreground">{{ title }}</h3>
+  <Dialog :open="open" @update:open="!$event && $emit('cancel')">
+    <DialogContent class="max-w-sm p-6 flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle>{{ title }}</DialogTitle>
+      </DialogHeader>
 
       <p class="text-sm text-muted-foreground leading-relaxed">
         <slot />
       </p>
 
-      <div class="flex justify-end gap-2 pt-1">
+      <DialogFooter class="pt-1">
         <Button type="button" variant="outline" :disabled="loading" @click="$emit('cancel')">
           {{ cancelLabel }}
         </Button>
@@ -35,7 +41,7 @@ defineEmits(['confirm', 'cancel'])
         >
           {{ loading ? 'Deleting…' : confirmLabel }}
         </Button>
-      </div>
-    </div>
+      </DialogFooter>
+    </DialogContent>
   </Dialog>
 </template>

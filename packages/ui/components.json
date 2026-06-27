@@ -1,0 +1,16 @@
+{
+  "$schema": "https://shadcn-vue.com/schema.json",
+  "style": "new-york",
+  "typescript": false,
+  "tailwind": {
+    "config": "../../apps/web/tailwind.config.js",
+    "css": "../../apps/web/src/style.css",
+    "baseColor": "slate",
+    "cssVariables": true
+  },
+  "framework": "vite",
+  "aliases": {
+    "components": "@starling/ui",
+    "utils": "@starling/ui/utils"
+  }
+}

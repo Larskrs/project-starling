@@ -6,11 +6,15 @@ import FilePreviewOverlay    from './FilePreviewOverlay.vue'
 import FileBreadcrumb     from './FileBreadcrumb.vue'
 import DropUpload         from './DropUpload.vue'
 import SelectFolderDialog from './SelectFolderDialog.vue'
-import Button             from '../ui/Button.vue'
-import Input              from '../ui/Input.vue'
-import Label              from '../ui/Label.vue'
-import Dialog             from '../ui/Dialog.vue'
-import ConfirmDialog      from '../ui/ConfirmDialog.vue'
+import Button             from '@starling/ui/Button'
+import Input              from '@starling/ui/Input'
+import Label              from '@starling/ui/Label'
+import Dialog        from '@starling/ui/Dialog'
+import DialogContent from '@starling/ui/DialogContent'
+import DialogHeader  from '@starling/ui/DialogHeader'
+import DialogTitle   from '@starling/ui/DialogTitle'
+import DialogFooter  from '@starling/ui/DialogFooter'
+import ConfirmDialog      from '@starling/ui/ConfirmDialog'
 import { useUpload }            from '../../composables/useUpload'
 import { provideFileSelection } from '../../composables/useFileSelection.js'
 import { useApi }               from '../../composables/useApi.js'
@@ -241,26 +245,25 @@ async function moveSelected(folderId) {
     </Transition>
 
     <!-- Create folder dialog -->
-    <Dialog :open="createFolderOpen" class="max-w-sm" @close="createFolderOpen = false">
-      <div class="p-6 flex flex-col gap-4">
-        <div class="flex items-center justify-between">
-          <h3 class="text-base font-semibold text-foreground">New folder</h3>
-          <button class="text-muted-foreground hover:text-foreground transition-colors" @click="createFolderOpen = false">✕</button>
-        </div>
+    <Dialog :open="createFolderOpen" @update:open="!$event && (createFolderOpen = false)">
+      <DialogContent class="max-w-sm p-6 flex flex-col gap-4">
+        <DialogHeader>
+          <DialogTitle>New folder</DialogTitle>
+        </DialogHeader>
         <form class="flex flex-col gap-3" @submit.prevent="submitCreateFolder">
           <div class="flex flex-col gap-1.5">
             <Label for="folder-name">Folder name</Label>
             <Input id="folder-name" v-model="folderName" placeholder="Assets" autofocus required />
           </div>
           <p v-if="folderError" class="text-sm text-destructive">{{ folderError }}</p>
-          <div class="flex justify-end gap-2 pt-1">
+          <DialogFooter class="pt-1">
             <Button type="button" variant="outline" @click="createFolderOpen = false">Cancel</Button>
             <Button type="submit" :disabled="!folderName.trim() || folderLoading">
               {{ folderLoading ? 'Creating…' : 'Create folder' }}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
-      </div>
+      </DialogContent>
     </Dialog>
 
     <!-- Confirm bulk delete -->

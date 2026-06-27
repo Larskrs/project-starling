@@ -1,0 +1,43 @@
+{
+  "name": "@starling/ui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".":                      "./src/index.js",
+    "./utils":                "./src/utils.js",
+    "./useToast":             "./src/useToast.js",
+    "./Button":               "./src/Button.vue",
+    "./Avatar":               "./src/Avatar.vue",
+    "./Breadcrumb":           "./src/Breadcrumb.vue",
+    "./BreadcrumbNav":        "./src/BreadcrumbNav.vue",
+    "./ConfirmDialog":        "./src/ConfirmDialog.vue",
+    "./Dialog":               "./src/Dialog.vue",
+    "./DialogContent":        "./src/DialogContent.vue",
+    "./DialogHeader":         "./src/DialogHeader.vue",
+    "./DialogTitle":          "./src/DialogTitle.vue",
+    "./DialogFooter":         "./src/DialogFooter.vue",
+    "./DropdownMenuContent":  "./src/DropdownMenuContent.vue",
+    "./DropdownMenuItem":     "./src/DropdownMenuItem.vue",
+    "./DropdownMenuLabel":    "./src/DropdownMenuLabel.vue",
+    "./DropdownMenuSeparator":"./src/DropdownMenuSeparator.vue",
+    "./DropdownMenuSub":      "./src/DropdownMenuSub.vue",
+    "./ImageCropper":         "./src/ImageCropper.vue",
+    "./Input":                "./src/Input.vue",
+    "./Label":                "./src/Label.vue",
+    "./NavSidebar":           "./src/NavSidebar.vue",
+    "./ProductionBanner":     "./src/ProductionBanner.vue",
+    "./Tabs":                 "./src/Tabs.vue",
+    "./Toast":                "./src/Toast.vue"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.3.1"
+  },
+  "peerDependencies": {
+    "@iconify/vue": "^5.0.0",
+    "radix-vue": "^1.0.0",
+    "vue": "^3.0.0",
+    "vue-router": "^4.0.0"
+  }
+}

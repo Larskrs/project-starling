@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import DefaultLayout from './layouts/DefaultLayout.vue'
 import DebugProvider from './providers/DebugProvider.vue'
-import Toast from './components/ui/Toast.vue'
+import Toast from '@starling/ui/Toast'
 
 const route = useRoute()
 

@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { provideDebugMenu } from './useDebugProvider'
 import { useColorMode } from '../composables/useColorMode.js'
+import { useLocale } from '../composables/useLocale.js'
 
 const props = withDefaults(defineProps<{ triggerKey?: string }>(), {
   triggerKey: 'd',
@@ -10,6 +11,7 @@ const props = withDefaults(defineProps<{ triggerKey?: string }>(), {
 
 const { visible, toggle } = provideDebugMenu()
 const { toggle: toggleColorMode } = useColorMode()
+const { toggleLocale } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
@@ -64,6 +66,12 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 't') {
     e.preventDefault()
     toggleColorMode()
+    return
+  }
+
+  if (e.key === 'l') {
+    e.preventDefault()
+    toggleLocale()
     return
   }
 

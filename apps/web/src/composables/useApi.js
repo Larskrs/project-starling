@@ -1,4 +1,4 @@
-import { useToast } from './useToast.js'
+import { useToast } from '@starling/ui/useToast'
 
 /**
  * Wraps fetch with:

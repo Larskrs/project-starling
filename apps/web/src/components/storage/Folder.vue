@@ -1,23 +1,27 @@
 <script setup>
 import { ref, computed, inject, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
-import { useContextMenu } from '../../composables/useContextMenu.js'
-import { useColorMode }  from '../../composables/useColorMode.js'
-import { useApi }        from '../../composables/useApi.js'
-import ContextMenuRoot      from '../ui/ContextMenuRoot.vue'
-import ContextMenuItem      from '../ui/ContextMenuItem.vue'
-import ContextMenuSub       from '../ui/ContextMenuSub.vue'
-import ContextMenuSeparator from '../ui/ContextMenuSeparator.vue'
-import ContextMenuLabel     from '../ui/ContextMenuLabel.vue'
-import ConfirmDialog        from '../ui/ConfirmDialog.vue'
-import Dialog               from '../ui/Dialog.vue'
-import Button               from '../ui/Button.vue'
-import Input                from '../ui/Input.vue'
-import Label                from '../ui/Label.vue'
+import { DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
+import { useColorMode }        from '../../composables/useColorMode.js'
+import { useApi }              from '../../composables/useApi.js'
+import DropdownMenuContent     from '@starling/ui/DropdownMenuContent'
+import DropdownMenuItem        from '@starling/ui/DropdownMenuItem'
+import DropdownMenuSub         from '@starling/ui/DropdownMenuSub'
+import DropdownMenuSeparator   from '@starling/ui/DropdownMenuSeparator'
+import DropdownMenuLabel       from '@starling/ui/DropdownMenuLabel'
+import ConfirmDialog           from '@starling/ui/ConfirmDialog'
+import Dialog        from '@starling/ui/Dialog'
+import DialogContent from '@starling/ui/DialogContent'
+import DialogHeader  from '@starling/ui/DialogHeader'
+import DialogTitle   from '@starling/ui/DialogTitle'
+import DialogFooter  from '@starling/ui/DialogFooter'
+import Button                  from '@starling/ui/Button'
+import Input                   from '@starling/ui/Input'
+import Label                   from '@starling/ui/Label'
 
 const props = defineProps({ folder: { type: Object, required: true } })
 const emit  = defineEmits(['open', 'hue-change', 'deleted', 'renamed'])
-const menu  = useContextMenu()
+const menuOpen = ref(false)
 const { isDark } = useColorMode()
 const { $fetch } = useApi()
 
@@ -119,122 +123,120 @@ function swatchStyle(hue) {
 </script>
 
 <template>
-  <div
-    class="folder-card isolate relative flex items-center rounded-lg transition-colors"
-    :class="{ 'folder-card--hued': folder.hue != null }"
-    @mouseenter="isHovered = true"
-    @mouseleave="isHovered = false"
-    @contextmenu.prevent="menu.open($event)"
-    :style="folder.hue != null ? (isDark ? {
-      '--bg':    `oklch(0.58 0.25 ${folder.hue} / 0.3)`,
-      '--hover': `oklch(0.64 0.25 ${folder.hue} / 0.5)`,
-      '--icon':  `oklch(0.72 0.20 ${folder.hue})`,
-    } : {
-      '--bg':    `oklch(0.88 0.07 ${folder.hue} / 0.6)`,
-      '--hover': `oklch(0.85 0.09 ${folder.hue} / 0.8)`,
-      '--icon':  `oklch(0.52 0.18 ${folder.hue})`,
-    }) : null"
-  >
-    <!-- File peek previews -->
-    <Transition name="peek">
-      <div
-        v-if="previewFiles.length"
-        class="peek-cards absolute pointer-events-none"
-        style="top: 0; right: 40px;"
-      >
-        <div class="relative" style="width: 52px; height: 36px;">
-          <div
-            v-for="(file, i) in previewFiles"
-            :key="file.id"
-            class="absolute inset-0 rounded overflow-hidden shadow-lg bg-muted peek-card"
-            style="border: 1px solid oklch(1 0 0 / 0.1);"
-            :style="peekStyles[i]"
-          >
-            <img
-              v-if="fileThumbnailSrc(file)"
-              :src="fileThumbnailSrc(file)"
-              class="w-full h-full object-cover"
-            />
-            <div v-else class="w-full h-full flex items-center justify-center">
-              <Icon :icon="fileTypeIcon(file)" class="text-lg text-foreground/50" />
+  <DropdownMenuRoot v-model:open="menuOpen">
+    <div
+      class="folder-card isolate relative flex items-center rounded-lg transition-colors"
+      :class="{ 'folder-card--hued': folder.hue != null }"
+      @mouseenter="isHovered = true"
+      @mouseleave="isHovered = false"
+      @contextmenu.prevent="menuOpen = true"
+      :style="folder.hue != null ? (isDark ? {
+        '--bg':    `oklch(0.58 0.25 ${folder.hue} / 0.3)`,
+        '--hover': `oklch(0.64 0.25 ${folder.hue} / 0.5)`,
+        '--icon':  `oklch(0.72 0.20 ${folder.hue})`,
+      } : {
+        '--bg':    `oklch(0.88 0.07 ${folder.hue} / 0.6)`,
+        '--hover': `oklch(0.85 0.09 ${folder.hue} / 0.8)`,
+        '--icon':  `oklch(0.52 0.18 ${folder.hue})`,
+      }) : null"
+    >
+      <!-- File peek previews -->
+      <Transition name="peek">
+        <div
+          v-if="previewFiles.length"
+          class="peek-cards absolute pointer-events-none"
+          style="top: 0; right: 40px;"
+        >
+          <div class="relative" style="width: 52px; height: 36px;">
+            <div
+              v-for="(file, i) in previewFiles"
+              :key="file.id"
+              class="absolute inset-0 rounded overflow-hidden shadow-lg bg-muted peek-card"
+              style="border: 1px solid oklch(1 0 0 / 0.1);"
+              :style="peekStyles[i]"
+            >
+              <img
+                v-if="fileThumbnailSrc(file)"
+                :src="fileThumbnailSrc(file)"
+                class="w-full h-full object-cover"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center">
+                <Icon :icon="fileTypeIcon(file)" class="text-lg text-foreground/50" />
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </Transition>
-    <button
-      class="flex-1 flex items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-l-lg min-w-0"
-      @click="$emit('open', folder)"
-    >
-      <Icon
-        icon="mdi:folder"
-        class="text-xl shrink-0"
-        :class="folder.hue == null ? 'text-primary' : ''"
-        :style="folder.hue != null ? { color: 'var(--icon)' } : null"
-      />
-      <span class="text-base font-medium text-foreground truncate">{{ folder.name }}</span>
-    </button>
+      </Transition>
 
-    <button
-      class="group shrink-0 mx-1.5 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      :class="{ 'bg-foreground/10 text-foreground': menu.isOpen.value }"
-      aria-label="Folder options"
-      @click.stop="menu.toggle($event)"
-    >
-      <Icon icon="mdi:dots-horizontal" class="size-5" />
-    </button>
-  </div>
-
-  <ContextMenuRoot :menu="menu">
-    <ContextMenuLabel>Folder</ContextMenuLabel>
-    <ContextMenuSeparator />
-    <ContextMenuSub label="Color" icon="mdi:palette-outline">
-      <ContextMenuLabel>Hue</ContextMenuLabel>
-      <ContextMenuItem
-        v-for="preset in HUE_PRESETS"
-        :key="preset.label"
-        :shortcut="folder.hue === preset.hue ? '✓' : ''"
-        @click="emit('hue-change', { folder, hue: preset.hue })"
+      <button
+        class="flex-1 flex items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-l-lg min-w-0"
+        @click="$emit('open', folder)"
       >
-        <template #icon>
-          <span class="size-3.5 rounded-full shrink-0 border-2 inline-block" :style="swatchStyle(preset.hue)" />
-        </template>
-        <span :class="{ 'font-medium': folder.hue === preset.hue }">{{ preset.label }}</span>
-      </ContextMenuItem>
-    </ContextMenuSub>
-    <ContextMenuSeparator />
-    <ContextMenuItem icon="mdi:folder-open-outline" @click="$emit('open', folder)">
-      Open folder
-    </ContextMenuItem>
-    <ContextMenuItem icon="mdi:pencil-outline" @click="startRename">
-      Rename folder
-    </ContextMenuItem>
-    <ContextMenuSeparator />
-    <ContextMenuItem icon="mdi:delete-outline" destructive @click="confirmDelete = true">
-      Delete folder
-    </ContextMenuItem>
-  </ContextMenuRoot>
+        <Icon
+          icon="mdi:folder"
+          class="text-xl shrink-0"
+          :class="folder.hue == null ? 'text-primary' : ''"
+          :style="folder.hue != null ? { color: 'var(--icon)' } : null"
+        />
+        <span class="text-base font-medium text-foreground truncate">{{ folder.name }}</span>
+      </button>
 
-  <Dialog :open="renameOpen" class="max-w-sm" @close="renameOpen = false">
-    <div class="p-6 flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h3 class="text-base font-semibold">Rename folder</h3>
-        <button class="text-muted-foreground hover:text-foreground transition-colors" @click="renameOpen = false">✕</button>
-      </div>
+      <DropdownMenuTrigger as-child>
+        <button
+          class="group shrink-0 mx-1.5 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          :class="{ 'bg-foreground/10 text-foreground': menuOpen }"
+          aria-label="Folder options"
+          @click.stop
+        >
+          <Icon icon="mdi:dots-horizontal" class="size-5" />
+        </button>
+      </DropdownMenuTrigger>
+    </div>
+
+    <DropdownMenuContent align="end">
+      <DropdownMenuLabel>Folder</DropdownMenuLabel>
+      <DropdownMenuSeparator />
+      <DropdownMenuSub label="Color" icon="mdi:palette-outline">
+        <DropdownMenuLabel>Hue</DropdownMenuLabel>
+        <DropdownMenuItem
+          v-for="preset in HUE_PRESETS"
+          :key="preset.label"
+          :shortcut="folder.hue === preset.hue ? '✓' : ''"
+          @click="emit('hue-change', { folder, hue: preset.hue })"
+        >
+          <template #icon>
+            <span class="size-3.5 rounded-full shrink-0 border-2 inline-block" :style="swatchStyle(preset.hue)" />
+          </template>
+          <span :class="{ 'font-medium': folder.hue === preset.hue }">{{ preset.label }}</span>
+        </DropdownMenuItem>
+      </DropdownMenuSub>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem icon="mdi:folder-open-outline" @click="$emit('open', folder)">Open folder</DropdownMenuItem>
+      <DropdownMenuItem icon="mdi:pencil-outline" @click="startRename">Rename folder</DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem icon="mdi:delete-outline" destructive @click="confirmDelete = true">Delete folder</DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenuRoot>
+
+  <Dialog :open="renameOpen" @update:open="!$event && (renameOpen = false)">
+    <DialogContent class="max-w-sm p-6 flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle>Rename folder</DialogTitle>
+      </DialogHeader>
       <form class="flex flex-col gap-3" @submit.prevent="submitRename">
         <div class="flex flex-col gap-1.5">
           <Label for="rename-folder-input">Folder name</Label>
           <Input id="rename-folder-input" v-model="renameName" autofocus required />
         </div>
         <p v-if="renameError" class="text-sm text-destructive">{{ renameError }}</p>
-        <div class="flex justify-end gap-2 pt-1">
+        <DialogFooter class="pt-1">
           <Button type="button" variant="outline" @click="renameOpen = false">Cancel</Button>
           <Button type="submit" :disabled="!renameName.trim() || renameLoading">
             {{ renameLoading ? 'Saving…' : 'Rename' }}
           </Button>
-        </div>
+        </DialogFooter>
       </form>
-    </div>
+    </DialogContent>
   </Dialog>
 
   <ConfirmDialog

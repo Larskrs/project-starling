@@ -1,9 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import Button from '../../components/ui/Button.vue'
-import Avatar from '../../components/ui/Avatar.vue'
+import Button from '@starling/ui/Button'
+import Avatar from '@starling/ui/Avatar'
 import CreateProductionDialog from './CreateProductionDialog.vue'
 import { useApi } from '../../composables/useApi.js'
 
@@ -12,6 +13,7 @@ const props = defineProps({
 })
 
 const router = useRouter()
+const { t } = useI18n()
 const { $fetch } = useApi()
 
 function openProduction(production) {
@@ -28,7 +30,7 @@ async function load() {
   error.value   = ''
   const { ok, data } = await $fetch(`/api/production?cid=${props.company.id}`, { silent: true })
   loading.value = false
-  if (!ok) { error.value = 'Could not load productions'; return }
+  if (!ok) { error.value = t('production.couldNotLoad'); return }
   productions.value = data
 }
 
@@ -50,17 +52,17 @@ onMounted(load)
 <template>
   <div class="flex flex-col gap-6">
     <div class="flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-foreground">Productions</h2>
-      <Button size="sm" @click="dialogOpen = true">New production</Button>
+      <h2 class="text-lg font-semibold text-foreground">{{ $t('production.title') }}</h2>
+      <Button size="sm" @click="dialogOpen = true">{{ $t('production.new') }}</Button>
     </div>
 
-    <p v-if="loading" class="text-sm text-muted-foreground">Loading...</p>
+    <p v-if="loading" class="text-sm text-muted-foreground">…</p>
 
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
 
     <div v-else-if="productions.length === 0" class="rounded-xl border border-dashed border-border py-16 text-center">
-      <p class="text-sm text-muted-foreground">No productions yet.</p>
-      <Button variant="ghost" size="sm" class="mt-2" @click="dialogOpen = true">Create the first</Button>
+      <p class="text-sm text-muted-foreground">{{ $t('production.noProductions') }}</p>
+      <Button variant="ghost" size="sm" class="mt-2" @click="dialogOpen = true">{{ $t('production.createFirst') }}</Button>
     </div>
 
     <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative">

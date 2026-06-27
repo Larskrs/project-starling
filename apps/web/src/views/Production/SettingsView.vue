@@ -1,17 +1,19 @@
 <script setup>
 import { inject, ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import Avatar from '../../components/ui/Avatar.vue'
-import ProductionBanner from '../../components/ui/ProductionBanner.vue'
-import ImageCropper from '../../components/ui/ImageCropper.vue'
-import Button from '../../components/ui/Button.vue'
-import Input from '../../components/ui/Input.vue'
-import Label from '../../components/ui/Label.vue'
+import Avatar from '@starling/ui/Avatar'
+import ProductionBanner from '@starling/ui/ProductionBanner'
+import ImageCropper from '@starling/ui/ImageCropper'
+import Button from '@starling/ui/Button'
+import Input from '@starling/ui/Input'
+import Label from '@starling/ui/Label'
 import { useApi } from '../../composables/useApi.js'
 
 const route = useRoute()
 const data  = inject('production-data')
+const { t } = useI18n()
 const { $fetch } = useApi()
 
 // ── Name ──────────────────────────────────────────────────────────────────────
@@ -37,7 +39,7 @@ async function saveName() {
     { method: 'PATCH', json: { name: nameInput.value.trim() }, silent: true },
   )
   nameSaving.value = false
-  if (!ok) { nameError.value = error ?? 'Failed to save'; return }
+  if (!ok) { nameError.value = error ?? t('settings.failedToSave'); return }
   data.value.production.name = resData.name
   nameSuccess.value = true
   setTimeout(() => { nameSuccess.value = false }, 2000)
@@ -70,8 +72,8 @@ async function uploadImage(slot, file) {
   if (isProfile) profileUploading.value = false
   else           bannerUploading.value  = false
   if (!ok) {
-    if (isProfile) profileError.value = error ?? 'Upload failed'
-    else           bannerError.value  = error ?? 'Upload failed'
+    if (isProfile) profileError.value = error ?? t('settings.uploadFailed')
+    else           bannerError.value  = error ?? t('settings.uploadFailed')
     return
   }
   if (isProfile) data.value.production.profileImageId = resData.fileId
@@ -141,7 +143,7 @@ const nameChanged = computed(() =>
         <div class="absolute inset-0 flex items-center justify-center transition-colors bg-black/0 group-hover:bg-black/25">
           <div class="flex items-center gap-1.5 bg-black/60 text-white text-xs px-2.5 py-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
             <Icon :icon="bannerUploading ? 'mdi:loading' : 'mdi:camera-outline'" :class="{ 'animate-spin': bannerUploading }" />
-            {{ bannerUploading ? 'Uploading…' : 'Change banner' }}
+            {{ bannerUploading ? $t('settings.uploading') : $t('settings.changeBanner') }}
           </div>
         </div>
         <input type="file" accept="image/*" class="sr-only" @change="onBannerPick" />
@@ -164,13 +166,13 @@ const nameChanged = computed(() =>
 
     <!-- Name -->
     <div class="space-y-1.5">
-      <Label for="production-name">Production name</Label>
+      <Label for="production-name">{{ $t('settings.productionName') }}</Label>
       <div class="flex gap-2">
         <Input
           id="production-name"
           v-model="nameInput"
           maxlength="255"
-          placeholder="Production name"
+          :placeholder="$t('settings.productionName')"
           class="h-9 text-sm"
           @keydown.enter="saveName"
         />
@@ -182,7 +184,7 @@ const nameChanged = computed(() =>
         >
           <Icon v-if="nameSaving" icon="mdi:loading" class="animate-spin" />
           <Icon v-else-if="nameSuccess" icon="mdi:check" />
-          {{ nameSaving ? 'Saving…' : nameSuccess ? 'Saved' : 'Save' }}
+          {{ nameSaving ? $t('settings.saving') : nameSuccess ? $t('settings.saved') : $t('settings.save') }}
         </Button>
       </div>
       <p v-if="nameError" class="text-xs text-destructive">{{ nameError }}</p>

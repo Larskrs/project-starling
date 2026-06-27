@@ -1,17 +1,22 @@
 <script setup>
 import { ref, computed, provide, onMounted, watch } from 'vue'
 import { useRoute, useRouter, RouterView } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { useAuth } from '../../composables/useAuth'
 import { useColorMode } from '../../composables/useColorMode'
+import { useLocale } from '../../composables/useLocale'
 import { useApi } from '../../composables/useApi.js'
-import ProductionBanner from '../../components/ui/ProductionBanner.vue'
-import Avatar from '../../components/ui/Avatar.vue'
+import ProductionBanner from '@starling/ui/ProductionBanner'
+import Avatar from '@starling/ui/Avatar'
+import BreadcrumbNav from '@starling/ui/BreadcrumbNav'
 
 const route  = useRoute()
 const router = useRouter()
 const { user, logout, fetchUser } = useAuth()
 const { isDark, toggle: toggleColorMode } = useColorMode()
+const { locale, toggleLocale } = useLocale()
+const { t } = useI18n()
 const { $fetch } = useApi()
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -20,16 +25,16 @@ const loading = ref(true)
 const error   = ref('')
 
 async function load(cslug, pslug) {
-  loading.value = !data.value  // only show spinner on initial load
+  loading.value = !data.value
   error.value   = ''
   const { ok, data: resData, status } = await $fetch(
     `/api/company/${cslug}/production/${pslug}`,
     { silent: true },
   )
   loading.value = false
-  if (status === 404) { error.value = 'Production not found'; return }
-  if (status === 403) { error.value = "You don't have access to this production"; return }
-  if (!ok) { error.value = 'Could not load production'; return }
+  if (status === 404) { error.value = t('production.notFound'); return }
+  if (status === 403) { error.value = t('production.noAccess'); return }
+  if (!ok) { error.value = t('production.couldNotLoadProd'); return }
   data.value = resData
 }
 
@@ -38,9 +43,6 @@ onMounted(() => {
   load(route.params.cslug, route.params.pslug)
 })
 
-// Use individual getter functions so Vue compares string values with ===.
-// A single () => [a, b] always returns a new array reference, firing on every
-// child-route navigation even when cslug/pslug haven't actually changed.
 watch(
   [() => route.params.cslug, () => route.params.pslug],
   ([c, p], [oc, op]) => { if (c && p && (c !== oc || p !== op)) load(c, p) },
@@ -54,10 +56,10 @@ const collapsed = ref(localStorage.getItem(SIDEBAR_KEY) === 'true')
 watch(collapsed, v => localStorage.setItem(SIDEBAR_KEY, String(v)))
 
 const NAV = [
-  { id: 'files',    label: 'Files',    icon: 'mdi:folder-outline' },
-  { id: 'settings', label: 'Settings', icon: 'mdi:cog-outline' },
-  { id: 'members',  label: 'Members',  icon: 'mdi:account-group-outline' },
-  { id: 'roles',    label: 'Roles',    icon: 'mdi:shield-account-outline' },
+  { id: 'files',    icon: 'mdi:folder-outline' },
+  { id: 'settings', icon: 'mdi:cog-outline' },
+  { id: 'members',  icon: 'mdi:account-group-outline' },
+  { id: 'roles',    icon: 'mdi:shield-account-outline' },
 ]
 
 const activeSection = computed(() => {
@@ -74,14 +76,11 @@ const bannerSrc  = computed(() => data.value?.production?.bannerImageId  ? `/api
 const profileSrc = computed(() => data.value?.production?.profileImageId ? `/api/storage/${data.value.production.profileImageId}/serve?quality=80` : null)
 
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
-const crumbs = computed(() => {
-  const items = [
-    { label: 'Hjem',    path: '/home' },
-    { label: data.value?.company.name ?? route.params.cslug, path: `/c/${route.params.cslug}` },
-    { label: data.value?.production.name ?? route.params.pslug, path: null },
-  ]
-  return items
-})
+const crumbs = computed(() => [
+  { label: t('nav.home'),                                                   path: '/home',                      icon: 'mdi:home' },
+  { label: data.value?.company.name    ?? route.params.cslug,              path: `/c/${route.params.cslug}` },
+  { label: data.value?.production.name ?? route.params.pslug,              path: null,                         current: true },
+])
 </script>
 
 <template>
@@ -111,17 +110,16 @@ const crumbs = computed(() => {
         </Transition>
 
         <button
-          class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-          :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+          class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
+          :title="collapsed ? $t('nav.expandSidebar') : $t('nav.collapseSidebar')"
           @click="collapsed = !collapsed"
         >
-          <Icon :icon="collapsed ? 'mdi:chevron-right' : 'mdi:chevron-left'" class="text-2xl" />
+          <Icon :icon="collapsed ? 'mdi:chevron-right' : 'mdi:chevron-left'" class="size-4" />
         </button>
       </div>
 
       <!-- Production Header -->
       <div class="h-14 border-b border-border relative">
-        <!-- Banner collapses via max-height -->
         <div
           class="inset-0 h-full absolute overflow-hidden transition-all duration-200 ease-in-out"
           :class="collapsed ? 'max-h-0 opacity-0' : 'max-h-20 opacity-100'"
@@ -130,7 +128,6 @@ const crumbs = computed(() => {
           <div class="z-0 absolute inset-0 bg-gradient-to-l from-background/50 via-background/75 via-40% to-background" />
         </div>
 
-        <!-- Avatar + name row -->
         <div
           class="z-1 absolute inset-x-0 bottom-0 flex items-center gap-2.5 px-2.5 py-2.5 overflow-hidden"
           :class="collapsed ? 'justify-center' : ''"
@@ -147,60 +144,67 @@ const crumbs = computed(() => {
       </div>
 
       <!-- Nav -->
-      <nav class="flex-1 py-2 flex flex-col gap-1 px-1.5 overflow-y-auto">
+      <nav class="flex-1 py-2 px-2 flex flex-col gap-0.5 overflow-y-auto">
         <button
           v-for="item in NAV"
           :key="item.id"
-          class="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium transition-colors w-full text-left"
+          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors w-full"
           :class="[
             activeSection === item.id
-              ? 'bg-secondary text-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50',
+              ? 'bg-accent text-accent-foreground font-medium'
+              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
             collapsed ? 'justify-center' : '',
           ]"
-          :title="collapsed ? item.label : undefined"
+          :title="collapsed ? $t(`nav.${item.id}`) : undefined"
           @click="navigate(item.id)"
         >
-          <Icon :icon="item.icon" class="text-xl shrink-0" :class="{'size-6': collapsed}" />
+          <Icon :icon="item.icon" class="size-4 shrink-0" />
           <Transition name="fade">
-            <span v-if="!collapsed" class="truncate text-sm">{{ item.label }}</span>
+            <span v-if="!collapsed" class="truncate">{{ $t(`nav.${item.id}`) }}</span>
           </Transition>
         </button>
       </nav>
 
       <!-- User -->
-      <div class="p-2">
+      <div class="border-t border-border p-2">
         <div
-          class="bg-card rounded-xl flex items-center gap-2.5 px-2 py-3"
+          class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent transition-colors group"
           :class="collapsed ? 'justify-center' : ''"
         >
           <div
-            class="size-7 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold shrink-0"
+            class="size-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-semibold shrink-0"
             :title="collapsed ? (user?.first_name ?? user?.name ?? '') : undefined"
           >
             {{ (user?.first_name ?? user?.name ?? '?').charAt(0).toUpperCase() }}
           </div>
           <Transition name="fade">
-            <div v-if="!collapsed" class="flex-1 min-w-0 flex items-center gap-1">
+            <div v-if="!collapsed" class="flex-1 min-w-0 flex items-center gap-0.5">
               <div class="flex-1 min-w-0">
-                <p class="text-xs font-medium text-foreground truncate">
+                <p class="text-xs font-medium text-foreground truncate leading-tight">
                   {{ user?.first_name ? `${user.first_name}`.trim() : user?.name }}
                 </p>
-                <p class="text-[11px] text-muted-foreground truncate">{{ user?.email }}</p>
+                <p class="text-[11px] text-muted-foreground truncate leading-tight">{{ user?.email }}</p>
               </div>
               <button
-                class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
-                @click="toggleColorMode"
+                class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors text-[10px] font-semibold"
+                :title="locale === 'en' ? 'Switch to Norwegian' : 'Bytt til engelsk'"
+                @click.stop="toggleLocale"
               >
-                <Icon :icon="isDark ? 'mdi:weather-sunny' : 'mdi:weather-night'" class="text-base" />
+                {{ locale === 'en' ? 'NO' : 'EN' }}
               </button>
               <button
                 class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                title="Log out"
-                @click="logout"
+                :title="isDark ? $t('nav.switchToLight') : $t('nav.switchToDark')"
+                @click.stop="toggleColorMode"
               >
-                <Icon icon="mdi:logout" class="text-base" />
+                <Icon :icon="isDark ? 'mdi:weather-sunny' : 'mdi:weather-night'" class="size-3.5" />
+              </button>
+              <button
+                class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                :title="$t('nav.logOut')"
+                @click.stop="logout"
+              >
+                <Icon icon="mdi:logout" class="size-3.5" />
               </button>
             </div>
           </Transition>
@@ -213,17 +217,7 @@ const crumbs = computed(() => {
 
       <!-- Top bar with breadcrumb -->
       <header class="h-14 flex items-center gap-2 px-6 border-b border-border shrink-0">
-        <nav class="flex items-center gap-1 text-sm">
-          <template v-for="(crumb, i) in crumbs" :key="i">
-            <router-link
-              v-if="crumb.path"
-              :to="crumb.path"
-              class="text-muted-foreground hover:text-foreground transition-colors"
-            >{{ crumb.label }}</router-link>
-            <span v-else class="font-medium text-foreground">{{ crumb.label }}</span>
-            <span v-if="i < crumbs.length - 1" class="text-muted-foreground/40 select-none mx-1">/</span>
-          </template>
-        </nav>
+        <BreadcrumbNav :items="crumbs" />
       </header>
 
       <!-- Routed view -->
@@ -240,7 +234,6 @@ const crumbs = computed(() => {
 </template>
 
 <style scoped>
-/* Text fades out immediately, fades in after the sidebar has finished widening */
 .fade-leave-active {
   transition: opacity 120ms ease;
 }
