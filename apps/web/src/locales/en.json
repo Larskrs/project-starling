@@ -80,7 +80,7 @@
   "members": {
     "title": "Members",
     "addMember": "Add member",
-    "emailPlaceholder": "user@example.com",
+    "emailPlaceholder": "user{'@'}example.com",
     "add": "Add",
     "search": "search...",
     "noMembers": "No members yet",

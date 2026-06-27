@@ -80,7 +80,7 @@
   "members": {
     "title": "Medlemmer",
     "addMember": "Legg til medlem",
-    "emailPlaceholder": "bruker@eksempel.no",
+    "emailPlaceholder": "bruker{'@'}eksempel.no",
     "add": "Legg til",
     "search": "søk...",
     "noMembers": "Ingen medlemmer ennå",
