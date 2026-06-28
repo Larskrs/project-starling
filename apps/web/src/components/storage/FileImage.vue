@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import FileBase from './FileBase.vue'
+import { formatBytes } from '../../lib/utils.js'
 
 const props = defineProps({ file: { type: Object, required: true } })
 defineEmits(['select', 'delete', 'renamed', 'moved'])
@@ -11,12 +12,6 @@ const thumbnailSrc = computed(() => {
   const best = [...props.file.versions].sort((a, b) => a.quality - b.quality)[0]
   return `/api/storage/${props.file.id}/serve?quality=${best.quality}`
 })
-
-function formatSize(bytes) {
-  if (bytes < 1024)      return `${bytes} B`
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-}
 </script>
 
 <template>
@@ -38,7 +33,7 @@ function formatSize(bytes) {
     <template #info>
       <p class="text-sm font-medium text-foreground truncate leading-snug">{{ file.name }}</p>
       <p class="text-xs mt-1 text-muted-foreground leading-snug">
-        {{ formatSize(file.size) }}
+        {{ formatBytes(file.size) }}
         <span v-if="file.versions?.length > 1"> · {{ file.versions.length }}v</span>
       </p>
     </template>

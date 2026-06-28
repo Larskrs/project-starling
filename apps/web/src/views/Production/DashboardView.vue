@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { useApi } from '../../composables/useApi.js'
+import { formatBytes } from '../../lib/utils.js'
 import StorageCard from './components/StorageCard.vue'
 import MemberRow from './components/MemberRow.vue'
 
@@ -23,14 +24,6 @@ const FILE_ICONS = {
 
 function fileIcon(type) {
   return FILE_ICONS[type] ?? 'mdi:file-outline'
-}
-
-function formatBytes(bytes) {
-  if (!bytes)            return '0 B'
-  if (bytes < 1024)      return `${bytes} B`
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`
 }
 
 function timeAgo(dateStr) {

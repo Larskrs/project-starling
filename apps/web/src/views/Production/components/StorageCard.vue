@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
+import { formatBytes } from '../../../lib/utils.js'
 
 const props = defineProps({
   stats: { type: Object, default: null },
@@ -45,13 +46,6 @@ const freeSize = computed(() => {
   return Math.max(0, props.stats.allocatedStorage - props.stats.usedStorage)
 })
 
-function formatBytes(bytes) {
-  if (!bytes)            return '0 B'
-  if (bytes < 1024)      return `${bytes} B`
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`
-}
 </script>
 
 <template>
@@ -59,7 +53,7 @@ function formatBytes(bytes) {
 
     <div class="flex items-baseline justify-between mb-4">
       <span class="text-sm font-medium text-foreground">{{ t('dashboard.storage') }}</span>
-      <span v-if="stats.allocatedStorage" class="text-xs text-muted-foreground">
+      <span v-if="stats?.allocatedStorage" class="text-xs text-muted-foreground">
         {{ formatBytes(stats.allocatedStorage) }} {{ t('dashboard.total') }}
       </span>
       <span v-else class="text-xs text-muted-foreground">
@@ -75,10 +69,10 @@ function formatBytes(bytes) {
         class="h-full shrink-0 transition-[width] duration-700 ease-out"
         :style="{ width: animated ? `${seg.pct}%` : '0%', backgroundColor: seg.color }"
       />
-      <div v-if="stats.allocatedStorage" class="h-full flex-1 bg-muted min-w-0" />
+      <div v-if="stats?.allocatedStorage" class="h-full flex-1 bg-muted min-w-0" />
     </div>
 
-    <div v-if="stats.allocatedStorage" class="flex justify-between mt-2">
+    <div v-if="stats?.allocatedStorage" class="flex justify-between mt-2">
       <span class="text-xs text-muted-foreground tabular-nums">
         {{ formatBytes(stats.usedStorage) }} {{ t('dashboard.used') }}
       </span>

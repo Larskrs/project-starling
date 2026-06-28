@@ -149,14 +149,12 @@ async function submitCreate() {
         <Label for="sfd-name" class="text-sm">Folder name</Label>
         <div class="flex gap-1">
           <Input id="sfd-name" v-model="newName" placeholder="My folder" autofocus class="h-9 text-sm" />
-          <p v-if="createError" class="text-sm text-destructive">{{ createError }}</p>
-          <div class="flex gap-2 justify-end">
-            <Button type="button" size="sm" variant="ghost" @click="creating = false; newName = ''"><Icon icon="mdi:close" /></Button>
-            <Button type="submit" size="sm" :disabled="!newName.trim() || createLoading">
-              {{ createLoading ? 'Creating…' : 'Create' }}
-            </Button>
-          </div>
+          <Button type="button" size="sm" variant="ghost" @click="creating = false; newName = ''"><Icon icon="mdi:close" /></Button>
+          <Button type="submit" size="sm" :disabled="!newName.trim() || createLoading">
+            {{ createLoading ? 'Creating…' : 'Create' }}
+          </Button>
         </div>
+        <p v-if="createError" class="text-sm text-destructive">{{ createError }}</p>
       </form>
 
       <!-- Footer -->
