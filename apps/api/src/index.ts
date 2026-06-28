@@ -80,11 +80,15 @@ const server = createServer(async (req, res) => {
       sendJson(res, res.statusCode && res.statusCode !== 200 ? res.statusCode : 200, result);
     } catch (err) {
       if (err instanceof ApiError) {
-        sendJson(res, err.statusCode, { error: err.message, ...(err.data ? { data: err.data } : {}) });
+        sendJson(res, err.statusCode, {
+          error:    err.message,
+          ...(err.errorKey ? { errorKey: err.errorKey } : {}),
+          ...(err.data     ? { data:     err.data     } : {}),
+        });
         return;
       }
       console.error('[server] unhandled error:', err);
-      sendJson(res, 500, { error: 'Internal Server Error' });
+      sendJson(res, 500, { error: 'Internal Server Error', errorKey: 'errors.generic.systemError' });
     }
     return;
   }

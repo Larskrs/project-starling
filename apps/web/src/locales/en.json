@@ -162,6 +162,26 @@
     "uploading": "Uploading…",
     "uploadFailed": "Upload failed"
   },
+  "errors": {
+    "generic": {
+      "systemError": "An unexpected error occurred",
+      "authRequired": "Sign in required",
+      "adminRequired": "Admin access required",
+      "accessDenied": "Access denied",
+      "invalidBody": "Invalid request body",
+      "validationFailed": "Invalid request data",
+      "notFound": "Not found"
+    },
+    "company": {
+      "notFound": "Company not found"
+    },
+    "production": {
+      "notFound": "Production not found"
+    },
+    "permission": {
+      "missing": "You don't have permission to perform this action"
+    }
+  },
   "time": {
     "justNow": "just now",
     "minutesAgo": "{n}m ago",

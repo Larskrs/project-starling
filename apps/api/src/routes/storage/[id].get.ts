@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
     createdAt:    storageFiles.createdAt,
   }).from(storageFiles).where(eq(storageFiles.id, id)).limit(1);
   if (!file) throw createError({ statusCode: 404, message: 'File not found' });
+  if (!file.productionId) throw createError({ statusCode: 404, message: 'File not found' });
 
   const ctx = await requireProductionAccess(event, { productionId: file.productionId });
   await requirePermission(ctx, Permission.VIEW);

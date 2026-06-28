@@ -1,3 +1,4 @@
+import { useI18n } from 'vue-i18n'
 import { useToast } from '@starling/ui/useToast'
 
 /**
@@ -14,7 +15,8 @@ import { useToast } from '@starling/ui/useToast'
  * const { ok, data } = await $fetch('/api/...', { method: 'POST', json: { name } })
  */
 export function useApi() {
-  const toast = useToast()
+  const toast    = useToast()
+  const { t, te } = useI18n()
 
   async function $fetch(url, options = {}) {
     const { silent = false, json: jsonBody, headers: extraHeaders, ...rest } = options
@@ -44,9 +46,10 @@ export function useApi() {
     }
 
     if (!res.ok) {
-      const error = data?.message ?? data?.error ?? `Request failed (${res.status})`
+      const raw   = data?.message ?? data?.error ?? `Request failed (${res.status})`
+      const error = data?.errorKey && te(data.errorKey) ? t(data.errorKey) : raw
       if (!silent) {
-        if (res.status === 401) toast.auth('Sign in required')
+        if (res.status === 401) toast.auth(error)
         else if (res.status === 403) toast.auth(error)
         else toast.error(error)
       }

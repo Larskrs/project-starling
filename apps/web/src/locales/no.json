@@ -162,6 +162,26 @@
     "uploading": "Laster opp…",
     "uploadFailed": "Opplasting mislyktes"
   },
+  "errors": {
+    "generic": {
+      "systemError": "En uventet feil oppstod",
+      "authRequired": "Logg inn for å fortsette",
+      "adminRequired": "Administratortilgang kreves",
+      "accessDenied": "Ingen tilgang",
+      "invalidBody": "Ugyldig forespørselstekst",
+      "validationFailed": "Ugyldige forespørselsdata",
+      "notFound": "Ikke funnet"
+    },
+    "company": {
+      "notFound": "Firmaet ble ikke funnet"
+    },
+    "production": {
+      "notFound": "Produksjonen ble ikke funnet"
+    },
+    "permission": {
+      "missing": "Du har ikke tillatelse til å utføre denne handlingen"
+    }
+  },
   "time": {
     "justNow": "nå nettopp",
     "minutesAgo": "{n}m siden",

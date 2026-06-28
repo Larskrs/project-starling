@@ -39,17 +39,19 @@ export function defineEventHandler<T>(handler: EventHandler<T>): EventHandler<T>
 export class ApiError extends Error {
   statusCode: number;
   data?: unknown;
+  errorKey?: string;
 
-  constructor(statusCode: number, message: string, data?: unknown) {
+  constructor(statusCode: number, message: string, data?: unknown, errorKey?: string) {
     super(message);
     this.name = 'ApiError';
     this.statusCode = statusCode;
     this.data = data;
+    this.errorKey = errorKey;
   }
 }
 
-export function createError(opts: { statusCode: number; message: string; data?: unknown }): ApiError {
-  return new ApiError(opts.statusCode, opts.message, opts.data);
+export function createError(opts: { statusCode: number; message: string; data?: unknown; errorKey?: string }): ApiError {
+  return new ApiError(opts.statusCode, opts.message, opts.data, opts.errorKey);
 }
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -64,14 +66,14 @@ export async function getAuth(event: ApiEvent): Promise<AuthContext | null> {
 /** Returns the session or throws 401. */
 export async function requireAuth(event: ApiEvent): Promise<AuthContext> {
   const auth = await getAuth(event);
-  if (!auth) throw new ApiError(401, 'Authentication required');
+  if (!auth) throw new ApiError(401, 'Authentication required', undefined, 'errors.generic.authRequired');
   return auth;
 }
 
 /** Returns the session (admin only) or throws 401/403. */
 export async function requireAdmin(event: ApiEvent): Promise<AuthContext> {
   const auth = await requireAuth(event);
-  if (auth.role !== 'admin') throw new ApiError(403, 'Admin access required');
+  if (auth.role !== 'admin') throw new ApiError(403, 'Admin access required', undefined, 'errors.generic.adminRequired');
   return auth;
 }
 
@@ -91,19 +93,19 @@ export async function readBody<T = unknown>(event: ApiEvent): Promise<T> {
   const raw = Buffer.concat(chunks).toString('utf8').trim();
   if (!raw) return undefined as T;
   try { return JSON.parse(raw) as T; }
-  catch { throw new ApiError(400, 'Invalid JSON body'); }
+  catch { throw new ApiError(400, 'Invalid JSON body', undefined, 'errors.generic.invalidBody'); }
 }
 
 export async function readValidatedBody<T>(event: ApiEvent, schema: ZodType<T>): Promise<T> {
   const body   = await readBody(event);
   const result = schema.safeParse(body);
-  if (!result.success) throw new ApiError(422, JSON.stringify(result.error.flatten().fieldErrors), result.error.flatten());
+  if (!result.success) throw new ApiError(422, JSON.stringify(result.error.flatten().fieldErrors), result.error.flatten(), 'errors.generic.validationFailed');
   return result.data;
 }
 
 export function getValidatedQuery<T>(event: ApiEvent, schema: ZodType<T>): T {
   const result = schema.safeParse(getQuery(event));
-  if (!result.success) throw new ApiError(422, 'Invalid query parameters', result.error.flatten());
+  if (!result.success) throw new ApiError(422, 'Invalid query parameters', result.error.flatten(), 'errors.generic.validationFailed');
   return result.data;
 }
 
@@ -145,7 +147,7 @@ function parsePartHeaders(raw: string): Record<string, string> {
 export async function readMultipart(event: ApiEvent): Promise<MultipartResult> {
   const ct = event.req.headers['content-type'] ?? '';
   const boundary = extractBoundary(ct);
-  if (!boundary) throw new ApiError(400, 'Missing multipart boundary');
+  if (!boundary) throw new ApiError(400, 'Missing multipart boundary', undefined, 'errors.generic.invalidBody');
 
   const chunks: Buffer[] = [];
   for await (const chunk of event.req) chunks.push(chunk as Buffer);
@@ -158,7 +160,7 @@ export async function readMultipart(event: ApiEvent): Promise<MultipartResult> {
   const opener = Buffer.from(`--${boundary}\r\n`);
 
   let pos = body.indexOf(opener);
-  if (pos === -1) throw new ApiError(400, 'Invalid multipart body');
+  if (pos === -1) throw new ApiError(400, 'Invalid multipart body', undefined, 'errors.generic.invalidBody');
   pos += opener.length;
 
   while (pos < body.length) {

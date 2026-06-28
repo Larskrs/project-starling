@@ -21,21 +21,21 @@ export type ProductionRef =
 async function resolveRef(ref: ProductionRef): Promise<{ company: typeof companies.$inferSelect; production: typeof productions.$inferSelect }> {
   if ('cslug' in ref) {
     const [company] = await db.select().from(companies).where(eq(companies.slug, ref.cslug)).limit(1);
-    if (!company) throw createError({ statusCode: 404, message: 'Company not found' });
+    if (!company) throw createError({ statusCode: 404, message: 'Company not found', errorKey: 'errors.company.notFound' });
 
     const [production] = await db.select().from(productions)
       .where(and(eq(productions.companyId, company.id), eq(productions.slug, ref.pslug)))
       .limit(1);
-    if (!production) throw createError({ statusCode: 404, message: 'Production not found' });
+    if (!production) throw createError({ statusCode: 404, message: 'Production not found', errorKey: 'errors.production.notFound' });
 
     return { company, production };
   } else {
     const [production] = await db.select().from(productions).where(eq(productions.id, ref.productionId)).limit(1);
-    if (!production) throw createError({ statusCode: 404, message: 'Production not found' });
+    if (!production) throw createError({ statusCode: 404, message: 'Production not found', errorKey: 'errors.production.notFound' });
 
     const companyId = ref.companyId ?? production.companyId;
     const [company] = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
-    if (!company) throw createError({ statusCode: 404, message: 'Company not found' });
+    if (!company) throw createError({ statusCode: 404, message: 'Company not found', errorKey: 'errors.company.notFound' });
 
     return { company, production };
   }
@@ -79,7 +79,7 @@ export async function requireProductionAccess(
     ))
     .limit(1);
 
-  if (!prodMem) throw createError({ statusCode: 403, message: 'Access denied' });
+  if (!prodMem) throw createError({ statusCode: 403, message: 'Access denied', errorKey: 'errors.generic.accessDenied' });
 
   return { auth, company, production, privileged: false, memberRoleId: prodMem.roleId };
 }
@@ -150,6 +150,7 @@ export async function requirePermission(
       statusCode: 403,
       message:    `You don't have permission to ${description}`,
       data:       { missingPermission: name ?? 'UNKNOWN', role: ctx.auth.role },
+      errorKey:   'errors.permission.missing',
     });
   }
 }
