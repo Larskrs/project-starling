@@ -10,6 +10,7 @@ import { useApi } from '../../composables/useApi.js'
 import ProductionBanner from '@starling/ui/ProductionBanner'
 import Avatar from '@starling/ui/Avatar'
 import BreadcrumbNav from '@starling/ui/BreadcrumbNav'
+import { Image } from '@starling/ui'
 
 const route  = useRoute()
 const router = useRouter()
@@ -55,16 +56,44 @@ const SIDEBAR_KEY = 'starling-sidebar-collapsed'
 const collapsed = ref(localStorage.getItem(SIDEBAR_KEY) === 'true')
 watch(collapsed, v => localStorage.setItem(SIDEBAR_KEY, String(v)))
 
-const NAV = [
-  { id: 'files',    icon: 'mdi:folder-outline' },
-  { id: 'settings', icon: 'mdi:cog-outline' },
-  { id: 'members',  icon: 'mdi:account-group-outline' },
-  { id: 'roles',    icon: 'mdi:shield-account-outline' },
+const NAV_GROUPS = [
+  {
+    key: 'workspace',
+    label: 'nav.workspace',
+    items: [
+      { id: 'dashboard', icon: 'mdi:view-dashboard-outline', label: 'nav.dashboard', permission: null },
+      { id: 'files',     icon: 'mdi:folder-outline',          label: 'nav.files',    permission: null },
+    ],
+  },
+  {
+    key: 'management',
+    label: 'nav.management',
+    items: [
+      { id: 'members', icon: 'mdi:account-group-outline',  label: 'nav.members', permission: 'MANAGE_MEMBERS' },
+      { id: 'roles',   icon: 'mdi:shield-account-outline', label: 'nav.roles',   permission: 'MANAGE_ROLES'   },
+    ],
+  },
+  {
+    key: 'configuration',
+    label: 'nav.configuration',
+    items: [
+      { id: 'settings', icon: 'mdi:cog-outline', label: 'nav.settings', permission: 'ADMINISTRATOR' },
+    ],
+  },
 ]
+
+function can(permission) {
+  if (!permission) return true
+  if (!data.value?.access) return false
+  if (data.value.access.privileged) return true
+  return data.value.access.permissions.includes(permission)
+}
+
+const ALL_IDS = NAV_GROUPS.flatMap(g => g.items.map(i => i.id))
 
 const activeSection = computed(() => {
   const seg = route.path.split('/').at(-1)
-  return NAV.find(n => n.id === seg)?.id ?? 'files'
+  return ALL_IDS.includes(seg) ? seg : 'dashboard'
 })
 
 function navigate(id) {
@@ -72,8 +101,7 @@ function navigate(id) {
 }
 
 // ── Images ────────────────────────────────────────────────────────────────────
-const bannerSrc  = computed(() => data.value?.production?.bannerImageId  ? `/api/storage/${data.value.production.bannerImageId}/serve?quality=80`  : null)
-const profileSrc = computed(() => data.value?.production?.profileImageId ? `/api/storage/${data.value.production.profileImageId}/serve?quality=80` : null)
+const bannerSrc = computed(() => data.value?.production?.bannerImageId ? `/api/storage/${data.value.production.bannerImageId}/serve?quality=80` : null)
 
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 const crumbs = computed(() => [
@@ -102,10 +130,13 @@ const crumbs = computed(() => [
             :to="`/c/${route.params.cslug}`"
             class="flex items-center gap-2 min-w-0"
           >
-            <Icon icon="mdi:star-four-points" class="text-primary shrink-0 text-lg" />
-            <span class="text-sm font-semibold truncate text-foreground">
-              {{ data?.company.name ?? '…' }}
-            </span>
+            <Avatar :id="data?.production.profileImageId" class="size-8 min-w-8 rounded-sm" quality="25"  />
+            <div class="flex flex-col">
+              <span class="text-sm font-semibold truncate text-foreground">
+                {{ data?.production.name ?? '…' }}
+              </span>
+              <span class="text-[10px] text-muted-foreground/50">{{ data?.company.name }}</span>
+            </div>
           </router-link>
         </Transition>
 
@@ -118,51 +149,42 @@ const crumbs = computed(() => [
         </button>
       </div>
 
-      <!-- Production Header -->
-      <div class="h-14 border-b border-border relative">
-        <div
-          class="inset-0 h-full absolute overflow-hidden transition-all duration-200 ease-in-out"
-          :class="collapsed ? 'max-h-0 opacity-0' : 'max-h-20 opacity-100'"
-        >
-          <ProductionBanner :src="bannerSrc" class="h-full opacity-50 dark:opacity-100"/>
-          <div class="z-0 absolute inset-0 bg-gradient-to-l from-background/50 via-background/75 via-40% to-background" />
-        </div>
-
-        <div
-          class="z-1 absolute inset-x-0 bottom-0 flex items-center gap-2.5 px-2.5 py-2.5 overflow-hidden"
-          :class="collapsed ? 'justify-center' : ''"
-        >
-          <Avatar :src="profileSrc" :size="36" class="shrink-0">
-            <Icon icon="mdi:film" class="text-sm" />
-          </Avatar>
-          <Transition name="fade">
-            <p v-if="!collapsed" class="text-sm font-semibold text-foreground truncate leading-tight min-w-0 flex-1">
-              {{ data?.production.name ?? '…' }}
-            </p>
-          </Transition>
-        </div>
-      </div>
-
       <!-- Nav -->
-      <nav class="flex-1 py-2 px-2 flex flex-col gap-0.5 overflow-y-auto">
-        <button
-          v-for="item in NAV"
-          :key="item.id"
-          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors w-full"
-          :class="[
-            activeSection === item.id
-              ? 'bg-accent text-accent-foreground font-medium'
-              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-            collapsed ? 'justify-center' : '',
-          ]"
-          :title="collapsed ? $t(`nav.${item.id}`) : undefined"
-          @click="navigate(item.id)"
-        >
-          <Icon :icon="item.icon" class="size-4 shrink-0" />
-          <Transition name="fade">
-            <span v-if="!collapsed" class="truncate">{{ $t(`nav.${item.id}`) }}</span>
-          </Transition>
-        </button>
+      <nav class="flex-1 py-2 px-2 flex flex-col overflow-y-auto">
+        <template v-for="(group, gi) in NAV_GROUPS" :key="group.key">
+          <template v-if="group.items.some(item => can(item.permission))">
+            <!-- Separator + group label -->
+            <div v-if="gi > 0" class="h-px bg-border mx-1 my-2" />
+            <Transition name="fade">
+              <p
+                v-if="!collapsed"
+                class="px-2.5 pt-0.5 pb-1.5 text-[12px] tracking-wider text-muted-foreground select-none"
+              >
+                {{ $t(group.label) }}
+              </p>
+            </Transition>
+
+            <!-- Items -->
+            <button
+              v-for="item in group.items.filter(i => can(i.permission))"
+              :key="item.id"
+              class="flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-sm transition-colors w-full"
+              :class="[
+                activeSection === item.id
+                  ? 'bg-accent text-accent-foreground font-medium'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                collapsed ? 'justify-center' : '',
+              ]"
+              :title="collapsed ? $t(item.label) : undefined"
+              @click="navigate(item.id)"
+            >
+              <Icon :icon="item.icon" class="size-5 shrink-0" />
+              <Transition name="fade">
+                <span v-if="!collapsed" class="truncate">{{ $t(item.label) }}</span>
+              </Transition>
+            </button>
+          </template>
+        </template>
       </nav>
 
       <!-- User -->

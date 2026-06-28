@@ -1,22 +1,20 @@
 <template>
-  <div class="flex items-center gap-1 rounded px-2.5 py-1">
-    <span class="text-sm font-medium text-muted-foreground mr-1">{{ user?.first_name ?? user?.name }}</span>
-    <button
-      class="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded"
-      :title="locale === 'en' ? 'Switch to Norwegian' : 'Bytt til engelsk'"
-      @click="toggleLocale"
-    >
-      {{ locale === 'en' ? 'NO' : 'EN' }}
-    </button>
+  <div class="flex items-center gap-2 rounded px-2 py-1">
+    <RouterLink to="/settings" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+      <Avatar :id="user?.avatarImageId" class="size-7 rounded-full shrink-0">
+        <span class="text-xs font-semibold">{{ user?.first_name?.charAt(0)?.toUpperCase() }}</span>
+      </Avatar>
+      <span class="text-sm font-medium text-muted-foreground">{{ user?.first_name ?? user?.name }}</span>
+    </RouterLink>
     <Button size="xs" variant="outline" @click="logout">{{ $t('nav.logOut') }}</Button>
   </div>
 </template>
 
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { useAuth } from '../../composables/useAuth'
-import { useLocale } from '../../composables/useLocale'
 import Button from '@starling/ui/Button'
+import Avatar from '@starling/ui/Avatar'
 
 const { user, logout } = useAuth()
-const { locale, toggleLocale } = useLocale()
 </script>

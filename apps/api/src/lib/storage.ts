@@ -130,6 +130,20 @@ export async function writeAudio(
   return physicalPath;
 }
 
+// storage/u/{userId}/{slot}/{fileId}@{quality}.webp
+export function userProfileImagePath(userId: string, slot: string, fileId: string, quality: number): string {
+  return join(STORAGE_ROOT, 'u', userId, slot, `${fileId}@${quality}.webp`);
+}
+
+export async function writeUserProfileImage(
+  data:   Buffer,
+  userId: string,
+  slot:   string,
+  fileId: string,
+): Promise<ImageVersion[]> {
+  return processImage(data, (q) => userProfileImagePath(userId, slot, fileId, q));
+}
+
 /**
  * Write a profile or banner image for a company or production.
  * Pass `productionId: null` for company-level images.

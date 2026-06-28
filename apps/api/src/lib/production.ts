@@ -7,7 +7,7 @@ import { type PermissionName, Permission, PERMISSION_MESSAGES } from '@starling/
 export interface ProductionContext {
   auth:         { userId: string; role: 'admin' | 'user' };
   company:      { id: string; name: string; slug: string };
-  production:   { id: string; name: string; slug: string; companyId: string; profileImageId: string | null; bannerImageId: string | null; createdAt: Date };
+  production:   typeof productions.$inferSelect;
   /** True for global admins and company owner/admin — all permission checks pass automatically. */
   privileged:   boolean;
   /** The member's current roleId; null when they have no role. Always null when privileged. */

@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
 import z from 'zod';
 import { db, storageFiles, storageImageVersions } from '@starling/db';
-import { defineEventHandler, getRouterParam, getValidatedQuery, createError } from '../../../lib/handler.js';
+import { defineEventHandler, getRouterParam, getValidatedQuery, createError, requireAuth } from '../../../lib/handler.js';
 import { requireProductionAccess, requirePermission } from '../../../lib/production.js';
 import { Permission } from '@starling/auth/permissions';
 
@@ -18,8 +18,12 @@ export default defineEventHandler(async (event) => {
   const [file] = await db.select().from(storageFiles).where(eq(storageFiles.id, id)).limit(1);
   if (!file) throw createError({ statusCode: 404, message: 'File not found' });
 
-  const ctx = await requireProductionAccess(event, { productionId: file.productionId });
-  await requirePermission(ctx, Permission.VIEW);
+  if (file.productionId) {
+    const ctx = await requireProductionAccess(event, { productionId: file.productionId });
+    await requirePermission(ctx, Permission.VIEW);
+  } else {
+    await requireAuth(event);
+  }
 
   let physicalPath = file.physicalPath;
 

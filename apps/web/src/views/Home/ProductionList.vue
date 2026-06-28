@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { useApi } from '../../composables/useApi.js'
+import { Avatar } from '@starling/ui'
 
 const { t } = useI18n()
 const { $fetch } = useApi()
@@ -48,10 +49,6 @@ function companyColor(slug) {
 
     <div class="flex items-center justify-between px-5 py-3.5 border-b border-border">
       <h2 class="text-sm font-semibold">{{ $t('production.title') }}</h2>
-      <span
-        v-if="!loading && productions.length"
-        class="text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md"
-      >{{ productions.length }}</span>
     </div>
 
     <div v-if="loading" class="flex items-center justify-center py-16 text-muted-foreground">
@@ -72,10 +69,7 @@ function companyColor(slug) {
           :to="`/c/${p.companySlug}/p/${p.slug}`"
           class="group flex items-center gap-4 px-5 py-3.5 hover:bg-muted/40 transition-colors"
         >
-          <span
-            class="size-2 rounded-full shrink-0 mt-px"
-            :style="{ backgroundColor: companyColor(p.companySlug) }"
-          />
+          <Avatar :id="p.profileImageId" class="size-8 rounded-sm" />
 
           <div class="flex-1 min-w-0 flex items-baseline gap-2.5">
             <span class="text-sm font-medium text-foreground truncate">{{ p.name }}</span>

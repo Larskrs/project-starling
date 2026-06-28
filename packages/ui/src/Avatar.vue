@@ -1,12 +1,14 @@
 <script setup>
 import { computed } from 'vue'
+import Image from './Image.vue'
 import { cn } from './utils.js'
 
 const props = defineProps({
-  src:   { type: String, default: null },
-  alt:   { type: String, default: '' },
-  size:  { type: Number, default: null },
-  class: { type: String, default: '' },
+  id:      { type: String,  default: null },
+  alt:     { type: String,  default: '' },
+  quality: { type: Number,  default: 34 },
+  size:    { type: Number,  default: null },
+  class:   { type: String,  default: '' },
 })
 
 const style = computed(() => props.size
@@ -24,7 +26,7 @@ const style = computed(() => props.size
     )"
     :style="style"
   >
-    <img v-if="src" :src="src" :alt="alt" class="w-full h-full object-cover" />
+    <Image v-if="id" :id="id" :alt="alt" :quality="quality" class="w-full h-full object-cover" />
     <slot v-else />
   </div>
 </template>

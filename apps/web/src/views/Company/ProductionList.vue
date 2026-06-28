@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Button from '@starling/ui/Button'
 import Avatar from '@starling/ui/Avatar'
+import Image from '@starling/ui/Image'
 import CreateProductionDialog from './CreateProductionDialog.vue'
 import { useApi } from '../../composables/useApi.js'
 
@@ -38,14 +39,6 @@ function onCreated(production) {
   productions.value = [production, ...productions.value]
 }
 
-function bannerUrl(p) {
-  return p.bannerImageId ? `/api/storage/${p.bannerImageId}/serve?quality=67` : null
-}
-
-function profileUrl(p) {
-  return p.profileImageId ? `/api/storage/${p.profileImageId}/serve?quality=67` : null
-}
-
 onMounted(load)
 </script>
 
@@ -74,10 +67,10 @@ onMounted(load)
         @click="openProduction(p)"
       >
         <!-- Banner strip -->
-        <div class="h-48 relative p-3 pb-0 z-0 overflow-hidden">
-          <img
-            v-if="bannerUrl(p)"
-            :src="bannerUrl(p)"
+        <div class="h-auto aspect-video relative p-3 pb-0 z-0 overflow-hidden">
+          <Image
+            v-if="p.bannerImageId"
+            :id="p.bannerImageId"
             :alt="p.name"
             class="h-full w-full rounded-lg inset-0 object-cover"
           />
@@ -85,7 +78,7 @@ onMounted(load)
 
         <!-- Card body -->
         <div class="z-1 p-3 rounded-b-xl flex items-center gap-3">
-          <Avatar :src="profileUrl(p)" :size="52" class="shrink-0">
+          <Avatar :id="p.profileImageId" :size="52" class="shrink-0">
             <span class="text-base font-bold">{{ p.name.charAt(0).toUpperCase() }}</span>
           </Avatar>
 

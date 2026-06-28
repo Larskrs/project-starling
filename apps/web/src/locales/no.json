@@ -1,6 +1,7 @@
 {
   "nav": {
     "home": "Hjem",
+    "dashboard": "Kontrollpanel",
     "files": "Filer",
     "settings": "Innstillinger",
     "members": "Medlemmer",
@@ -9,7 +10,10 @@
     "collapseSidebar": "Skjul sidepanel",
     "switchToLight": "Bytt til lyst tema",
     "switchToDark": "Bytt til mørkt tema",
-    "logOut": "Logg ut"
+    "logOut": "Logg ut",
+    "workspace": "Arbeidsflate",
+    "management": "Administrasjon",
+    "configuration": "Konfigurasjon"
   },
   "greeting": {
     "morning": "God morgen",
@@ -34,15 +38,15 @@
     "alreadyHaveAccount": "Har du allerede en konto?"
   },
   "company": {
-    "title": "Produksjonshus",
+    "title": "Firma",
     "new": "Ny",
-    "noCompanies": "Ingen produksjonshus ennå",
+    "noCompanies": "Ingen firma ennå",
     "createOne": "Opprett ett",
     "failedToLoad": "Klarte ikke å laste",
-    "couldNotLoad": "Klarte ikke å laste produksjonshuset"
+    "couldNotLoad": "Klarte ikke å laste firmaet"
   },
   "createCompany": {
-    "title": "Nytt produksjonshus",
+    "title": "Nytt firma",
     "nameLabel": "Navn",
     "namePlaceholder": "Acme Inc.",
     "slugLabel": "Slug",
@@ -50,14 +54,14 @@
     "slugHint": "Brukes i URLer — små bokstaver, tall, bindestrek.",
     "cancel": "Avbryt",
     "creating": "Oppretter…",
-    "create": "Opprett produksjonshus",
-    "error": "Feilet ved oppretting av produksjonshus"
+    "create": "Opprett firma",
+    "error": "Feilet ved oppretting av firma"
   },
   "production": {
     "title": "Produksjoner",
     "new": "Ny produksjon",
     "noProductions": "Ingen produksjoner ennå",
-    "noProductionsHint": "Opprett en fra produksjonshussiden",
+    "noProductionsHint": "Opprett en fra firmasiden",
     "createFirst": "Opprett den første",
     "failedToLoad": "Klarte ikke å laste produksjoner",
     "couldNotLoad": "Klarte ikke å laste produksjoner",
@@ -123,7 +127,40 @@
     "failedToSave": "Klarte ikke å lagre",
     "changeBanner": "Bytt banner",
     "uploading": "Laster opp…",
-    "uploadFailed": "Opplasting feilet"
+    "uploadFailed": "Opplasting feilet",
+    "storageLimit": "Lagringsgrense",
+    "storageHint": "La feltet stå tomt for ingen grense",
+    "noLimit": "Ingen grense"
+  },
+  "dashboard": {
+    "title": "Kontrollpanel",
+    "storage": "Lagring",
+    "of": "av",
+    "used": "brukt",
+    "available": "Tilgjengelig",
+    "free": "ledig",
+    "total": "totalt",
+    "noFiles": "Ingen filer lagret ennå",
+    "couldNotLoad": "Klarte ikke å laste kontrollpanel",
+    "recentFiles": "Nylige filer",
+    "recentMembers": "Nye medlemmer",
+    "noRecentFiles": "Ingen filer lastet opp ennå",
+    "noRecentMembers": "Ingen medlemmer ennå",
+    "uploadedBy": "av {name}"
+  },
+  "storage": {
+    "type": {
+      "image": "Bilder",
+      "audio": "Lyd"
+    }
+  },
+  "profile": {
+    "title": "Profilinnstillinger",
+    "companyTitle": "Firmaprofil",
+    "changeAvatar": "Endre avatar",
+    "changeBanner": "Endre banner",
+    "uploading": "Laster opp…",
+    "uploadFailed": "Opplasting mislyktes"
   },
   "time": {
     "justNow": "nå nettopp",

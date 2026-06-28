@@ -28,7 +28,8 @@
     "./NavSidebar":           "./src/NavSidebar.vue",
     "./ProductionBanner":     "./src/ProductionBanner.vue",
     "./Tabs":                 "./src/Tabs.vue",
-    "./Toast":                "./src/Toast.vue"
+    "./Toast":                "./src/Toast.vue",
+    "./Image":                "./src/Image.vue"
   },
   "dependencies": {
     "clsx": "^2.1.1",

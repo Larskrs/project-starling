@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { Icon }            from '@iconify/vue'
 import CreateCompanyDialog from './CreateCompanyDialog.vue'
 import { useApi }          from '../../composables/useApi.js'
+import Image from '@starling/ui/Image'
 
 const { $fetch } = useApi()
 
@@ -26,11 +27,6 @@ function onCreated(company) {
 
 onMounted(load)
 
-function companyColor(slug) {
-  let h = 0
-  for (const ch of (slug || '')) h = (h * 31 + ch.charCodeAt(0)) & 0x7fffffff
-  return `oklch(62% 0.17 ${h % 360})`
-}
 </script>
 
 <template>
@@ -64,14 +60,9 @@ function companyColor(slug) {
       <li v-for="c in companies" :key="c.id">
         <router-link
           :to="`/c/${c.slug}`"
-          class="group flex items-center gap-3 px-5 py-3 hover:bg-muted/40 transition-colors"
+          class="group flex items-center gap-3 px-5 py-3.5 hover:bg-muted/40 transition-colors"
         >
-          <span
-            class="size-6 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0 text-white"
-            :style="{ backgroundColor: companyColor(c.slug) }"
-          >
-            {{ c.name[0]?.toUpperCase() }}
-          </span>
+          <Image v-if="c.profileImageId" :id="c.profileImageId" :quality="25" class="size-7 rounded-md object-cover shrink-0" />
           <span class="text-sm text-foreground truncate flex-1">{{ c.name }}</span>
           <Icon
             icon="mdi:arrow-right"

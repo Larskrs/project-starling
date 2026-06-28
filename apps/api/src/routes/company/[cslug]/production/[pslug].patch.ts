@@ -6,8 +6,9 @@ import { requireProductionAccess, requirePermission } from '../../../../lib/prod
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
-  name: z.string().min(1).max(255).optional(),
-  slug: z.string().min(1).max(255).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens').optional(),
+  name:             z.string().min(1).max(255).optional(),
+  slug:             z.string().min(1).max(255).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens').optional(),
+  allocatedStorage: z.number().int().positive().nullable().optional(),
 });
 
 export default defineEventHandler(async (event) => {
@@ -22,8 +23,9 @@ export default defineEventHandler(async (event) => {
   const body = await readValidatedBody(event, bodySchema);
 
   const update: Record<string, unknown> = {};
-  if (body.name !== undefined) update.name = body.name;
-  if (body.slug !== undefined) update.slug = body.slug;
+  if (body.name             !== undefined) update.name             = body.name;
+  if (body.slug             !== undefined) update.slug             = body.slug;
+  if (body.allocatedStorage !== undefined) update.allocatedStorage = body.allocatedStorage;
 
   if (Object.keys(update).length === 0) throw createError({ statusCode: 422, message: 'Nothing to update' });
 

@@ -3,56 +3,54 @@ import { ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import RoleSelector from './components/RoleSelector.vue'
+import { Input } from '@starling/ui'
 import { useApi }  from '../../composables/useApi.js'
 import { useAuth } from '../../composables/useAuth.js'
-import { Input } from "@starling/ui"
+import RoleSelector from './components/RoleSelector.vue'
+import MemberRow from './components/MemberRow.vue'
 
-const route = useRoute()
-const { t } = useI18n()
+const route      = useRoute()
+const { t }      = useI18n()
 const { $fetch } = useApi()
 const { user }   = useAuth()
-
-const isSelf = (member) => member.user.id === user.value?.id
 
 // ── Roles ─────────────────────────────────────────────────────────────────────
 const roles = ref([])
 
 async function loadRoles() {
-  const { ok, data: res } = await $fetch(
+  const { ok, data } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
     { silent: true },
   )
-  if (ok) roles.value = res.map(r => ({ ...r, permissions: BigInt(r.permissions) }))
+  if (ok) roles.value = data.map(r => ({ ...r, permissions: BigInt(r.permissions) }))
 }
 
 // ── Members ───────────────────────────────────────────────────────────────────
-const members = ref([])
-const search  = ref('')
+const members        = ref([])
+const search         = ref('')
 const searchFiltered = ref([])
-const loading = ref(false)
-const error   = ref('')
+const loading        = ref(false)
+const error          = ref('')
 
 watch([search, members], ([s]) => {
   const q = s.trim().toLowerCase()
   if (!q) { searchFiltered.value = members.value; return }
   searchFiltered.value = members.value.filter((m) => {
     const name  = (m.user.firstName ? `${m.user.firstName} ${m.user.lastName ?? ''}` : m.user.name) || ''
-    const email = m.user.email || ''
-    return name.toLowerCase().includes(q) || email.toLowerCase().includes(q)
+    return name.toLowerCase().includes(q) || (m.user.email || '').toLowerCase().includes(q)
   })
 })
 
 async function loadMembers() {
   loading.value = true
   error.value   = ''
-  const { ok, data: res } = await $fetch(
+  const { ok, data } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/members`,
     { silent: true },
   )
   loading.value = false
   if (!ok) { error.value = t('members.couldNotLoad'); return }
-  members.value = res
+  members.value = data
 }
 
 onMounted(() => { loadRoles(); loadMembers() })
@@ -97,24 +95,6 @@ async function removeMember(member) {
   )
   if (ok) members.value = members.value.filter(m => m.id !== member.id)
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function memberColor(member) {
-  const str = member.user.email || member.user.name || ''
-  let h = 0
-  for (const ch of str) h = (h * 31 + ch.charCodeAt(0)) & 0x7fffffff
-  return `oklch(62% 0.17 ${h % 360})`
-}
-
-function displayName(member) {
-  return member.user.firstName
-    ? `${member.user.firstName} ${member.user.lastName ?? ''}`.trim()
-    : member.user.name
-}
-
-function initials(member) {
-  return (member.user.firstName || member.user.name || '?').charAt(0).toUpperCase()
-}
 </script>
 
 <template>
@@ -158,9 +138,7 @@ function initials(member) {
       <div v-if="loading" class="flex items-center justify-center py-14">
         <Icon icon="mdi:loading" class="animate-spin text-xl text-muted-foreground/50" />
       </div>
-
       <p v-else-if="error" class="px-5 py-4 text-sm text-destructive">{{ error }}</p>
-
       <div v-else-if="!members.length" class="py-14 text-center text-sm text-muted-foreground">
         {{ $t('members.noMembers') }}
       </div>
@@ -172,40 +150,21 @@ function initials(member) {
             <Icon icon="mdi:search" class="absolute left-3 top-1/2 -translate-y-1/2" />
           </div>
         </div>
-        <li
+        <MemberRow
           v-for="member in searchFiltered"
           :key="member.id"
-          class="flex items-center gap-3 px-5 py-3"
+          :member="member"
+          :is-self="member.user.id === user?.id"
         >
-          <!-- Avatar -->
-          <span
-            class="size-7 rounded-md text-[11px] font-bold flex items-center justify-center shrink-0 text-white"
-            :style="{ backgroundColor: memberColor(member) }"
-          >
-            {{ initials(member) }}
-          </span>
-
-          <!-- Name + email -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-1.5">
-              <p class="text-sm font-medium text-foreground truncate">{{ displayName(member) }}</p>
-              <span v-if="isSelf(member)" class="text-[10px] text-muted-foreground/60 font-medium shrink-0">{{ $t('members.you') }}</span>
-            </div>
-            <p class="text-xs text-muted-foreground truncate">{{ member.user.email }}</p>
-          </div>
-
-          <!-- Role selector -->
-          <div :class="isSelf(member) ? 'opacity-40 pointer-events-none' : ''">
+          <div :class="member.user.id === user?.id ? 'opacity-40 pointer-events-none' : ''">
             <RoleSelector
               :model-value="member.role?.id ?? null"
               :roles="roles"
               @update:model-value="changeMemberRole(member, $event)"
             />
           </div>
-
-          <!-- Remove -->
           <button
-            v-if="!isSelf(member)"
+            v-if="member.user.id !== user?.id"
             class="p-1.5 rounded text-muted-foreground/50 hover:text-destructive transition-colors shrink-0"
             :title="$t('members.removeTitle')"
             @click="removeMember(member)"
@@ -213,7 +172,7 @@ function initials(member) {
             <Icon icon="mdi:close" class="text-sm" />
           </button>
           <div v-else class="size-7 shrink-0" />
-        </li>
+        </MemberRow>
       </ul>
 
     </section>

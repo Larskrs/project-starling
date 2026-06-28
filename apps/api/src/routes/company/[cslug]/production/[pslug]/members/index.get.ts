@@ -15,12 +15,12 @@ export default defineEventHandler(async (event) => {
       id:        productionMembers.id,
       createdAt: productionMembers.createdAt,
       user: {
-        id:        users.id,
-        name:      users.name,
-        firstName: users.first_name,
-        lastName:  users.last_name,
-        email:     users.email,
-        avatar:    users.avatar,
+        id:            users.id,
+        name:          users.name,
+        firstName:     users.first_name,
+        lastName:      users.last_name,
+        email:         users.email,
+        avatarImageId: users.avatarImageId,
       },
       role: {
         id:          productionRoles.id,

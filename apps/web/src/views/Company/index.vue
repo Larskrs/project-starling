@@ -1,11 +1,16 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { Icon } from '@iconify/vue'
+import Avatar from '@starling/ui/Avatar'
+import Image from '@starling/ui/Image'
+
 import ProductionList from './ProductionList.vue'
 import { useApi } from '../../composables/useApi.js'
 
 const route  = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 const { $fetch } = useApi()
 const company = ref(null)
@@ -28,14 +33,45 @@ watch(() => route.params.slug, (slug) => { if (slug) load(slug) })
 </script>
 
 <template>
-  <div class="container mx-auto px-6 py-10">
+  <div class="container mx-auto px-6 py-10 max-w-5xl">
     <p v-if="loading" class="text-sm text-muted-foreground">…</p>
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
     <template v-else-if="company">
 
-      <div class="mb-8">
-        <h1 class="text-2xl font-bold text-foreground">{{ company.name }}</h1>
-        <p class="text-sm text-muted-foreground font-mono mt-0.5">{{ company.slug }}</p>
+      <!-- Company header (LinkedIn-style) -->
+      <div class="mb-10">
+
+        <!-- Banner -->
+        <div class="h-52 overflow-hidden rounded-2xl bg-gradient-to-br from-muted to-muted/40">
+          <Image
+            v-if="company.bannerImageId"
+            :id="company.bannerImageId"
+            :alt="company.name"
+            class="h-full w-full object-cover"
+          />
+        </div>
+
+        <!-- Avatar + name row, overlapping banner bottom -->
+        <div class="flex items-end gap-5 pl-6 -mt-12 relative">
+          <div class="size-24 rounded-2xl ring-4 ring-background shadow-sm overflow-hidden shrink-0 relative z-10">
+            <Avatar :id="company.profileImageId" class="w-full h-full rounded-none">
+              <span class="text-3xl font-bold text-muted-foreground">{{ company.name?.charAt(0)?.toUpperCase() }}</span>
+            </Avatar>
+          </div>
+
+          <div class="flex-1 min-w-0 flex items-center justify-between pb-1">
+            <h1 class="text-2xl font-bold text-foreground leading-tight">{{ company.name }}</h1>
+            <button
+              v-if="company.canManage"
+              class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground border border-border hover:border-foreground/30 px-3 py-1.5 rounded-lg transition-colors shrink-0"
+              @click="router.push(`/c/${company.slug}/settings`)"
+            >
+              <Icon icon="mdi:cog-outline" class="size-4" />
+              {{ $t('nav.settings') }}
+            </button>
+          </div>
+        </div>
+
       </div>
 
       <ProductionList :company="company" />

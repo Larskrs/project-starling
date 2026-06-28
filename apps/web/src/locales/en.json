@@ -1,6 +1,7 @@
 {
   "nav": {
     "home": "Home",
+    "dashboard": "Dashboard",
     "files": "Files",
     "settings": "Settings",
     "members": "Members",
@@ -9,7 +10,10 @@
     "collapseSidebar": "Collapse sidebar",
     "switchToLight": "Switch to light mode",
     "switchToDark": "Switch to dark mode",
-    "logOut": "Log out"
+    "logOut": "Log out",
+    "workspace": "Workspace",
+    "management": "Management",
+    "configuration": "Configuration"
   },
   "greeting": {
     "morning": "Good morning",
@@ -98,7 +102,10 @@
     "failedToSave": "Failed to save",
     "changeBanner": "Change banner",
     "uploading": "Uploading…",
-    "uploadFailed": "Upload failed"
+    "uploadFailed": "Upload failed",
+    "storageLimit": "Storage limit",
+    "storageHint": "Leave empty to set no limit",
+    "noLimit": "No limit"
   },
   "roles": {
     "title": "Roles",
@@ -124,6 +131,36 @@
       "manageRoles": "Manage roles",
       "administrator": "Administrator"
     }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "storage": "Storage",
+    "of": "of",
+    "used": "used",
+    "available": "Available",
+    "free": "free",
+    "total": "total",
+    "noFiles": "No files stored yet",
+    "couldNotLoad": "Could not load dashboard",
+    "recentFiles": "Recent files",
+    "recentMembers": "New members",
+    "noRecentFiles": "No files uploaded yet",
+    "noRecentMembers": "No members yet",
+    "uploadedBy": "by {name}"
+  },
+  "storage": {
+    "type": {
+      "image": "Images",
+      "audio": "Audio"
+    }
+  },
+  "profile": {
+    "title": "Profile settings",
+    "companyTitle": "Company profile",
+    "changeAvatar": "Change avatar",
+    "changeBanner": "Change banner",
+    "uploading": "Uploading…",
+    "uploadFailed": "Upload failed"
   },
   "time": {
     "justNow": "just now",

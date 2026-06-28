@@ -3,34 +3,43 @@ import { inject, ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import Avatar from '@starling/ui/Avatar'
-import ProductionBanner from '@starling/ui/ProductionBanner'
-import ImageCropper from '@starling/ui/ImageCropper'
 import Button from '@starling/ui/Button'
 import Input from '@starling/ui/Input'
 import Label from '@starling/ui/Label'
 import { useApi } from '../../composables/useApi.js'
+import ProductionProfileEditor from './components/ProductionProfileEditor.vue'
 
 const route = useRoute()
 const data  = inject('production-data')
 const { t } = useI18n()
 const { $fetch } = useApi()
 
-// ── Name ──────────────────────────────────────────────────────────────────────
+const uploadUrl = computed(() =>
+  `/api/company/${route.params.cslug}/production/${route.params.pslug}/profile`,
+)
 
+const bannerSrc = computed(() => data.value?.production?.bannerImageId
+  ? `/api/storage/${data.value.production.bannerImageId}/serve?quality=67` : null)
+
+function onUploaded({ slot, fileId }) {
+  if (slot === 'profile') data.value.production.profileImageId = fileId
+  else                    data.value.production.bannerImageId  = fileId
+}
+
+// ── Name ──────────────────────────────────────────────────────────────────────
 const nameInput   = ref('')
 const nameSaving  = ref(false)
 const nameError   = ref('')
 const nameSuccess = ref(false)
 
-watch(
-  () => data?.value?.production?.name,
-  (v) => { if (v) nameInput.value = v },
-  { immediate: true },
+watch(() => data?.value?.production?.name, (v) => { if (v) nameInput.value = v }, { immediate: true })
+
+const nameChanged = computed(() =>
+  nameInput.value.trim() !== '' && nameInput.value !== data.value?.production?.name,
 )
 
 async function saveName() {
-  if (!nameInput.value.trim() || nameInput.value === data.value?.production?.name) return
+  if (!nameChanged.value) return
   nameSaving.value  = true
   nameError.value   = ''
   nameSuccess.value = false
@@ -45,121 +54,66 @@ async function saveName() {
   setTimeout(() => { nameSuccess.value = false }, 2000)
 }
 
-// ── Images ────────────────────────────────────────────────────────────────────
+// ── Storage limit ─────────────────────────────────────────────────────────────
+const UNITS = { mb: 1024 ** 2, gb: 1024 ** 3 }
 
-const profileSrc = computed(() => data.value?.production?.profileImageId
-  ? `/api/storage/${data.value.production.profileImageId}/serve?quality=67` : null)
+const storageInput   = ref('')
+const storageUnit    = ref('gb')
+const storageSaving  = ref(false)
+const storageError   = ref('')
+const storageSuccess = ref(false)
 
-const bannerSrc = computed(() => data.value?.production?.bannerImageId
-  ? `/api/storage/${data.value.production.bannerImageId}/serve?quality=67` : null)
-
-const profileUploading = ref(false)
-const bannerUploading  = ref(false)
-const profileError     = ref('')
-const bannerError      = ref('')
-
-async function uploadImage(slot, file) {
-  const isProfile = slot === 'profile'
-  if (isProfile) { profileUploading.value = true; profileError.value = '' }
-  else           { bannerUploading.value  = true; bannerError.value  = '' }
-  const fd = new FormData()
-  fd.append('slot', slot)
-  fd.append('file', file)
-  const { ok, data: resData, error } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/profile`,
-    { method: 'POST', body: fd, silent: true },
-  )
-  if (isProfile) profileUploading.value = false
-  else           bannerUploading.value  = false
-  if (!ok) {
-    if (isProfile) profileError.value = error ?? t('settings.uploadFailed')
-    else           bannerError.value  = error ?? t('settings.uploadFailed')
-    return
-  }
-  if (isProfile) data.value.production.profileImageId = resData.fileId
-  else           data.value.production.bannerImageId  = resData.fileId
-}
-
-// ── Crop flow ─────────────────────────────────────────────────────────────────
-
-const cropFile = ref(null)
-const cropSlot = ref('')
-
-function onProfilePick(e) {
-  const f = e.target.files?.[0]
-  if (f) { cropFile.value = f; cropSlot.value = 'profile' }
-  e.target.value = ''
-}
-
-function onBannerPick(e) {
-  const f = e.target.files?.[0]
-  if (f) { cropFile.value = f; cropSlot.value = 'banner' }
-  e.target.value = ''
-}
-
-function onCropped(blob) {
-  const file = new File([blob], 'image.jpg', { type: 'image/jpeg' })
-  uploadImage(cropSlot.value, file)
-  cropFile.value = null
-  cropSlot.value = ''
-}
-
-function onCropCancel() {
-  cropFile.value = null
-  cropSlot.value = ''
-}
-
-const nameChanged = computed(() =>
-  nameInput.value.trim() !== '' && nameInput.value !== data.value?.production?.name,
+watch(
+  () => data?.value?.production?.allocatedStorage,
+  (bytes) => {
+    if (!bytes) { storageInput.value = ''; storageUnit.value = 'gb'; return }
+    if (bytes >= UNITS.gb) {
+      storageUnit.value  = 'gb'
+      storageInput.value = String(bytes / UNITS.gb)
+    } else {
+      storageUnit.value  = 'mb'
+      storageInput.value = String(Math.round(bytes / UNITS.mb))
+    }
+  },
+  { immediate: true },
 )
+
+const storageBytes = computed(() => {
+  const n = parseFloat(storageInput.value)
+  if (!storageInput.value || isNaN(n) || n <= 0) return null
+  return Math.round(n * UNITS[storageUnit.value])
+})
+
+const storageChanged = computed(() =>
+  storageBytes.value !== (data.value?.production?.allocatedStorage ?? null),
+)
+
+async function saveStorage() {
+  if (!storageChanged.value) return
+  storageSaving.value  = true
+  storageError.value   = ''
+  storageSuccess.value = false
+  const { ok, data: resData, error } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
+    { method: 'PATCH', json: { allocatedStorage: storageBytes.value }, silent: true },
+  )
+  storageSaving.value = false
+  if (!ok) { storageError.value = error ?? t('settings.failedToSave'); return }
+  data.value.production.allocatedStorage = resData.allocatedStorage
+  storageSuccess.value = true
+  setTimeout(() => { storageSuccess.value = false }, 2000)
+}
 </script>
 
 <template>
   <div class="max-w-3xl mx-auto px-6 py-8 space-y-6">
 
-    <!-- Images -->
-    <div class="relative items-center">
-
-      <!-- Avatar -->
-      <label class="absolute z-10 left-4 bottom-4 size-32 cursor-pointer group">
-        <div class="relative w-full h-full">
-          <Avatar :src="profileSrc" class="w-full h-full rounded-2xl ring-2 ring-white">
-            <Icon icon="mdi:image-outline" class="size-12 text-muted-foreground/75" />
-          </Avatar>
-          <div class="absolute inset-0 rounded-2xl flex items-center justify-center bg-black/0 group-hover:bg-black/45 transition-colors">
-            <Icon
-              :icon="profileUploading ? 'mdi:loading' : 'mdi:camera-outline'"
-              :class="{ 'animate-spin': profileUploading }"
-              class="text-white text-sm opacity-0 group-hover:opacity-100 transition-opacity"
-            />
-          </div>
-        </div>
-        <input type="file" accept="image/*" class="sr-only" @change="onProfilePick" />
-      </label>
-
-      <!-- Banner -->
-      <label class="relative h-60 cursor-pointer group overflow-hidden rounded-2xl block">
-        <ProductionBanner :src="bannerSrc" class="h-full w-full object-cover" />
-        <div class="absolute inset-0 flex items-center justify-center transition-colors bg-black/0 group-hover:bg-black/25">
-          <div class="flex items-center gap-1.5 bg-black/60 text-white text-xs px-2.5 py-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
-            <Icon :icon="bannerUploading ? 'mdi:loading' : 'mdi:camera-outline'" :class="{ 'animate-spin': bannerUploading }" />
-            {{ bannerUploading ? $t('settings.uploading') : $t('settings.changeBanner') }}
-          </div>
-        </div>
-        <input type="file" accept="image/*" class="sr-only" @change="onBannerPick" />
-        <p v-if="bannerError" class="absolute bottom-2 right-2 text-xs bg-destructive text-destructive-foreground px-2 py-0.5 rounded">{{ bannerError }}</p>
-      </label>
-
-    </div>
-
-    <p v-if="profileError" class="text-xs text-destructive">{{ profileError }}</p>
-
-    <ImageCropper
-      :file="cropFile"
-      :aspect-ratio="cropSlot === 'banner' ? 3 : 1"
-      :max-output="cropSlot === 'banner' ? 1800 : 600"
-      @crop="onCropped"
-      @cancel="onCropCancel"
+    <ProductionProfileEditor
+      :upload-url="uploadUrl"
+      :profile-image-id="data?.production?.profileImageId"
+      :banner-image-id="data?.production?.bannerImageId"
+      :banner-src="bannerSrc"
+      @uploaded="onUploaded"
     />
 
     <div class="border-t border-border" />
@@ -176,18 +130,45 @@ const nameChanged = computed(() =>
           class="h-9 text-sm"
           @keydown.enter="saveName"
         />
-        <Button
-          size="sm"
-          :disabled="!nameChanged || nameSaving"
-          class="shrink-0 gap-1.5"
-          @click="saveName"
-        >
+        <Button size="sm" :disabled="!nameChanged || nameSaving" class="shrink-0 gap-1.5" @click="saveName">
           <Icon v-if="nameSaving" icon="mdi:loading" class="animate-spin" />
           <Icon v-else-if="nameSuccess" icon="mdi:check" />
           {{ nameSaving ? $t('settings.saving') : nameSuccess ? $t('settings.saved') : $t('settings.save') }}
         </Button>
       </div>
       <p v-if="nameError" class="text-xs text-destructive">{{ nameError }}</p>
+    </div>
+
+    <div class="border-t border-border" />
+
+    <!-- Storage limit -->
+    <div class="space-y-1.5">
+      <Label>{{ $t('settings.storageLimit') }}</Label>
+      <div class="flex gap-2">
+        <Input
+          v-model="storageInput"
+          type="number"
+          min="1"
+          step="1"
+          :placeholder="$t('settings.noLimit')"
+          class="h-9 text-sm"
+          @keydown.enter="saveStorage"
+        />
+        <select
+          v-model="storageUnit"
+          class="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="mb">MB</option>
+          <option value="gb">GB</option>
+        </select>
+        <Button size="sm" :disabled="!storageChanged || storageSaving" class="shrink-0 gap-1.5" @click="saveStorage">
+          <Icon v-if="storageSaving" icon="mdi:loading" class="animate-spin" />
+          <Icon v-else-if="storageSuccess" icon="mdi:check" />
+          {{ storageSaving ? $t('settings.saving') : storageSuccess ? $t('settings.saved') : $t('settings.save') }}
+        </Button>
+      </div>
+      <p class="text-xs text-muted-foreground">{{ $t('settings.storageHint') }}</p>
+      <p v-if="storageError" class="text-xs text-destructive">{{ storageError }}</p>
     </div>
 
   </div>

@@ -1,4 +1,4 @@
-import { eq, is } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, users, sessions } from '@starling/db';
 import { defineEventHandler, ApiError } from '../../lib/handler.js';
 import { parseSessionCookie } from '../../lib/session.js';
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   if (session.expiresAt < new Date())  throw new ApiError(401, 'Session expired');
 
   const [user] = await db
-    .select({ id: users.id, email: users.email, name: users.name, first_name: users.first_name, last_name: users.last_name, isEmailVerified: users.isEmailVerified, role: users.role })
+    .select({ id: users.id, email: users.email, name: users.name, first_name: users.first_name, last_name: users.last_name, isEmailVerified: users.isEmailVerified, role: users.role, avatarImageId: users.avatarImageId, bannerImageId: users.bannerImageId })
     .from(users)
     .where(eq(users.id, session.userId))
     .limit(1);
