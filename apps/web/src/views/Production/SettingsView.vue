@@ -1,17 +1,19 @@
 <script setup>
 import { inject, ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Button from '@starling/ui/Button'
 import Input from '@starling/ui/Input'
 import Label from '@starling/ui/Label'
 import { useApi } from '../../composables/useApi.js'
 import ProductionProfileEditor from './components/ProductionProfileEditor.vue'
+import ConfirmValueDialog from '../../components/ui/ConfirmValueDialog.vue'
 
-const route = useRoute()
-const data  = inject('production-data')
-const { t } = useI18n()
+const route  = useRoute()
+const router = useRouter()
+const data   = inject('production-data')
+const { t }  = useI18n()
 const { $fetch } = useApi()
 
 const uploadUrl = computed(() =>
@@ -103,6 +105,53 @@ async function saveStorage() {
   storageSuccess.value = true
   setTimeout(() => { storageSuccess.value = false }, 2000)
 }
+
+// ── Rename slug ───────────────────────────────────────────────────────────────
+const renameSlugOpen    = ref(false)
+const newSlug           = ref('')
+const renameSlugLoading = ref(false)
+const renameSlugError   = ref('')
+
+const SLUG_RE = /^[a-z0-9-]+$/
+const newSlugValid = computed(() => {
+  const v = newSlug.value.trim()
+  return v.length > 0 && SLUG_RE.test(v) && v !== data.value?.production?.slug
+})
+
+watch(renameSlugOpen, (v) => { if (!v) { newSlug.value = ''; renameSlugError.value = '' } })
+
+async function submitRenameSlug() {
+  renameSlugLoading.value = true
+  renameSlugError.value   = ''
+  const { ok, data: resData, error } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
+    { method: 'PATCH', json: { slug: newSlug.value.trim() }, silent: true },
+  )
+  renameSlugLoading.value = false
+  if (!ok) { renameSlugError.value = error ?? t('danger.failedToRenameSlug'); return }
+  renameSlugOpen.value = false
+  router.replace(`/c/${route.params.cslug}/p/${resData.slug}/settings`)
+}
+
+// ── Delete production ─────────────────────────────────────────────────────────
+const deleteOpen    = ref(false)
+const deleteLoading = ref(false)
+const deleteError   = ref('')
+
+watch(deleteOpen, (v) => { if (!v) deleteError.value = '' })
+
+async function submitDelete() {
+  deleteLoading.value = true
+  deleteError.value   = ''
+  const { ok, error } = await $fetch(
+    `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
+    { method: 'DELETE', silent: true },
+  )
+  deleteLoading.value = false
+  if (!ok) { deleteError.value = error ?? t('danger.failedToDeleteProduction'); return }
+  deleteOpen.value = false
+  router.replace(`/c/${route.params.cslug}`)
+}
 </script>
 
 <template>
@@ -171,5 +220,86 @@ async function saveStorage() {
       <p v-if="storageError" class="text-xs text-destructive">{{ storageError }}</p>
     </div>
 
+    <div class="border-t border-border" />
+
+    <!-- Danger zone -->
+    <div class="rounded-xl border border-destructive/30 overflow-hidden">
+      <div class="px-5 py-3 bg-destructive/5 border-b border-destructive/20">
+        <p class="text-sm font-semibold text-destructive">{{ $t('danger.zone') }}</p>
+      </div>
+      <div class="divide-y divide-border">
+
+        <div class="flex items-center justify-between gap-6 px-5 py-4">
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-foreground">{{ $t('danger.renameProductionSlug') }}</p>
+            <p class="text-xs text-muted-foreground mt-0.5">{{ $t('danger.renameProductionSlugDesc') }}</p>
+          </div>
+          <Button
+            size="sm" variant="outline"
+            class="shrink-0 border-destructive/40 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            @click="renameSlugOpen = true"
+          >
+            {{ $t('danger.renameSlugLabel') }}
+          </Button>
+        </div>
+
+        <div class="flex items-center justify-between gap-6 px-5 py-4">
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-foreground">{{ $t('danger.deleteProduction') }}</p>
+            <p class="text-xs text-muted-foreground mt-0.5">{{ $t('danger.deleteProductionDesc') }}</p>
+          </div>
+          <Button size="sm" variant="destructive" class="shrink-0" @click="deleteOpen = true">
+            {{ $t('danger.deleteProduction') }}
+          </Button>
+        </div>
+
+      </div>
+    </div>
+
   </div>
+
+  <!-- Rename slug dialog -->
+  <ConfirmValueDialog
+    :open="renameSlugOpen"
+    title="Rename production slug"
+    description="Changing the slug will break all existing links to this production. Make sure to update any bookmarks or integrations."
+    :confirm-value="data?.production?.slug ?? ''"
+    confirm-label="Rename slug"
+    :loading="renameSlugLoading"
+    :extra-disabled="!newSlugValid"
+    @confirm="submitRenameSlug"
+    @cancel="renameSlugOpen = false"
+  >
+    <template #default="{ matches }">
+      <div class="flex flex-col gap-1.5">
+        <Label for="new-pslug">New slug</Label>
+        <Input
+          id="new-pslug"
+          v-model="newSlug"
+          :disabled="!matches"
+          placeholder="new-slug"
+          autocomplete="off"
+        />
+        <p class="text-xs text-muted-foreground">Lowercase letters, numbers, and hyphens only.</p>
+        <p v-if="renameSlugError" class="text-xs text-destructive">{{ renameSlugError }}</p>
+      </div>
+    </template>
+  </ConfirmValueDialog>
+
+  <!-- Delete dialog -->
+  <ConfirmValueDialog
+    :open="deleteOpen"
+    title="Delete production"
+    description="This will permanently delete the production and all its files, folders, members, and roles. There is no going back."
+    :confirm-value="data?.production?.slug ?? ''"
+    confirm-label="Delete production"
+    :loading="deleteLoading"
+    @confirm="submitDelete"
+    @cancel="deleteOpen = false"
+  >
+    <template v-if="deleteError" #default>
+      <p class="text-xs text-destructive">{{ deleteError }}</p>
+    </template>
+  </ConfirmValueDialog>
+
 </template>

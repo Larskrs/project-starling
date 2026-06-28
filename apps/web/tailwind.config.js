@@ -1,15 +1,22 @@
+import { fileURLToPath } from 'url'
+import { resolve }       from 'path'
+
+const dir   = fileURLToPath(new URL('.', import.meta.url))
+const uiSrc = resolve(dir, '../../packages/ui/src')
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ['class'],
   content: [
     './index.html',
     './src/**/*.{vue,js,ts,jsx,tsx}',
-    '../../packages/ui/src/**/*.{vue,js,ts,jsx,tsx}',
+    `${uiSrc}/**/*.{vue,js,ts,jsx,tsx}`,
   ],
   theme: {
     extend: {
       colors: {
         border:      'oklch(var(--border) / <alpha-value>)',
+        hover:       'oklch(var(--hover) / <alpha-value>)',
         input:       'oklch(var(--input) / <alpha-value>)',
         ring:        'oklch(var(--ring) / <alpha-value>)',
         background:  'oklch(var(--background) / <alpha-value>)',

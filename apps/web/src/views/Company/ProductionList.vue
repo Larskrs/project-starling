@@ -55,7 +55,7 @@ onMounted(load)
 
     <div v-else-if="productions.length === 0" class="rounded-xl border border-dashed border-border py-16 text-center">
       <p class="text-sm text-muted-foreground">{{ $t('production.noProductions') }}</p>
-      <Button variant="ghost" size="sm" class="mt-2" @click="dialogOpen = true">{{ $t('production.createFirst') }}</Button>
+      <Button variant="outline" size="sm" class="mt-2" @click="dialogOpen = true">{{ $t('production.createFirst') }}</Button>
     </div>
 
     <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative">
@@ -78,7 +78,7 @@ onMounted(load)
 
         <!-- Card body -->
         <div class="z-1 p-3 rounded-b-xl flex items-center gap-3">
-          <Avatar :id="p.profileImageId" :size="52" class="shrink-0">
+          <Avatar :id="p.profileImageId" class="rounded-sm size-12 shrink-0">
             <span class="text-base font-bold">{{ p.name.charAt(0).toUpperCase() }}</span>
           </Avatar>
 

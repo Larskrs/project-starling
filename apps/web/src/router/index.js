@@ -13,7 +13,7 @@ const router = createRouter({
     { path: '/home',       component: () => import('../views/Home/index.vue'),             meta: { requiresAuth: true, layout: DefaultLayout } },
     { path: '/settings',   component: () => import('../views/Settings/index.vue'),         meta: { requiresAuth: true, layout: DefaultLayout } },
     { path: '/c/:slug',    component: () => import('../views/Company/index.vue'),           meta: { requiresAuth: true, layout: DefaultLayout } },
-    { path: '/c/:slug/settings', component: () => import('../views/Company/SettingsView.vue'), meta: { requiresAuth: true, layout: DefaultLayout } },
+    { path: '/c/:slug/settings', component: () => import('../views/Company/SettingsView.vue'), meta: { requiresAuth: true, requiresCompanyAdmin: true, layout: DefaultLayout } },
 
     {
       path:      '/c/:cslug/p/:pslug',
@@ -44,6 +44,14 @@ router.beforeEach(async (to) => {
 
   if (needsAuth  && !ok) return '/login'
   if (isAuthPage &&  ok) return '/home'
+
+  if (to.meta.requiresCompanyAdmin) {
+    const slug        = to.params.slug
+    const companyRes  = await fetch(`/api/company/${slug}`, { credentials: 'include' }).catch(() => null)
+    const company     = companyRes?.ok ? await companyRes.json() : null
+    if (!company?.canManage) return `/c/${slug}`
+  }
+
   return true
 })
 

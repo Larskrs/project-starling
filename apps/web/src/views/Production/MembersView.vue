@@ -7,7 +7,9 @@ import { Input } from '@starling/ui'
 import { useApi }  from '../../composables/useApi.js'
 import { useAuth } from '../../composables/useAuth.js'
 import RoleSelector from './components/RoleSelector.vue'
-import MemberRow from './components/MemberRow.vue'
+import MemberRow   from './components/MemberRow.vue'
+import ListCard    from '@starling/ui/ListCard'
+import ListHeader  from '@starling/ui/ListHeader'
 
 const route      = useRoute()
 const { t }      = useI18n()
@@ -125,15 +127,16 @@ async function removeMember(member) {
     </section>
 
     <!-- Members list -->
-    <section class="rounded-xl border border-border bg-card overflow-hidden">
+    <ListCard>
 
-      <div class="flex items-center justify-between px-5 py-3.5 border-b border-border">
-        <h2 class="text-sm font-semibold">{{ $t('members.title') }}</h2>
-        <span
-          v-if="!loading && members.length"
-          class="text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md"
-        >{{ members.length }}</span>
-      </div>
+      <ListHeader :title="$t('members.title')">
+        <template #action>
+          <span
+            v-if="!loading && members.length"
+            class="text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md"
+          >{{ members.length }}</span>
+        </template>
+      </ListHeader>
 
       <div v-if="loading" class="flex items-center justify-center py-14">
         <Icon icon="mdi:loading" class="animate-spin text-xl text-muted-foreground/50" />
@@ -175,7 +178,7 @@ async function removeMember(member) {
         </MemberRow>
       </ul>
 
-    </section>
+    </ListCard>
 
   </div>
 </template>

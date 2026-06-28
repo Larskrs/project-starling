@@ -182,6 +182,31 @@
       "missing": "You don't have permission to perform this action"
     }
   },
+  "danger": {
+    "zone": "Danger zone",
+    "typeToConfirm": "Type {value} to confirm",
+    "cancel": "Cancel",
+    "pleaseWait": "Please wait…",
+    "renameProductionSlug": "Rename production slug",
+    "renameProductionSlugDesc": "Changing the slug will break all existing links to this production.",
+    "renameProductionSlugDialogDesc": "Changing the slug will break all existing links to this production. Make sure to update any bookmarks or integrations.",
+    "renameSlugLabel": "Rename slug",
+    "newSlug": "New slug",
+    "slugHint": "Lowercase letters, numbers, and hyphens only.",
+    "deleteProduction": "Delete production",
+    "deleteProductionDesc": "Permanently deletes this production along with all files, members, and roles. This cannot be undone.",
+    "deleteProductionDialogDesc": "This will permanently delete the production and all its files, folders, members, and roles. There is no going back.",
+    "renameCompany": "Rename company",
+    "renameCompanyDesc": "Change the display name of this company.",
+    "renameCompanyDialogDesc": "Confirm the current name before setting a new one.",
+    "newName": "New name",
+    "renameCompanySlug": "Rename company slug",
+    "renameCompanySlugDesc": "Changing the slug will break all existing links to this company and its productions.",
+    "renameCompanySlugDialogDesc": "Changing the slug will break all existing links to this company and every production under it.",
+    "failedToRenameSlug": "Failed to rename slug",
+    "failedToDeleteProduction": "Failed to delete production",
+    "failedToRename": "Failed to rename"
+  },
   "time": {
     "justNow": "just now",
     "minutesAgo": "{n}m ago",

@@ -182,6 +182,31 @@
       "missing": "Du har ikke tillatelse til å utføre denne handlingen"
     }
   },
+  "danger": {
+    "zone": "Faresone",
+    "typeToConfirm": "Skriv {value} for å bekrefte",
+    "cancel": "Avbryt",
+    "pleaseWait": "Vent litt…",
+    "renameProductionSlug": "Gi produksjonsslugen nytt navn",
+    "renameProductionSlugDesc": "Å endre slugen vil ødelegge alle eksisterende lenker til denne produksjonen.",
+    "renameProductionSlugDialogDesc": "Å endre slugen vil ødelegge alle eksisterende lenker til denne produksjonen. Husk å oppdatere bokmerker og integrasjoner.",
+    "renameSlugLabel": "Gi slug nytt navn",
+    "newSlug": "Ny slug",
+    "slugHint": "Kun små bokstaver, tall og bindestreker.",
+    "deleteProduction": "Slett produksjon",
+    "deleteProductionDesc": "Sletter produksjonen permanent, inkludert alle filer, medlemmer og roller. Dette kan ikke angres.",
+    "deleteProductionDialogDesc": "Dette vil permanent slette produksjonen og alle dens filer, mapper, medlemmer og roller. Det er ingen vei tilbake.",
+    "renameCompany": "Gi firma nytt navn",
+    "renameCompanyDesc": "Endre visningsnavnet til firmaet.",
+    "renameCompanyDialogDesc": "Bekreft det nåværende navnet før du angir et nytt.",
+    "newName": "Nytt navn",
+    "renameCompanySlug": "Gi firmaslugen nytt navn",
+    "renameCompanySlugDesc": "Å endre slugen vil ødelegge alle eksisterende lenker til dette firmaet og dets produksjoner.",
+    "renameCompanySlugDialogDesc": "Å endre slugen vil ødelegge alle eksisterende lenker til dette firmaet og samtlige produksjoner under det.",
+    "failedToRenameSlug": "Klarte ikke å gi slug nytt navn",
+    "failedToDeleteProduction": "Klarte ikke å slette produksjonen",
+    "failedToRename": "Klarte ikke å gi nytt navn"
+  },
   "time": {
     "justNow": "nå nettopp",
     "minutesAgo": "{n}m siden",

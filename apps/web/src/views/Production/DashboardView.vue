@@ -1,21 +1,24 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
-import { useI18n } from 'vue-i18n'
-import { Icon } from '@iconify/vue'
-import { useApi } from '../../composables/useApi.js'
-import { formatBytes } from '../../lib/utils.js'
-import StorageCard from './components/StorageCard.vue'
-import MemberRow from './components/MemberRow.vue'
+import { useRoute }       from 'vue-router'
+import { useI18n }        from 'vue-i18n'
+import { Icon }           from '@iconify/vue'
+import { useApi }         from '../../composables/useApi.js'
+import { formatBytes }    from '../../lib/utils.js'
+import StorageCard        from './components/StorageCard.vue'
+import MemberRow          from './components/MemberRow.vue'
+import ListCard           from '@starling/ui/ListCard'
+import ListHeader         from '@starling/ui/ListHeader'
+import ListItem        from '@starling/ui/ListItem'
 
 const route      = useRoute()
 const { t }      = useI18n()
 const { $fetch } = useApi()
 
-const stats    = ref(null)
-const recent   = ref(null)
-const loading  = ref(true)
-const error    = ref('')
+const stats   = ref(null)
+const recent  = ref(null)
+const loading = ref(true)
+const error   = ref('')
 
 const FILE_ICONS = {
   image: 'mdi:image-outline',
@@ -63,7 +66,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="p-6 max-w-5xl flex flex-col gap-6">
+  <div class="p-6 max-w-5xl mx-auto flex flex-col gap-6">
 
     <div v-if="loading" class="flex items-center gap-2 text-muted-foreground text-sm">
       <Icon icon="mdi:loading" class="animate-spin size-4" />
@@ -76,18 +79,19 @@ onMounted(load)
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         <!-- Recent files -->
-        <div class="rounded-xl border border-border bg-card overflow-hidden">
-          <div class="px-5 py-3.5 border-b border-border flex items-center justify-between">
-            <h2 class="text-sm font-semibold">{{ t('dashboard.recentFiles') }}</h2>
-            <Icon icon="mdi:file-multiple-outline" class="size-4 text-muted-foreground" />
-          </div>
+        <ListCard>
+          <ListHeader :title="t('dashboard.recentFiles')">
+            <template #action>
+              <Icon icon="mdi:file-multiple-outline" class="size-4 text-muted-foreground" />
+            </template>
+          </ListHeader>
 
-          <div v-if="!recent?.recentFiles?.length" class="px-5 py-10 text-center text-sm text-muted-foreground">
+          <p v-if="!recent?.recentFiles?.length" class="px-5 py-10 text-center text-sm text-muted-foreground">
             {{ t('dashboard.noRecentFiles') }}
-          </div>
+          </p>
 
           <ul v-else class="divide-y divide-border">
-            <li v-for="file in recent.recentFiles" :key="file.id" class="flex items-center gap-3 px-5 py-3">
+            <ListItem v-for="file in recent.recentFiles" :key="file.id">
               <div class="size-8 rounded-lg bg-muted flex items-center justify-center shrink-0 text-muted-foreground">
                 <Icon :icon="fileIcon(file.type)" class="size-4" />
               </div>
@@ -101,20 +105,21 @@ onMounted(load)
                 </p>
               </div>
               <span class="text-xs text-muted-foreground shrink-0 tabular-nums">{{ timeAgo(file.createdAt) }}</span>
-            </li>
+            </ListItem>
           </ul>
-        </div>
+        </ListCard>
 
         <!-- Recent members -->
-        <div class="rounded-xl border border-border bg-card overflow-hidden">
-          <div class="px-5 py-3.5 border-b border-border flex items-center justify-between">
-            <h2 class="text-sm font-semibold">{{ t('dashboard.recentMembers') }}</h2>
-            <Icon icon="mdi:account-group-outline" class="size-4 text-muted-foreground" />
-          </div>
+        <ListCard>
+          <ListHeader :title="t('dashboard.recentMembers')">
+            <template #action>
+              <Icon icon="mdi:account-group-outline" class="size-4 text-muted-foreground" />
+            </template>
+          </ListHeader>
 
-          <div v-if="!recent?.recentMembers?.length" class="px-5 py-10 text-center text-sm text-muted-foreground">
+          <p v-if="!recent?.recentMembers?.length" class="px-5 py-10 text-center text-sm text-muted-foreground">
             {{ t('dashboard.noRecentMembers') }}
-          </div>
+          </p>
 
           <ul v-else class="divide-y divide-border">
             <MemberRow v-for="member in recent.recentMembers" :key="member.id" :member="member">
@@ -126,7 +131,7 @@ onMounted(load)
               <span class="text-xs text-muted-foreground shrink-0 tabular-nums">{{ timeAgo(member.createdAt) }}</span>
             </MemberRow>
           </ul>
-        </div>
+        </ListCard>
 
       </div>
     </template>

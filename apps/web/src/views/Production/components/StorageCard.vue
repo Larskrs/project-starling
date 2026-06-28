@@ -12,8 +12,8 @@ const { t } = useI18n()
 const animated = ref(false)
 
 const TYPE_CONFIG = {
-  image: { color: '#3b82f6' },
-  audio: { color: '#f97316' },
+  image: { color: 'oklch(0.56 0.22 255)' },
+  audio: { color: 'oklch(0.68 0.20 46)' },
 }
 
 watch(() => props.stats, async (s) => {
@@ -37,7 +37,7 @@ const segments = computed(() => {
       size:  b.size,
       pct:   (b.size / barTotal.value) * 100,
       label: t(`storage.type.${b.type}`),
-      color: TYPE_CONFIG[b.type]?.color ?? '#6b7280',
+      color: TYPE_CONFIG[b.type]?.color ?? 'oklch(0.52 0.10 285)',
     }))
 })
 
@@ -83,8 +83,8 @@ const freeSize = computed(() => {
 
     <div v-if="segments.length" class="mt-5 flex flex-wrap gap-x-8 gap-y-4">
       <div v-for="seg in segments" :key="seg.type" class="flex flex-col gap-1.5">
-        <div class="h-[3px] w-8 rounded-full" :style="{ backgroundColor: seg.color }" />
-        <span class="text-[11px] leading-none text-muted-foreground">{{ seg.label }}</span>
+        <div class="h-1 w-8 rounded-full" :style="{ backgroundColor: seg.color }" />
+        <span class="text-xs text-muted-foreground">{{ seg.label }}</span>
         <span class="text-sm font-semibold text-foreground tabular-nums">{{ formatBytes(seg.size) }}</span>
       </div>
     </div>

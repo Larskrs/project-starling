@@ -8,6 +8,7 @@ import Image from '@starling/ui/Image'
 
 import ProductionList from './ProductionList.vue'
 import { useApi } from '../../composables/useApi.js'
+import { Button } from '@starling/ui'
 
 const route  = useRoute()
 const router = useRouter()
@@ -42,7 +43,7 @@ watch(() => route.params.slug, (slug) => { if (slug) load(slug) })
       <div class="mb-10">
 
         <!-- Banner -->
-        <div class="h-52 overflow-hidden rounded-2xl bg-gradient-to-br from-muted to-muted/40">
+        <div class="h-72 overflow-hidden rounded-2xl bg-gradient-to-br from-muted to-muted/40">
           <Image
             v-if="company.bannerImageId"
             :id="company.bannerImageId"
@@ -52,8 +53,8 @@ watch(() => route.params.slug, (slug) => { if (slug) load(slug) })
         </div>
 
         <!-- Avatar + name row, overlapping banner bottom -->
-        <div class="flex items-end gap-5 pl-6 -mt-12 relative">
-          <div class="size-24 rounded-2xl ring-4 ring-background shadow-sm overflow-hidden shrink-0 relative z-10">
+        <div class="flex items-end gap-5 pl-12 -mt-20 relative">
+          <div class="size-32 rounded-2xl ring-4 ring-background shadow-sm overflow-hidden shrink-0 relative z-10">
             <Avatar :id="company.profileImageId" class="w-full h-full rounded-none">
               <span class="text-3xl font-bold text-muted-foreground">{{ company.name?.charAt(0)?.toUpperCase() }}</span>
             </Avatar>
@@ -61,14 +62,15 @@ watch(() => route.params.slug, (slug) => { if (slug) load(slug) })
 
           <div class="flex-1 min-w-0 flex items-center justify-between pb-1">
             <h1 class="text-2xl font-bold text-foreground leading-tight">{{ company.name }}</h1>
-            <button
+            <Button
               v-if="company.canManage"
-              class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground border border-border hover:border-foreground/30 px-3 py-1.5 rounded-lg transition-colors shrink-0"
+              variant="outline"
+              size="sm"
               @click="router.push(`/c/${company.slug}/settings`)"
             >
-              <Icon icon="mdi:cog-outline" class="size-4" />
+              <Icon icon="mdi:cog" class="size-4" />
               {{ $t('nav.settings') }}
-            </button>
+            </Button>
           </div>
         </div>
 
