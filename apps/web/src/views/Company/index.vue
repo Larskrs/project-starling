@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
@@ -8,6 +8,7 @@ import Image from '@starling/ui/Image'
 
 import ProductionList from './ProductionList.vue'
 import { useApi } from '../../composables/useApi.js'
+import { usePageTitle } from '../../composables/usePageTitle.js'
 import { Button } from '@starling/ui'
 
 const route  = useRoute()
@@ -17,6 +18,8 @@ const { $fetch } = useApi()
 const company = ref(null)
 const loading = ref(true)
 const error   = ref('')
+
+usePageTitle(computed(() => company.value?.name ?? null))
 
 async function load(slug) {
   loading.value = true

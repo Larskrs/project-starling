@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, provide, onMounted, watch } from 'vue'
+import { usePageTitle } from '../../composables/usePageTitle.js'
 import { useRoute, useRouter, RouterView } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
@@ -95,6 +96,15 @@ const activeSection = computed(() => {
   const seg = route.path.split('/').at(-1)
   return ALL_IDS.includes(seg) ? seg : 'dashboard'
 })
+
+const sectionLabel = computed(() => {
+  const item = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === activeSection.value)
+  return item ? t(item.label) : activeSection.value
+})
+
+usePageTitle(computed(() =>
+  data.value?.production?.name ? `${data.value.production.name} — ${sectionLabel.value}` : null,
+))
 
 function navigate(id) {
   router.push(`/c/${route.params.cslug}/p/${route.params.pslug}/${id}`)

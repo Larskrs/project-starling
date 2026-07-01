@@ -1,8 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint, index, jsonb } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 export const companyRoleEnum = pgEnum('company_role', ['owner', 'admin', 'member']);
+export const trackModeEnum = pgEnum("track_mode", [
+  "free", // Point Events, trigger on position: bare position
+  "clip", // MediaClip: position + mediaStart + end
+]);
+export const frameRateEnum = pgEnum("frame_rate", [
+  "23.976", "24", "25", "29.97", "29.97df", "30", "50", "59.94", "60",
+]);
 
 export const users = pgTable('users', {
   id:              uuid('id').primaryKey().defaultRandom(),
@@ -105,3 +112,61 @@ export const companyMembers = pgTable('company_members', {
   createdAt:    timestamp('created_at').notNull().defaultNow(),
 }, (t) => [uniqueIndex('company_member_uq').on(t.companyId, t.userId)]);
 
+export const trackTypes = pgTable(
+  "track_types",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productionId: uuid("production_id")
+      .notNull()
+      .references(() => productions.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color"),
+    defaultMode: trackModeEnum("default_mode").notNull().default("clip"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("track_types_name_uq").on(t.productionId, t.name),
+  ],
+);
+
+export const timelines = pgTable("timelines", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productionId: uuid("production_id")
+      .notNull()
+      .references(() => productions.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    frameRate: frameRateEnum("frame_rate").notNull().default("25"),
+    startFrame: integer("start_tc").notNull().default(0),
+    endFrame: integer("end_tc").notNull(),
+    ltcOffsetFrames: integer("ltc_offset_frames").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("timelines_production_idx").on(t.productionId),
+  ],
+);
+
+export const sourceSet = pgTable("source_set", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productionId: uuid("production_id")
+    .notNull()
+    .references(() => productions.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const sources = pgTable("sources", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productionId: uuid("production_id")
+    .notNull()
+    .references(() => productions.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  shortName: text("short_name").notNull(),
+  hue: integer("hue").notNull(),
+  data: jsonb("data"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

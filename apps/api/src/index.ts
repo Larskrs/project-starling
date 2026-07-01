@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadRoutes, matchRoute } from './router.js';
+import { loadRoutes, matchRoute, type Route } from './router.js';
 import { ApiError, type ApiEvent, sendJson } from './lib/handler.js';
 import { setupSockets } from './lib/sockets.js';
 
@@ -24,9 +24,43 @@ const MIME: Record<string, string> = {
   '.json':  'application/json',
 };
 
+interface RouteTreeNode {
+  children: Map<string, RouteTreeNode>;
+  methods: string[];
+}
+
+function printRouteTree(routes: Route[]): void {
+  const root: RouteTreeNode = { children: new Map(), methods: [] };
+
+  for (const route of routes) {
+    const parts = route.pattern.replace(/^\/api\/?/, '').split('/').filter(Boolean);
+    let node = root;
+    for (const part of parts) {
+      if (!node.children.has(part)) {
+        node.children.set(part, { children: new Map(), methods: [] });
+      }
+      node = node.children.get(part)!;
+    }
+    node.methods.push(route.method);
+  }
+
+  function print(node: RouteTreeNode, prefix: string): void {
+    const entries = [...node.children.entries()];
+    entries.forEach(([seg, child], i) => {
+      const last = i === entries.length - 1;
+      const methods = child.methods.length > 0 ? `  \x1b[2m${child.methods.join(' ')}\x1b[0m` : '';
+      console.log(`${prefix}${last ? '└─' : '├─'} ${seg}${methods}`);
+      print(child, prefix + (last ? '   ' : '│  '));
+    });
+  }
+
+  console.log(`\x1b[2m[server] ${routes.length} routes:\x1b[0m`);
+  console.log('/api');
+  print(root, '');
+}
+
 const routes = await loadRoutes(apiDir);
-console.log(`[server] loaded ${routes.length} route(s):`);
-for (const r of routes) console.log(`  ${r.method.padEnd(6)} ${r.pattern}`);
+printRouteTree(routes);
 
 const server = createServer(async (req, res) => {
   const url    = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);

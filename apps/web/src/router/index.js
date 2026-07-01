@@ -7,11 +7,11 @@ const router = createRouter({
   history: createWebHistory('/'),
   routes: [
     { path: '/',         redirect: '/home' },
-    { path: '/login',    component: () => import('../views/LoginView.vue'),     meta: { layout: AuthLayout } },
-    { path: '/register', component: () => import('../views/RegisterView.vue'),  meta: { layout: AuthLayout } },
-    { path: '/chat',     component: () => import('../views/Chat/index.vue'),    meta: { requiresAuth: true, layout: EmptyLayout } },
-    { path: '/home',       component: () => import('../views/Home/index.vue'),             meta: { requiresAuth: true, layout: DefaultLayout } },
-    { path: '/settings',   component: () => import('../views/Settings/index.vue'),         meta: { requiresAuth: true, layout: DefaultLayout } },
+    { path: '/login',    component: () => import('../views/LoginView.vue'),     meta: { layout: AuthLayout,   title: 'Login' } },
+    { path: '/register', component: () => import('../views/RegisterView.vue'),  meta: { layout: AuthLayout,   title: 'Register' } },
+    { path: '/chat',     component: () => import('../views/Chat/index.vue'),    meta: { requiresAuth: true, layout: EmptyLayout,   title: 'Chat' } },
+    { path: '/home',       component: () => import('../views/Home/index.vue'),             meta: { requiresAuth: true, layout: DefaultLayout, title: 'Home' } },
+    { path: '/settings',   component: () => import('../views/Settings/index.vue'),         meta: { requiresAuth: true, layout: DefaultLayout, title: 'Settings' } },
     { path: '/c/:slug',    component: () => import('../views/Company/index.vue'),           meta: { requiresAuth: true, layout: DefaultLayout } },
     { path: '/c/:slug/settings', component: () => import('../views/Company/SettingsView.vue'), meta: { requiresAuth: true, requiresCompanyAdmin: true, layout: DefaultLayout } },
 
@@ -53,6 +53,11 @@ router.beforeEach(async (to) => {
   }
 
   return true
+})
+
+router.afterEach((to) => {
+  const title = to.meta.title
+  if (title) document.title = `${title} — Cino`
 })
 
 export default router

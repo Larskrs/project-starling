@@ -10,6 +10,7 @@ import Button from '@starling/ui/Button'
 import Input from '@starling/ui/Input'
 import Label from '@starling/ui/Label'
 import { useApi } from '../../composables/useApi.js'
+import { usePageTitle } from '../../composables/usePageTitle.js'
 import ConfirmValueDialog from '../../components/ui/ConfirmValueDialog.vue'
 
 const route  = useRoute()
@@ -20,6 +21,8 @@ const { $fetch } = useApi()
 const company  = ref(null)
 const loading  = ref(true)
 const notFound = ref(false)
+
+usePageTitle(computed(() => company.value ? `${company.value.name} — Settings` : null))
 
 async function load() {
   loading.value = true
