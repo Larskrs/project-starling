@@ -170,3 +170,23 @@ export const sources = pgTable("sources", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const tracks = pgTable("tracks", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    timelineId: uuid("timeline_id")
+      .notNull()
+      .references(() => timelines.id, { onDelete: "cascade" }),
+    typeId: uuid("type_id")
+      .notNull()
+      .references(() => trackTypes.id),
+    name: text("name").notNull(),
+    mode: trackModeEnum("mode").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isMuted: boolean("is_muted").notNull().default(false),
+    isLocked: boolean("is_locked").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("tracks_timeline_idx").on(t.timelineId),
+  ],
+);

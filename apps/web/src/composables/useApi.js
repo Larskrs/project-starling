@@ -1,5 +1,6 @@
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@starling/ui/useToast'
+import { debugConfig } from '@starling/ui'
 
 /**
  * Wraps fetch with:
@@ -34,6 +35,7 @@ export function useApi() {
     let res
     try {
       res = await fetch(url, init)
+      if (debugConfig.fetchDelay > 0) await new Promise(r => setTimeout(r, debugConfig.fetchDelay))
     } catch {
       const error = 'Network error — check your connection'
       if (!silent) toast.error(error)

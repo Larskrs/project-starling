@@ -10,6 +10,7 @@ import Button from '@starling/ui/Button'
 import Input from '@starling/ui/Input'
 import Label from '@starling/ui/Label'
 import { useApi } from '../../composables/useApi.js'
+import { useAuth } from '../../composables/useAuth.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
 import ConfirmValueDialog from '../../components/ui/ConfirmValueDialog.vue'
 
@@ -17,6 +18,8 @@ const route  = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const { $fetch } = useApi()
+const { user } = useAuth()
+const isSiteAdmin = computed(() => user.value?.role === 'admin')
 
 const company  = ref(null)
 const loading  = ref(true)
@@ -31,6 +34,7 @@ async function load() {
   if (status === 404) { notFound.value = true; return }
   if (!ok || !data.canManage) { router.replace(`/c/${route.params.slug}`); return }
   company.value = data
+  if (isSiteAdmin.value) loadMembers()
 }
 
 onMounted(load)
@@ -147,6 +151,54 @@ async function submitRenameSlug() {
   renameSlugOpen.value = false
   router.replace(`/c/${data.slug}/settings`)
 }
+
+// ── Members management (site admin only) ─────────────────────────────────────
+const members        = ref([])
+const membersLoading = ref(false)
+const membersError   = ref('')
+
+async function loadMembers() {
+  membersLoading.value = true
+  membersError.value   = ''
+  const { ok, data, error } = await $fetch(`/api/company/${route.params.slug}/members`, { silent: true })
+  membersLoading.value = false
+  if (!ok) { membersError.value = error ?? 'Failed to load members'; return }
+  members.value = data.members
+}
+
+const addEmail       = ref('')
+const addRole        = ref('admin')
+const addLoading     = ref(false)
+const addError       = ref('')
+
+async function addMember() {
+  addLoading.value = true
+  addError.value   = ''
+  const { ok, data, error } = await $fetch(
+    `/api/company/${route.params.slug}/members`,
+    { method: 'POST', json: { email: addEmail.value.trim(), role: addRole.value }, silent: true },
+  )
+  addLoading.value = false
+  if (!ok) { addError.value = error ?? 'Failed to add member'; return }
+  addEmail.value = ''
+  const idx = members.value.findIndex(m => m.id === data.member.id)
+  if (idx >= 0) members.value[idx] = { ...members.value[idx], role: data.member.role }
+  else await loadMembers()
+}
+
+const removingId = ref(null)
+
+async function removeMember(member) {
+  removingId.value = member.id
+  const { ok, error } = await $fetch(
+    `/api/company/${route.params.slug}/members/${member.id}`,
+    { method: 'DELETE', silent: true },
+  )
+  removingId.value = null
+  if (!ok) { membersError.value = error ?? 'Failed to remove member'; return }
+  members.value = members.value.filter(m => m.id !== member.id)
+}
+
 </script>
 
 <template>
@@ -208,6 +260,83 @@ async function submitRenameSlug() {
       <div class="border-t border-border pt-6 mb-6">
         <p class="text-base font-semibold">{{ company.name }}</p>
         <p class="text-sm text-muted-foreground font-mono mt-0.5">{{ company.slug }}</p>
+      </div>
+
+      <!-- Members (site admin only) -->
+      <div v-if="isSiteAdmin" class="rounded-xl border border-border overflow-hidden mb-6">
+        <div class="px-5 py-3 bg-muted/40 border-b border-border flex items-center justify-between">
+          <p class="text-sm font-semibold">Members</p>
+        </div>
+
+        <div v-if="membersLoading" class="px-5 py-4 text-sm text-muted-foreground">Loading…</div>
+        <p v-else-if="membersError" class="px-5 py-4 text-sm text-destructive">{{ membersError }}</p>
+
+        <ul v-else class="divide-y divide-border">
+          <li
+            v-for="m in members"
+            :key="m.id"
+            class="flex items-center justify-between gap-4 px-5 py-3"
+          >
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-foreground truncate">{{ m.first_name }} {{ m.last_name }}</p>
+              <p class="text-xs text-muted-foreground truncate">{{ m.email }}</p>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+              <span class="text-xs px-2 py-0.5 rounded-full border"
+                :class="{
+                  'border-amber-500/40 text-amber-600 bg-amber-50 dark:bg-amber-950/30': m.role === 'owner',
+                  'border-blue-500/40 text-blue-600 bg-blue-50 dark:bg-blue-950/30': m.role === 'admin',
+                  'border-border text-muted-foreground': m.role === 'member',
+                }"
+              >{{ m.role }}</span>
+              <button
+                v-if="m.role !== 'owner'"
+                :disabled="removingId === m.id"
+                class="text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                @click="removeMember(m)"
+              >
+                <Icon :icon="removingId === m.id ? 'mdi:loading' : 'mdi:close'" :class="{ 'animate-spin': removingId === m.id }" class="size-4" />
+              </button>
+            </div>
+          </li>
+          <li v-if="members.length === 0" class="px-5 py-4 text-sm text-muted-foreground">No members yet.</li>
+        </ul>
+
+        <!-- Add member form -->
+        <div class="px-5 py-4 border-t border-border flex items-end gap-3">
+          <div class="flex-1 flex flex-col gap-1.5">
+            <Label for="add-member-email">Add by email</Label>
+            <Input
+              id="add-member-email"
+              v-model="addEmail"
+              type="email"
+              placeholder="user@example.com"
+              autocomplete="off"
+              @keydown.enter="addMember"
+            />
+            <p v-if="addError" class="text-xs text-destructive">{{ addError }}</p>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label for="add-member-role">Role</Label>
+            <select
+              id="add-member-role"
+              v-model="addRole"
+              class="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="admin">Admin</option>
+              <option value="member">Member</option>
+            </select>
+          </div>
+          <Button
+            size="sm"
+            :disabled="!addEmail.trim() || addLoading"
+            class="shrink-0"
+            @click="addMember"
+          >
+            <Icon v-if="addLoading" icon="mdi:loading" class="animate-spin size-4" />
+            <span v-else>Add</span>
+          </Button>
+        </div>
       </div>
 
       <!-- Danger zone -->

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, provide, onMounted, watch } from 'vue'
 import { usePageTitle } from '../../composables/usePageTitle.js'
+import { Skeleton } from '@starling/ui'
 import { useRoute, useRouter, RouterView } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
@@ -8,10 +9,8 @@ import { useAuth } from '../../composables/useAuth'
 import { useColorMode } from '../../composables/useColorMode'
 import { useLocale } from '../../composables/useLocale'
 import { useApi } from '../../composables/useApi.js'
-import ProductionBanner from '@starling/ui/ProductionBanner'
 import Avatar from '@starling/ui/Avatar'
 import BreadcrumbNav from '@starling/ui/BreadcrumbNav'
-import { Image } from '@starling/ui'
 
 const route  = useRoute()
 const router = useRouter()
@@ -110,9 +109,6 @@ function navigate(id) {
   router.push(`/c/${route.params.cslug}/p/${route.params.pslug}/${id}`)
 }
 
-// ── Images ────────────────────────────────────────────────────────────────────
-const bannerSrc = computed(() => data.value?.production?.bannerImageId ? `/api/storage/${data.value.production.bannerImageId}/serve?quality=80` : null)
-
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 const crumbs = computed(() => [
   { label: t('nav.home'),                                                   path: '/home',                      icon: 'mdi:home' },
@@ -141,11 +137,15 @@ const crumbs = computed(() => [
             class="flex items-center gap-2 min-w-0"
           >
             <Avatar :id="data?.production.profileImageId" class="size-8 min-w-8 rounded-sm" quality="25"  />
-            <div class="flex flex-col">
-              <span class="text-sm font-semibold truncate text-foreground">
-                {{ data?.production.name ?? '…' }}
-              </span>
-              <span class="text-[10px] text-muted-foreground/50">{{ data?.company.name }}</span>
+            <div class="flex flex-col gap-1 min-w-0">
+              <template v-if="data">
+                <span class="text-sm font-semibold truncate text-foreground">{{ data.production.name }}</span>
+                <span class="text-[10px] text-muted-foreground/50">{{ data.company.name }}</span>
+              </template>
+              <template v-else>
+                <Skeleton class="h-3.5 w-24 rounded" />
+                <Skeleton class="h-2.5 w-16 rounded" />
+              </template>
             </div>
           </router-link>
         </Transition>
@@ -254,8 +254,24 @@ const crumbs = computed(() => [
 
       <!-- Routed view -->
       <main class="flex-1 overflow-y-auto">
-        <div v-if="loading" class="flex items-center justify-center h-full">
-          <Icon icon="mdi:loading" class="animate-spin text-2xl text-muted-foreground/50" />
+        <div v-if="loading" class="p-6 max-w-5xl mx-auto flex flex-col gap-6">
+          <Skeleton class="h-36 rounded-xl" />
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div v-for="col in 2" :key="col" class="rounded-xl border border-border overflow-hidden">
+              <div class="flex items-center px-5 py-3.5 border-b border-border">
+                <Skeleton class="h-4 w-28 rounded" />
+              </div>
+              <ul class="divide-y divide-border">
+                <li v-for="i in 4" :key="i" class="flex items-center gap-3 px-5 py-3">
+                  <Skeleton class="size-8 rounded-lg shrink-0" />
+                  <div class="flex-1 flex flex-col gap-1.5">
+                    <Skeleton class="h-3.5 w-3/4 rounded" />
+                    <Skeleton class="h-2.5 w-1/2 rounded" />
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
         <p v-else-if="error" class="p-6 text-sm text-destructive">{{ error }}</p>
         <RouterView v-else-if="data" />

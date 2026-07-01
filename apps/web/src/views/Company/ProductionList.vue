@@ -8,6 +8,7 @@ import Avatar from '@starling/ui/Avatar'
 import Image from '@starling/ui/Image'
 import CreateProductionDialog from './CreateProductionDialog.vue'
 import { useApi } from '../../composables/useApi.js'
+import { Skeleton } from '@starling/ui'
 
 const props = defineProps({
   company: { type: Object, required: true },
@@ -46,16 +47,26 @@ onMounted(load)
   <div class="flex flex-col gap-6">
     <div class="flex items-center justify-between">
       <h2 class="text-lg font-semibold text-foreground">{{ $t('production.title') }}</h2>
-      <Button size="sm" @click="dialogOpen = true">{{ $t('production.new') }}</Button>
+      <Button v-if="company.canManage" size="sm" @click="dialogOpen = true">{{ $t('production.new') }}</Button>
     </div>
 
-    <p v-if="loading" class="text-sm text-muted-foreground">…</p>
+    <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div v-for="i in 3" :key="i" class="rounded-xl border border-border overflow-hidden">
+        <div class="aspect-video p-3 pb-0">
+          <Skeleton class="h-full w-full rounded-lg" />
+        </div>
+        <div class="p-3 flex items-center gap-3">
+          <Skeleton class="size-12 rounded-sm shrink-0" />
+          <Skeleton class="h-4 flex-1 rounded" />
+        </div>
+      </div>
+    </div>
 
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
 
     <div v-else-if="productions.length === 0" class="rounded-xl border border-dashed border-border py-16 text-center">
       <p class="text-sm text-muted-foreground">{{ $t('production.noProductions') }}</p>
-      <Button variant="outline" size="sm" class="mt-2" @click="dialogOpen = true">{{ $t('production.createFirst') }}</Button>
+      <Button v-if="company.canManage" variant="outline" size="sm" class="mt-2" @click="dialogOpen = true">{{ $t('production.createFirst') }}</Button>
     </div>
 
     <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative">

@@ -6,6 +6,7 @@ export interface User {
   name:            string;
   first_name:      string;
   last_name:       string;
+  role:            'admin' | 'user';
   isAdministrator: boolean;
 }
 

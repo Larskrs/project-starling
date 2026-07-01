@@ -9,7 +9,8 @@ import StorageCard        from './components/StorageCard.vue'
 import MemberRow          from './components/MemberRow.vue'
 import ListCard           from '@starling/ui/ListCard'
 import ListHeader         from '@starling/ui/ListHeader'
-import ListItem        from '@starling/ui/ListItem'
+import ListItem           from '@starling/ui/ListItem'
+import { Skeleton }       from '@starling/ui'
 
 const route      = useRoute()
 const { t }      = useI18n()
@@ -68,9 +69,25 @@ onMounted(load)
 <template>
   <div class="p-6 max-w-5xl mx-auto flex flex-col gap-6">
 
-    <div v-if="loading" class="flex items-center gap-2 text-muted-foreground text-sm">
-      <Icon icon="mdi:loading" class="animate-spin size-4" />
-    </div>
+    <template v-if="loading">
+      <Skeleton class="h-36 rounded-xl" />
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div v-for="col in 2" :key="col" class="rounded-xl border border-border overflow-hidden">
+          <div class="flex items-center justify-between px-5 py-3.5 border-b border-border">
+            <Skeleton class="h-4 w-28 rounded" />
+          </div>
+          <ul class="divide-y divide-border">
+            <li v-for="i in 4" :key="i" class="flex items-center gap-3 px-5 py-3">
+              <Skeleton class="size-8 rounded-lg shrink-0" />
+              <div class="flex-1 flex flex-col gap-1.5">
+                <Skeleton class="h-3.5 w-3/4 rounded" />
+                <Skeleton class="h-2.5 w-1/2 rounded" />
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </template>
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
 
     <template v-else>

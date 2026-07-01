@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import Skeleton from './Skeleton.vue'
+import { debugConfig } from './debugConfig.js'
 
 defineOptions({ inheritAttrs: false })
 
@@ -16,19 +17,29 @@ const src = computed(() =>
 )
 
 watch(src, () => { loaded.value = false })
+
+function onLoad() {
+  const delay = debugConfig.fetchDelay
+  if (delay > 0) {
+    setTimeout(() => { loaded.value = true }, delay)
+  } else {
+    loaded.value = true
+  }
+}
 </script>
 
 <template>
   <div v-if="src" class="relative overflow-hidden" v-bind="$attrs">
     <Skeleton
-      class="absolute inset-0 pointer-events-none transition-opacity duration-500 rounded-none"
+      class="z-10 absolute inset-0 pointer-events-none transition-opacity duration-250 rounded-none"
       :class="loaded ? 'opacity-0' : 'opacity-100'"
     />
     <img
       :src="src"
-      :alt="alt"
+      :alt="alt"r
       class="w-full h-full object-cover block"
-      @load="loaded = true"
+      :class="!loaded ? 'opacity-0' : 'opacity-100'"
+      @load="onLoad"
     />
   </div>
 </template>

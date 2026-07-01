@@ -1,8 +1,8 @@
 <script setup>
 import { inject, ref, onMounted } from 'vue'
+import { Skeleton } from '@starling/ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { Icon } from '@iconify/vue'
 import { useApi } from '../../composables/useApi.js'
 import CreateRoleForm from './components/CreateRoleForm.vue'
 import RoleCard from './components/RoleCard.vue'
@@ -55,9 +55,15 @@ function onDeleted(roleId) {
 
     <CreateRoleForm @created="onCreated" />
 
-    <div v-if="loading" class="flex justify-center py-8">
-      <Icon icon="mdi:loading" class="animate-spin text-2xl text-muted-foreground/50" />
-    </div>
+    <ul v-if="loading" class="space-y-3">
+      <li v-for="i in 3" :key="i" class="rounded-xl border border-border px-5 py-4 flex items-center gap-4">
+        <Skeleton class="size-3 rounded-full shrink-0" />
+        <Skeleton class="h-5 w-28 rounded" />
+        <div class="flex gap-1.5 ml-2">
+          <Skeleton v-for="j in 3" :key="j" class="h-5 w-16 rounded-full" />
+        </div>
+      </li>
+    </ul>
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
     <div v-else-if="roles.length === 0" class="text-center py-8 text-sm text-muted-foreground">
       {{ $t('roles.noRoles') }}

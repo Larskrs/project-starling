@@ -1,4 +1,5 @@
 export { cn } from './utils.js'
+export { debugConfig, resetDebugConfig } from './debugConfig.js'
 export { useToast } from './useToast.js'
 
 export { default as Button }               from './Button.vue'

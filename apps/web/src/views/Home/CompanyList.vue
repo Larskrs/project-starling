@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted }    from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { Icon }              from '@iconify/vue'
 import Image                 from '@starling/ui/Image'
 import ListCard              from '@starling/ui/ListCard'
@@ -7,8 +7,12 @@ import ListHeader            from '@starling/ui/ListHeader'
 import ListItem              from '@starling/ui/ListItem'
 import CreateCompanyDialog   from './CreateCompanyDialog.vue'
 import { useApi }            from '../../composables/useApi.js'
+import { useAuth }           from '../../composables/useAuth.js'
+import { Skeleton }          from '@starling/ui'
 
 const { $fetch } = useApi()
+const { user } = useAuth()
+const isSiteAdmin = computed(() => user.value?.role === 'admin')
 
 const companies  = ref([])
 const loading    = ref(true)
@@ -37,6 +41,7 @@ onMounted(load)
     <ListHeader :title="$t('company.title')">
       <template #action>
         <button
+          v-if="isSiteAdmin"
           class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           @click="dialogOpen = true"
         >
@@ -46,15 +51,18 @@ onMounted(load)
       </template>
     </ListHeader>
 
-    <div v-if="loading" class="flex items-center justify-center py-12 text-muted-foreground">
-      <Icon icon="mdi:loading" class="animate-spin text-xl" />
-    </div>
+    <ul v-if="loading" class="divide-y divide-border">
+      <li v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-3">
+        <Skeleton class="size-8 rounded-md shrink-0" />
+        <Skeleton class="h-3.5 rounded" :style="{ width: `${[7, 6, 8][i-1] * 8}px` }" />
+      </li>
+    </ul>
 
     <p v-else-if="error" class="px-5 py-4 text-sm text-destructive">{{ $t(error) }}</p>
 
     <div v-else-if="!companies.length" class="flex flex-col items-center gap-2 py-12 text-center">
       <p class="text-sm text-muted-foreground">{{ $t('company.noCompanies') }}</p>
-      <button class="text-xs text-primary hover:underline underline-offset-2" @click="dialogOpen = true">
+      <button v-if="isSiteAdmin" class="text-xs text-primary hover:underline underline-offset-2" @click="dialogOpen = true">
         {{ $t('company.createOne') }}
       </button>
     </div>

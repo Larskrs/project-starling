@@ -9,7 +9,7 @@ import Image from '@starling/ui/Image'
 import ProductionList from './ProductionList.vue'
 import { useApi } from '../../composables/useApi.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
-import { Button } from '@starling/ui'
+import { Button, Skeleton } from '@starling/ui'
 
 const route  = useRoute()
 const router = useRouter()
@@ -38,7 +38,29 @@ watch(() => route.params.slug, (slug) => { if (slug) load(slug) })
 
 <template>
   <div class="container mx-auto px-6 py-10 max-w-5xl">
-    <p v-if="loading" class="text-sm text-muted-foreground">…</p>
+    <template v-if="loading">
+      <div class="mb-10">
+        <Skeleton class="h-72 rounded-2xl" />
+        <div class="flex items-end gap-5 pl-12 -mt-20 relative">
+          <Skeleton class="size-32 rounded-2xl shrink-0 ring-4 ring-background" />
+          <div class="flex-1 pb-1 flex items-center gap-3">
+            <Skeleton class="h-7 w-52 rounded-lg" />
+          </div>
+        </div>
+      </div>
+      <div class="flex flex-col gap-6">
+        <Skeleton class="h-6 w-36 rounded" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-for="i in 3" :key="i" class="rounded-xl border border-border overflow-hidden">
+            <div class="aspect-video p-3 pb-0"><Skeleton class="h-full w-full rounded-lg" /></div>
+            <div class="p-3 flex items-center gap-3">
+              <Skeleton class="size-12 rounded-sm shrink-0" />
+              <Skeleton class="h-4 flex-1 rounded" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
     <p v-else-if="error" class="text-sm text-destructive">{{ error }}</p>
     <template v-else-if="company">
 

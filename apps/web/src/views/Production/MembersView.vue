@@ -10,6 +10,7 @@ import RoleSelector from './components/RoleSelector.vue'
 import MemberRow   from './components/MemberRow.vue'
 import ListCard    from '@starling/ui/ListCard'
 import ListHeader  from '@starling/ui/ListHeader'
+import { Skeleton } from '@starling/ui'
 
 const route      = useRoute()
 const { t }      = useI18n()
@@ -138,9 +139,16 @@ async function removeMember(member) {
         </template>
       </ListHeader>
 
-      <div v-if="loading" class="flex items-center justify-center py-14">
-        <Icon icon="mdi:loading" class="animate-spin text-xl text-muted-foreground/50" />
-      </div>
+      <ul v-if="loading" class="divide-y divide-border">
+        <li v-for="i in 5" :key="i" class="flex items-center gap-3 px-5 py-3">
+          <Skeleton class="size-8 rounded-full shrink-0" />
+          <div class="flex-1 flex flex-col gap-1.5">
+            <Skeleton class="h-3.5 rounded" :style="{ width: `${[9,7,8,6,9][i-1] * 12}px` }" />
+            <Skeleton class="h-3 w-40 rounded" />
+          </div>
+          <Skeleton class="h-7 w-20 rounded-md shrink-0" />
+        </li>
+      </ul>
       <p v-else-if="error" class="px-5 py-4 text-sm text-destructive">{{ error }}</p>
       <div v-else-if="!members.length" class="py-14 text-center text-sm text-muted-foreground">
         {{ $t('members.noMembers') }}

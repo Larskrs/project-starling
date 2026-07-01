@@ -75,6 +75,12 @@ function onKeydown(e: KeyboardEvent) {
     return
   }
 
+  if (e.key === 'r') {
+    e.preventDefault()
+    location.reload()
+    return
+  }
+
   if (e.key === props.triggerKey) {
     e.preventDefault()
     toggle()
@@ -133,6 +139,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               {{ r.path }}
             </button>
           </div>
+        </div>
+
+        <!-- Debug settings shortcut -->
+        <div class="border-t border-border">
+          <button
+            class="flex items-center justify-between w-full px-3 py-2 hover:bg-muted/40 text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
+            @click="navigate('/debug')"
+          >
+            <span>Debug settings</span>
+            <span class="opacity-50">→</span>
+          </button>
         </div>
       </div>
     </div>

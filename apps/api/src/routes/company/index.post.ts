@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { companies, companyMembers, db } from '@starling/db';
-import { defineEventHandler, readValidatedBody, ApiError, requireAuth } from '../../lib/handler.js';
+import { defineEventHandler, readValidatedBody, ApiError, requireAdmin } from '../../lib/handler.js';
 
 const schema = z.object({
   name: z.string().min(2).max(100),
@@ -9,7 +9,7 @@ const schema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  const auth = await requireAuth(event);
+  const auth = await requireAdmin(event);
 
   const { name, slug } = await readValidatedBody(event, schema);
 

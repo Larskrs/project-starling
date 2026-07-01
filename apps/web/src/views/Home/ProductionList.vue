@@ -7,6 +7,7 @@ import ListCard           from '@starling/ui/ListCard'
 import ListHeader         from '@starling/ui/ListHeader'
 import ListItem        from '@starling/ui/ListItem'
 import { useApi }         from '../../composables/useApi.js'
+import { Skeleton }       from '@starling/ui'
 
 const { t }      = useI18n()
 const { $fetch } = useApi()
@@ -46,9 +47,16 @@ function relativeDate(iso) {
 
     <ListHeader :title="$t('production.title')" />
 
-    <div v-if="loading" class="flex items-center justify-center py-16 text-muted-foreground">
-      <Icon icon="mdi:loading" class="animate-spin text-xl" />
-    </div>
+    <ul v-if="loading" class="divide-y divide-border">
+      <li v-for="i in 4" :key="i" class="flex items-center gap-3 px-4 py-3">
+        <Skeleton class="size-8 rounded-sm shrink-0" />
+        <div class="flex-1 min-w-0 flex items-baseline gap-2.5">
+          <Skeleton class="h-3.5 rounded w-28" />
+          <Skeleton class="h-3 rounded w-16" />
+        </div>
+        <Skeleton class="h-3 rounded w-12 shrink-0" />
+      </li>
+    </ul>
 
     <p v-else-if="error" class="px-5 py-4 text-sm text-destructive">{{ error }}</p>
 

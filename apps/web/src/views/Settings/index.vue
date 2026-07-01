@@ -4,9 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import Avatar from '@starling/ui/Avatar'
 import ImageCropper from '@starling/ui/ImageCropper'
+import { Skeleton } from '@starling/ui'
 import { useApi } from '../../composables/useApi.js'
+import { useAuth } from '../../composables/useAuth.js'
+import { Button } from '@starling/ui'
 
 const { $fetch } = useApi()
+const { logout } = useAuth()
 const { t } = useI18n()
 
 const profile = ref(null)
@@ -99,7 +103,8 @@ function onCropCancel() {
       <!-- Banner -->
       <label class="relative h-52 cursor-pointer group overflow-hidden rounded-2xl block">
         <div class="w-full h-full bg-secondary overflow-hidden">
-          <Image v-if="profile?.bannerImageId" :id="profile.bannerImageId" class="w-full h-full object-cover" />
+          <Skeleton v-if="!profile" class="w-full h-full rounded-none" />
+          <Image v-else-if="profile.bannerImageId" :id="profile.bannerImageId" class="w-full h-full object-cover" />
         </div>
         <div class="absolute inset-0 flex items-center justify-center transition-colors bg-black/0 group-hover:bg-black/25">
           <div class="flex items-center gap-1.5 bg-black/60 text-white text-xs px-2.5 py-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
@@ -122,9 +127,21 @@ function onCropCancel() {
       @cancel="onCropCancel"
     />
 
-    <div class="border-t border-border pt-6 space-y-1">
-      <p class="text-sm font-medium">{{ profile?.first_name }} {{ profile?.last_name }}</p>
-      <p class="text-sm text-muted-foreground">{{ profile?.email }}</p>
+    <div class="border-t border-border pt-6 flex items-center justify-between gap-4">
+      <div class="space-y-2">
+        <template v-if="profile">
+          <p class="text-sm font-medium">{{ profile.first_name }} {{ profile.last_name }}</p>
+          <p class="text-sm text-muted-foreground">{{ profile.email }}</p>
+        </template>
+        <template v-else>
+          <Skeleton class="h-4 w-40 rounded" />
+          <Skeleton class="h-4 w-52 rounded" />
+        </template>
+      </div>
+      <Button variant="outline" size="sm" class="shrink-0" @click="logout">
+        <Icon icon="mdi:logout" class="size-4" />
+        {{ $t('nav.logOut') }}
+      </Button>
     </div>
   </div>
 </template>

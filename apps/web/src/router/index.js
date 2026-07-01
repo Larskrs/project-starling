@@ -29,6 +29,8 @@ const router = createRouter({
       ],
     },
 
+    { path: '/debug', component: () => import('../views/Debug/index.vue'), meta: { layout: DefaultLayout, title: 'Debug' } },
+
     { path: '/:pathMatch(.*)*', component: () => import('../views/NotFoundView.vue'), meta: { layout: EmptyLayout } },
   ],
 })
