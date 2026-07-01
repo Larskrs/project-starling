@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint, index, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint, index, jsonb, numeric } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 export const companyRoleEnum = pgEnum('company_role', ['owner', 'admin', 'member']);
@@ -121,12 +121,36 @@ export const trackTypes = pgTable(
       .references(() => productions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     color: text("color"),
-    defaultMode: trackModeEnum("default_mode").notNull().default("clip"),
+    trackMode: trackModeEnum("track_mode").notNull().default("clip"),
+    sourceSetId: uuid("source_set_id")
+      .references(() => sourceSet.id, { onDelete: "set null" }),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
     uniqueIndex("track_types_name_uq").on(t.productionId, t.name),
+  ],
+);
+
+export const tracks = pgTable("tracks", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    timelineId: uuid("timeline_id")
+      .notNull()
+      .references(() => timelines.id, { onDelete: "cascade" }),
+    typeId: uuid("type_id")
+      .notNull()
+      .references(() => trackTypes.id),
+    sourceId: uuid("source_id")
+      .references(() => sources.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    mode: trackModeEnum("mode").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isMuted: boolean("is_muted").notNull().default(false),
+    isLocked: boolean("is_locked").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("tracks_timeline_idx").on(t.timelineId),
   ],
 );
 
@@ -163,6 +187,8 @@ export const sources = pgTable("sources", {
   productionId: uuid("production_id")
     .notNull()
     .references(() => productions.id, { onDelete: "cascade" }),
+  sourceSetId: uuid("source_set_id")
+    .references(() => sourceSet.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   shortName: text("short_name").notNull(),
   hue: integer("hue").notNull(),
@@ -170,23 +196,3 @@ export const sources = pgTable("sources", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
-
-export const tracks = pgTable("tracks", {
-    id: uuid("id").defaultRandom().primaryKey(),
-    timelineId: uuid("timeline_id")
-      .notNull()
-      .references(() => timelines.id, { onDelete: "cascade" }),
-    typeId: uuid("type_id")
-      .notNull()
-      .references(() => trackTypes.id),
-    name: text("name").notNull(),
-    mode: trackModeEnum("mode").notNull(),
-    sortOrder: integer("sort_order").notNull().default(0),
-    isMuted: boolean("is_muted").notNull().default(false),
-    isLocked: boolean("is_locked").notNull().default(false),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [
-    index("tracks_timeline_idx").on(t.timelineId),
-  ],
-);

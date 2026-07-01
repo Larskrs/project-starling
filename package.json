@@ -8,6 +8,9 @@
     "db:generate": "npm run -w @starling/db db:generate",
     "db:migrate": "npm run -w @starling/db db:migrate",
     "db:push": "npm run -w @starling/db db:push",
+    "db:reset": "npm run -w @starling/db db:reset",
+    "db:fresh": "npm run -w @starling/db db:fresh",
+    "db:seed": "npm run -w @starling/db db:seed",
     "db:studio": "npm run -w @starling/db db:studio",
     "set-role":  "npm run -w @starling/db set-role --"
   },

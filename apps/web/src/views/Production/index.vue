@@ -69,14 +69,16 @@ const NAV_GROUPS = [
     key: 'management',
     label: 'nav.management',
     items: [
-      { id: 'members', icon: 'mdi:account-group-outline',  label: 'nav.members', permission: 'MANAGE_MEMBERS' },
-      { id: 'roles',   icon: 'mdi:shield-account-outline', label: 'nav.roles',   permission: 'MANAGE_ROLES'   },
+      { id: 'members',     icon: 'mdi:account-group-outline',  label: 'nav.members',    permission: 'MANAGE_MEMBERS' },
+      { id: 'roles',       icon: 'mdi:shield-account-outline', label: 'nav.roles',      permission: 'MANAGE_ROLES'   },
     ],
   },
   {
     key: 'configuration',
     label: 'nav.configuration',
     items: [
+      { id: 'track-types', icon: 'mdi:music-note-outline',     label: 'nav.trackTypes', permission: 'ADMINISTRATOR'  },
+      { id: 'source-sets', icon: 'mdi:layers-outline',         label: 'nav.sourceSets', permission: 'ADMINISTRATOR'  },
       { id: 'settings', icon: 'mdi:cog-outline', label: 'nav.settings', permission: 'ADMINISTRATOR' },
     ],
   },
@@ -92,8 +94,13 @@ function can(permission) {
 const ALL_IDS = NAV_GROUPS.flatMap(g => g.items.map(i => i.id))
 
 const activeSection = computed(() => {
-  const seg = route.path.split('/').at(-1)
-  return ALL_IDS.includes(seg) ? seg : 'dashboard'
+  const segs = route.path.split('/')
+  const last = segs.at(-1)
+  if (ALL_IDS.includes(last)) return last
+  // Handle nested routes (e.g. source-sets/:setId — parent segment is the nav id)
+  const parent = segs.at(-2)
+  if (parent && ALL_IDS.includes(parent)) return parent
+  return 'dashboard'
 })
 
 const sectionLabel = computed(() => {
