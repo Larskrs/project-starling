@@ -74,7 +74,7 @@ const production = insertedProd ?? (
 console.log(`  Production: ${production.name}`);
 
 if (insertedProd) {
-  const allPermissions = (1n << 6n) - 1n;
+  const allPermissions = (1n << 8n) - 1n;
   const [adminRole] = await db.insert(productionRoles).values({
     productionId: production.id,
     name:         'Administrator',

@@ -132,7 +132,9 @@
       "manageStorage": "Manage storage",
       "manageMembers": "Manage members",
       "manageRoles": "Manage roles",
-      "administrator": "Administrator"
+      "administrator": "Administrator",
+      "manageTrackTypes": "Manage track types",
+      "manageTimelines": "Manage timelines"
     }
   },
   "dashboard": {
@@ -251,6 +253,8 @@
     "deleteTrack": "Delete track",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
+    "liveSync": "Live sync active — playback and edits follow everyone in this editor",
+    "syncOffline": "Live sync offline",
     "failedToSaveTrack": "Failed to save track",
     "failedToSaveClip": "Failed to save clip",
     "cancel": "Cancel",

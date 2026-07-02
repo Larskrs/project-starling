@@ -3,6 +3,7 @@ import type { Server as HttpServer } from 'node:http';
 import { eq } from 'drizzle-orm';
 import { db, users } from '@starling/db';
 import { sessionFromCookies } from './session.js';
+import { setupTimelineSockets } from './timelineSockets.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,10 +20,15 @@ export interface ChatMessage {
   sentAt:      string;
 }
 
-interface OnlineUser {
-  id:   string;
-  name: string;
+export interface SocketUser {
+  id:            string;
+  name:          string;
+  avatarImageId: string | null;
+  createdAt:     Date;
+  role:          'admin' | 'user';
 }
+
+type OnlineUser = Pick<SocketUser, 'id' | 'name'>;
 
 interface ServerToClientEvents {
   'message:new': (message: ChatMessage) => void;
@@ -41,13 +47,36 @@ interface ClientToServerEvents {
   'message:send': (payload: MessagePayload, ack?: Ack) => void;
 }
 
-interface SocketData {
-  user: OnlineUser;
+export interface SocketData {
+  user: SocketUser;
 }
 
 type AckResult  = { ok: true } | { error: string };
 type Ack        = (result: AckResult) => void;
 type ChatSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
+
+// ── Shared auth middleware ────────────────────────────────────────────────────
+// Resolves the session cookie to a user and stores it on socket.data.
+// Used by the root (chat) namespace and the /timeline namespace.
+
+export async function socketAuth(socket: Socket, next: (err?: Error) => void): Promise<void> {
+  try {
+    const session = await sessionFromCookies(socket.handshake.headers.cookie);
+    if (!session) return next(new Error('Authentication required'));
+
+    const [user] = await db
+      .select({ id: users.id, name: users.name, avatarImageId: users.avatarImageId, createdAt: users.createdAt })
+      .from(users)
+      .where(eq(users.id, session.userId))
+      .limit(1);
+
+    if (!user) return next(new Error('User not found'));
+    (socket.data as SocketData).user = { ...user, role: session.role };
+    next();
+  } catch {
+    next(new Error('Authentication failed'));
+  }
+}
 
 // ── In-memory state ───────────────────────────────────────────────────────────
 
@@ -67,30 +96,14 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
     cors: { origin: true, credentials: true },
   });
 
-  // ── Auth middleware ──────────────────────────────────────────────────────
-  io.use(async (socket, next) => {
-    try {
-      const session = await sessionFromCookies(socket.handshake.headers.cookie);
-      if (!session) return next(new Error('Authentication required'));
-
-      const [user] = await db
-        .select({ id: users.id, name: users.name })
-        .from(users)
-        .where(eq(users.id, session.userId))
-        .limit(1);
-
-      if (!user) return next(new Error('User not found'));
-      (socket as ChatSocket).data.user = user;
-      next();
-    } catch {
-      next(new Error('Authentication failed'));
-    }
-  });
+  io.use(socketAuth);
+  setupTimelineSockets(io);
 
   // ── Connection ───────────────────────────────────────────────────────────
   io.on('connection', (rawSocket) => {
     const socket = rawSocket as ChatSocket;
-    const { user } = socket.data;
+    // Chat payloads only carry the public identity, not the session role.
+    const user: OnlineUser = { id: socket.data.user.id, name: socket.data.user.name };
 
     const isFirstSocket = !online.has(user.id);
     if (isFirstSocket) {

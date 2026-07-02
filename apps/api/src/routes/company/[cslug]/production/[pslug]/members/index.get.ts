@@ -21,6 +21,7 @@ export default defineEventHandler(async (event) => {
         lastName:      users.last_name,
         email:         users.email,
         avatarImageId: users.avatarImageId,
+        createdAt:     users.createdAt,
       },
       role: {
         id:          productionRoles.id,

@@ -119,7 +119,9 @@
       "manageStorage": "Administrer lagring",
       "manageMembers": "Administrer medlemmer",
       "manageRoles": "Administrer roller",
-      "administrator": "Administrator"
+      "administrator": "Administrator",
+      "manageTrackTypes": "Administrer sportyper",
+      "manageTimelines": "Administrer tidslinjer"
     }
   },
   "settings": {
@@ -251,6 +253,8 @@
     "deleteTrack": "Slett spor",
     "zoomIn": "Zoom inn",
     "zoomOut": "Zoom ut",
+    "liveSync": "Direktesynk aktiv — avspilling og endringer følger alle i denne editoren",
+    "syncOffline": "Direktesynk frakoblet",
     "failedToSaveTrack": "Klarte ikke å lagre sporet",
     "failedToSaveClip": "Klarte ikke å lagre klippet",
     "cancel": "Avbryt",

@@ -1,6 +1,6 @@
 import { eq, and, or, inArray } from 'drizzle-orm';
 import { db, companies, productions, companyMembers, productionMembers, productionRoles } from '@starling/db';
-import { type ApiEvent, createError, requireAuth } from './handler.js';
+import { type ApiEvent, createError, requireAuth, getRouterParam } from './handler.js';
 import { can } from './permissions.js';
 import { type PermissionName, Permission, PERMISSION_MESSAGES } from '@starling/auth/permissions';
 
@@ -153,4 +153,27 @@ export async function requirePermission(
       errorKey:   'errors.permission.missing',
     });
   }
+}
+
+/**
+ * One-call preamble for /company/[cslug]/production/[pslug]/… routes:
+ * extracts cslug/pslug plus any extra router params (400 if missing),
+ * resolves production access, and optionally asserts a permission.
+ * Extra params are returned by name in `params`.
+ */
+export async function requireProductionRoute(
+  event: ApiEvent,
+  opts: { permission?: bigint; params?: string[] } = {},
+): Promise<ProductionContext & { params: Record<string, string> }> {
+  const params: Record<string, string> = {};
+  for (const name of ['cslug', 'pslug', ...(opts.params ?? [])]) {
+    const value = getRouterParam(event, name);
+    if (!value) throw createError({ statusCode: 400, message: 'Missing params' });
+    params[name] = value;
+  }
+
+  const ctx = await requireProductionAccess(event, { cslug: params.cslug!, pslug: params.pslug! });
+  if (opts.permission !== undefined) await requirePermission(ctx, opts.permission);
+
+  return { ...ctx, params };
 }

@@ -1,8 +1,8 @@
 <script setup>
-import { ref, computed, inject, watch, watchEffect } from 'vue'
+import { ref, computed, inject, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { clipLeft, clipWidth } from '../useEditorUtils.js'
-import { getAudioBuffer, getWaveformPeaks } from '../useAudioEngine.js'
+import { getPeakPyramid, pickLevel } from '../useWaveform.js'
 
 const props = defineProps({
   clip:         { type: Object, required: true },
@@ -127,83 +127,114 @@ function onCropEnd(e) {
   _cropSide      = null
 }
 
+// ── Displayed geometry (includes any in-progress drag / crop offsets) ──────────
+const displayedLeft  = computed(() => left.value + cropAdj.value.left + moveAdj.value)
+const displayedWidth = computed(() => Math.max(2, baseWidth.value + cropAdj.value.width))
+
 const bgStyle = computed(() => ({
   backgroundColor: color.value,
-  left:   (left.value + cropAdj.value.left + moveAdj.value) + 'px',
-  width:  Math.max(2, baseWidth.value + cropAdj.value.width) + 'px',
+  left:   displayedLeft.value + 'px',
+  width:  displayedWidth.value + 'px',
   cursor: dragging.value ? 'grabbing' : 'grab',
   zIndex: dragging.value ? 30 : undefined,
 }))
 
-// ── Waveform ──────────────────────────────────────────────────────────────────
-const waveCanvas     = ref(null)
-const waveformPeaks  = ref(null)
-const bufferDuration = ref(0)
+// ── Waveform (multi-resolution, viewport-culled) ───────────────────────────────
+const waveCanvas = ref(null)
+const pyramid    = ref(null)
+
+const isAudioClip = computed(() =>
+  !!props.clip.fileId && props.clip.fileType === 'audio' && !isPoint.value && !isEventTrack.value,
+)
+
+// Scroll position + width of the editor canvas, shared from index.vue.
+const viewport = inject('editor-viewport', ref({ scrollLeft: 0, width: 0 }))
+
+// Visible slice of this clip in px, relative to its left edge, expanded by a
+// margin so scrolling doesn't reveal an undrawn edge. Null when fully off-screen,
+// so a clip costs the same to draw whether 2 seconds or 2 hours of it exist.
+const PREFETCH_PX = 240
+const visibleWindow = computed(() => {
+  const clipL = displayedLeft.value
+  const clipR = clipL + displayedWidth.value
+  const viewL = viewport.value.scrollLeft - PREFETCH_PX
+  const viewR = viewport.value.scrollLeft + viewport.value.width + PREFETCH_PX
+  const start = Math.max(clipL, viewL)
+  const end   = Math.min(clipR, viewR)
+  if (end <= start) return null
+  return { offset: Math.floor(start - clipL), width: Math.ceil(end - start) }
+})
 
 function drawWaveform() {
   const canvas = waveCanvas.value
-  const peaks  = waveformPeaks.value
-  if (!canvas || !peaks || !bufferDuration.value) return
+  const py     = pyramid.value
+  const win    = visibleWindow.value
+  if (!canvas || !py || !win) return
 
   const fps = parseFloat(props.timeline.frameRate)
   const ms  = props.clip.mediaStart ?? 0
   const me  = props.clip.end
   if (!me || me <= ms) return
 
-  // While a crop drag is in progress, adjust the visible window so the canvas
-  // buffer matches the clip's actual CSS display width (avoiding squish).
-  // Left drag shifts the audio start forward; right drag grows/shrinks the end.
-  const adjStartFrames = cropAdj.value.left / props.pxPerFrame
-  const effectiveMs    = ms + adjStartFrames
-  const W = Math.max(1, Math.round(baseWidth.value + cropAdj.value.width))
-  const H = 38
+  // Left-crop drag shifts the audio window start.
+  const effectiveMs = ms + cropAdj.value.left / props.pxPerFrame
 
-  canvas.width  = W
-  canvas.height = H
+  const dpr = window.devicePixelRatio || 1
+  const W   = Math.max(1, win.width)
+  const H   = 38
+  canvas.width  = Math.round(W * dpr)
+  canvas.height = Math.round(H * dpr)
 
   const ctx = canvas.getContext('2d')
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, W, H)
 
-  const totalFrames = bufferDuration.value * fps
+  // Pick the peak resolution that matches the current zoom.
+  const samplesPerPixel = py.sampleRate / (props.pxPerFrame * fps)
+  const level  = py.levels[pickLevel(py, samplesPerPixel)]
+  const perBin = level.samplesPerBin
+  const nBins  = level.min.length
+  const mid    = H / 2
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.55)'
-  ctx.lineWidth   = 1
-  ctx.beginPath()
-  const mid = H / 2
-  for (let px = 0; px < W; px++) {
-    const audioFrame = effectiveMs + px / props.pxPerFrame
-    const frac       = audioFrame / totalFrames
-    if (frac < 0 || frac >= 1) continue
-    const amp = peaks[Math.floor(frac * peaks.length)] ?? 0
-    const y   = amp * mid * 0.9
-    ctx.moveTo(px + 0.5, mid - y)
-    ctx.lineTo(px + 0.5, mid + y)
+  const binAt = (px) => {
+    const audioFrame = effectiveMs + (win.offset + px) / props.pxPerFrame
+    return Math.floor((audioFrame / fps) * py.sampleRate / perBin)
   }
-  ctx.stroke()
+
+  // Filled trace: top edge (max) left→right, bottom edge (min) right→left.
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'
+  ctx.beginPath()
+  ctx.moveTo(0, mid)
+  for (let px = 0; px < W; px++) {
+    const bin = binAt(px)
+    const max = bin >= 0 && bin < nBins ? level.max[bin] : 0
+    ctx.lineTo(px, mid - max * mid * 0.92)
+  }
+  for (let px = W - 1; px >= 0; px--) {
+    const bin = binAt(px)
+    const min = bin >= 0 && bin < nBins ? level.min[bin] : 0
+    ctx.lineTo(px, mid - min * mid * 0.92)
+  }
+  ctx.closePath()
+  ctx.fill()
 }
 
-// Load peaks whenever the file changes.
-watch(() => props.clip.fileId, async (fileId) => {
-  waveformPeaks.value  = null
-  bufferDuration.value = 0
-  if (!fileId || isPoint.value || isEventTrack.value || props.clip.fileType !== 'audio') return
+// Build/fetch the peak pyramid whenever the file changes.
+watch(() => props.clip.fileId, async () => {
+  pyramid.value = null
+  if (!isAudioClip.value) return
   try {
-    const [buf, peaks] = await Promise.all([
-      getAudioBuffer(fileId),
-      getWaveformPeaks(fileId),
-    ])
-    bufferDuration.value = buf.duration
-    waveformPeaks.value  = peaks
+    pyramid.value = await getPeakPyramid(props.clip.fileId)
   } catch {}
 }, { immediate: true })
 
-// Redraw whenever peaks, clip bounds, canvas ref, or pixel width change.
-// Explicit deps avoid the reactivity-tracking gaps that watchEffect can miss
-// when props.clip is replaced entirely with a new object after a PATCH.
+// Redraw on peaks ready, zoom, clip bounds, crop, or viewport scroll.
+// Explicit deps avoid the reactivity gaps watchEffect can miss when props.clip
+// is replaced with a fresh object after a PATCH.
 watch(
-  [waveCanvas, waveformPeaks, bufferDuration,
+  [waveCanvas, pyramid, visibleWindow,
    () => props.clip.mediaStart, () => props.clip.end,
-   () => props.pxPerFrame, baseWidth,
+   () => props.pxPerFrame,
    () => cropAdj.value.left, () => cropAdj.value.width],
   drawWaveform,
   { flush: 'post' },
@@ -262,12 +293,12 @@ watch(
       :alt="clip.label || ''"
     />
 
-    <!-- Waveform canvas (audio clips) -->
+    <!-- Waveform canvas (audio clips) — sized/positioned to the visible window only -->
     <canvas
-      v-else-if="clip.fileId && clip.fileType === 'audio'"
+      v-else-if="isAudioClip && visibleWindow"
       ref="waveCanvas"
-      class="absolute inset-0 pointer-events-none"
-      style="width: 100%; height: 100%;"
+      class="absolute top-0 bottom-0 pointer-events-none"
+      :style="{ left: visibleWindow.offset + 'px', width: visibleWindow.width + 'px', height: '100%' }"
     />
 
     <!-- Label -->

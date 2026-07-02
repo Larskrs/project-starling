@@ -1,8 +1,8 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, sources } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../../../../../../../lib/handler.js';
-import { requireProductionAccess, requirePermission } from '../../../../../../../../lib/production.js';
+import { defineEventHandler, readValidatedBody, createError, pickDefined } from '../../../../../../../../lib/handler.js';
+import { requireProductionRoute } from '../../../../../../../../lib/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
@@ -13,29 +13,18 @@ const bodySchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  const cslug    = getRouterParam(event, 'cslug');
-  const pslug    = getRouterParam(event, 'pslug');
-  const setId    = getRouterParam(event, 'setId');
-  const sourceId = getRouterParam(event, 'sourceId');
-  if (!cslug || !pslug || !setId || !sourceId) throw createError({ statusCode: 400, message: 'Missing params' });
+  const { production, params } = await requireProductionRoute(event, {
+    permission: Permission.MANAGE_TRACK_TYPES,
+    params:     ['setId', 'sourceId'],
+  });
 
-  const ctx = await requireProductionAccess(event, { cslug, pslug });
-  await requirePermission(ctx, Permission.ADMINISTRATOR);
-
-  const { production } = ctx;
-  const body = await readValidatedBody(event, bodySchema);
-
-  const update: Record<string, unknown> = { updatedAt: new Date() };
-  if (body.name      !== undefined) update.name      = body.name;
-  if (body.shortName !== undefined) update.shortName = body.shortName;
-  if (body.hue       !== undefined) update.hue       = body.hue;
-  if (body.data      !== undefined) update.data      = body.data;
+  const update = pickDefined(await readValidatedBody(event, bodySchema));
 
   const [updated] = await db.update(sources)
-    .set(update)
+    .set({ ...update, updatedAt: new Date() })
     .where(and(
-      eq(sources.id, sourceId),
-      eq(sources.sourceSetId, setId),
+      eq(sources.id, params.sourceId!),
+      eq(sources.sourceSetId, params.setId!),
       eq(sources.productionId, production.id),
     ))
     .returning();

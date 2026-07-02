@@ -8,7 +8,7 @@ const props = defineProps({
   playheadFrame: { type: Number, required: true },
 })
 
-const emit = defineEmits(['click'])
+const emit = defineEmits(['scrub'])
 
 const marks = computed(() => {
   const { startFrame, endFrame } = props.timeline
@@ -32,8 +32,8 @@ const playheadX = computed(() =>
 
 <template>
   <div
-    class="sticky top-0 z-10 h-8 border-b border-border bg-muted/60 backdrop-blur select-none cursor-crosshair overflow-hidden relative shrink-0"
-    @click="$emit('click', $event)"
+    class="sticky top-0 z-10 h-8 border-b border-border bg-muted/60 backdrop-blur select-none cursor-crosshair overflow-hidden relative shrink-0 touch-none"
+    @pointerdown.prevent="$emit('scrub', $event)"
   >
     <!-- Frame marks -->
     <div

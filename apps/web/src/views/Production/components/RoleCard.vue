@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
+import { Badge, IconButton } from '@starling/ui'
+import { Permission, PERMISSIONS as PERMISSION_NAMES } from '@starling/auth/permissions'
 import { useApi } from '../../../composables/useApi.js'
 
 const props = defineProps({
@@ -15,14 +17,12 @@ const route      = useRoute()
 const { t }      = useI18n()
 const { $fetch } = useApi()
 
-const PERMISSIONS = [
-  { name: 'VIEW',           key: 'roles.permissions.view',          bit: 1n },
-  { name: 'EDIT_TIMELINE',  key: 'roles.permissions.editTimeline',  bit: 2n },
-  { name: 'MANAGE_STORAGE', key: 'roles.permissions.manageStorage', bit: 4n },
-  { name: 'MANAGE_MEMBERS', key: 'roles.permissions.manageMembers', bit: 8n },
-  { name: 'MANAGE_ROLES',   key: 'roles.permissions.manageRoles',   bit: 16n },
-  { name: 'ADMINISTRATOR',  key: 'roles.permissions.administrator',  bit: 32n },
-]
+// i18n keys are the camelCase form of the permission name (MANAGE_ROLES → manageRoles)
+const PERMISSIONS = PERMISSION_NAMES.map(name => ({
+  name,
+  key: `roles.permissions.${name.toLowerCase().replace(/_(\w)/g, (_, c) => c.toUpperCase())}`,
+  bit: Permission[name],
+}))
 
 const editing = ref(null)
 
@@ -71,20 +71,15 @@ async function deleteRole() {
         :style="{ backgroundColor: `oklch(65% 0.18 ${editing ? editing.hue : role.hue})` }"
       />
       <span class="flex-1 text-sm font-medium text-foreground">{{ role.name }}</span>
-      <button
-        class="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors"
+      <IconButton
         :title="editing ? $t('roles.cancel') : $t('roles.edit')"
         @click="editing ? cancelEdit() : startEdit()"
       >
         <Icon :icon="editing ? 'mdi:close' : 'mdi:pencil-outline'" class="text-base" />
-      </button>
-      <button
-        class="p-1.5 rounded text-muted-foreground hover:text-destructive transition-colors"
-        :title="$t('roles.deleteRole')"
-        @click="deleteRole"
-      >
+      </IconButton>
+      <IconButton destructive :title="$t('roles.deleteRole')" @click="deleteRole">
         <Icon icon="mdi:trash-can-outline" class="text-base" />
-      </button>
+      </IconButton>
     </div>
 
     <div v-if="editing" class="border-t border-border px-4 py-3 space-y-3 bg-background/50">
@@ -130,14 +125,13 @@ async function deleteRole() {
 
     <div v-else class="border-t border-border px-4 py-2 flex flex-wrap gap-1.5">
       <span v-if="role.permissions === 0n" class="text-xs text-muted-foreground">{{ $t('roles.noPermissions') }}</span>
-      <span
+      <Badge
         v-for="perm in PERMISSIONS.filter(p => (role.permissions & p.bit) !== 0n)"
         :key="perm.name"
-        class="px-2 py-0.5 rounded-full text-[11px] font-medium"
         :style="badgeStyle(role.hue)"
       >
         {{ $t(perm.key) }}
-      </span>
+      </Badge>
     </div>
 
   </li>

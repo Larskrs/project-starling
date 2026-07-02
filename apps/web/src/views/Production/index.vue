@@ -211,12 +211,9 @@ const crumbs = computed(() => [
           class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent transition-colors group"
           :class="collapsed ? 'justify-center' : ''"
         >
-          <div
-            class="size-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-semibold shrink-0"
-            :title="collapsed ? (user?.first_name ?? user?.name ?? '') : undefined"
-          >
-            {{ (user?.first_name ?? user?.name ?? '?').charAt(0).toUpperCase() }}
-          </div>
+          <Avatar :id="user?.avatarImageId" class="size-8 rounded-full shrink-0" quality="25">
+            <span class="text-sm font-bold text-muted-foreground">{{ user?.name?.charAt(0)?.toUpperCase() }}</span>
+          </Avatar>
           <Transition name="fade">
             <div v-if="!collapsed" class="flex-1 min-w-0 flex items-center gap-0.5">
               <div class="flex-1 min-w-0">
@@ -225,27 +222,6 @@ const crumbs = computed(() => [
                 </p>
                 <p class="text-[11px] text-muted-foreground truncate leading-tight">{{ user?.email }}</p>
               </div>
-              <button
-                class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors text-[10px] font-semibold"
-                :title="locale === 'en' ? 'Switch to Norwegian' : 'Bytt til engelsk'"
-                @click.stop="toggleLocale"
-              >
-                {{ locale === 'en' ? 'NO' : 'EN' }}
-              </button>
-              <button
-                class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                :title="isDark ? $t('nav.switchToLight') : $t('nav.switchToDark')"
-                @click.stop="toggleColorMode"
-              >
-                <Icon :icon="isDark ? 'mdi:weather-sunny' : 'mdi:weather-night'" class="size-3.5" />
-              </button>
-              <button
-                class="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                :title="$t('nav.logOut')"
-                @click.stop="logout"
-              >
-                <Icon icon="mdi:logout" class="size-3.5" />
-              </button>
             </div>
           </Transition>
         </div>

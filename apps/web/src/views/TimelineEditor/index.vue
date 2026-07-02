@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, provide, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, provide, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Skeleton } from '@starling/ui'
 import { useApi } from '../../composables/useApi.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
 import { clamp } from './useEditorUtils.js'
+import { useTimelineSync } from './useTimelineSync.js'
 import {
   startAudioPlayback,
   stopAudioPlayback,
@@ -45,11 +46,62 @@ async function load() {
   trackList.value  = data.tracks
   trackTypes.value = data.trackTypes
   sources.value    = data.sources
+  sync.join(route.params.tlId)
 }
 
 onMounted(load)
 
 usePageTitle(computed(() => timeline.value ? `${timeline.value.name} — ${t('editor.title')}` : null))
+
+// ── Shared list mutations ─────────────────────────────────────────────────────
+// Used by both local REST responses and remote socket events.
+
+function upsertTrackLocal(track) {
+  const i = trackList.value.findIndex(x => x.id === track.id)
+  if (i !== -1) {
+    const merged = { ...trackList.value[i], ...track, clips: track.clips ?? trackList.value[i].clips }
+    trackList.value[i] = merged
+    return merged
+  }
+  const added = { ...track, clips: track.clips ?? [] }
+  trackList.value.push(added)
+  return added
+}
+
+function removeTrackLocal(trackId) {
+  trackList.value = trackList.value.filter(x => x.id !== trackId)
+}
+
+function upsertClipLocal(trackId, clip) {
+  const track = trackList.value.find(x => x.id === trackId)
+  if (!track) return null
+  const i      = track.clips.findIndex(c => c.id === clip.id)
+  const merged = i !== -1 ? { ...track.clips[i], ...clip } : clip
+  if (i !== -1) track.clips[i] = merged
+  else          track.clips.push(merged)
+  track.clips.sort((a, b) => a.position - b.position)
+  return merged
+}
+
+function removeClipLocal(trackId, clipId) {
+  const track = trackList.value.find(x => x.id === trackId)
+  if (track) track.clips = track.clips.filter(c => c.id !== clipId)
+}
+
+// ── Live sync ─────────────────────────────────────────────────────────────────
+const sync = useTimelineSync({
+  onClipChange(change) {
+    if (change.type === 'upsert' && change.clip) upsertClipLocal(change.trackId, change.clip)
+    if (change.type === 'remove' && change.clipId) removeClipLocal(change.trackId, change.clipId)
+  },
+  onTrackChange(change) {
+    if (change.type === 'upsert' && change.track) upsertTrackLocal(change.track)
+    if (change.type === 'remove' && change.trackId) removeTrackLocal(change.trackId)
+  },
+  onPlayhead(state) {
+    applyRemotePlayhead(state)
+  },
+})
 
 // ── Zoom ──────────────────────────────────────────────────────────────────────
 const ZOOM_STEPS    = [0.25, 0.5, 1, 2, 4, 8, 16, 32]
@@ -57,13 +109,37 @@ const pxPerFrame    = ref(2)
 const timelineWidth = computed(() =>
   timeline.value ? (timeline.value.endFrame - timeline.value.startFrame) * pxPerFrame.value : 0,
 )
-function zoomIn()  {
-  const i = ZOOM_STEPS.indexOf(pxPerFrame.value)
-  if (i < ZOOM_STEPS.length - 1) pxPerFrame.value = ZOOM_STEPS[i + 1]
+
+function zoomBy(dir, anchorClientX = null) {
+  const i  = ZOOM_STEPS.indexOf(pxPerFrame.value)
+  const ni = clamp(i + dir, 0, ZOOM_STEPS.length - 1)
+  if (ni === i || !timeline.value) return
+
+  const canvas = canvasRef.value
+  // Keep the frame under the anchor (cursor or viewport center) stationary.
+  const anchorX = canvas
+    ? (anchorClientX != null ? anchorClientX - canvas.getBoundingClientRect().left : canvas.clientWidth / 2)
+    : 0
+  const anchorFrame = canvas
+    ? timeline.value.startFrame + (canvas.scrollLeft + anchorX) / pxPerFrame.value
+    : 0
+
+  pxPerFrame.value = ZOOM_STEPS[ni]
+
+  if (canvas) {
+    nextTick(() => {
+      canvas.scrollLeft = (anchorFrame - timeline.value.startFrame) * pxPerFrame.value - anchorX
+    })
+  }
 }
-function zoomOut() {
-  const i = ZOOM_STEPS.indexOf(pxPerFrame.value)
-  if (i > 0) pxPerFrame.value = ZOOM_STEPS[i - 1]
+
+const zoomIn  = () => zoomBy(1)
+const zoomOut = () => zoomBy(-1)
+
+function onCanvasWheel(e) {
+  if (!e.ctrlKey && !e.metaKey) return
+  e.preventDefault()
+  zoomBy(e.deltaY < 0 ? 1 : -1, e.clientX)
 }
 
 // ── Playhead ──────────────────────────────────────────────────────────────────
@@ -75,35 +151,55 @@ const playheadX = computed(() =>
   timeline.value ? (playheadFrame.value - timeline.value.startFrame) * pxPerFrame.value : 0,
 )
 
+function setPlayhead(frame, { broadcast = true } = {}) {
+  if (!timeline.value) return
+  playheadFrame.value = clamp(frame, timeline.value.startFrame, timeline.value.endFrame)
+  if (broadcast) sync.sendPlayhead(playheadFrame.value, isPlaying.value)
+}
+
 function seekStart() {
-  stopPlayback()
-  playheadFrame.value = timeline.value?.startFrame ?? 0
+  stopPlayback(false)
+  setPlayhead(timeline.value?.startFrame ?? 0)
+}
+
+function seekEnd() {
+  stopPlayback(false)
+  setPlayhead(timeline.value?.endFrame ?? 0)
 }
 
 // ── Playback ──────────────────────────────────────────────────────────────────
 const isPlaying = ref(false)
-let _rafId  = null
-let _lastTs = null
+let _rafId      = null
+let _lastTs     = null
+let _lastSyncMs = 0
 
-function startPlayback() {
+const PLAYING_SYNC_INTERVAL_MS = 1000
+
+function startPlayback(broadcast = true) {
   if (!timeline.value) return
   if (playheadFrame.value >= timeline.value.endFrame) {
     playheadFrame.value = timeline.value.startFrame
   }
   isPlaying.value = true
   _lastTs         = null
+  _lastSyncMs     = Date.now()
   _rafId          = requestAnimationFrame(_tick)
 
   const fps      = parseFloat(timeline.value.frameRate)
   const allClips = trackList.value.flatMap(t => t.clips)
   startAudioPlayback(allClips, playheadFrame.value, fps)
+
+  if (broadcast) sync.sendPlayhead(playheadFrame.value, true, { immediate: true })
 }
 
-function stopPlayback() {
+function stopPlayback(broadcast = true) {
+  const wasPlaying = isPlaying.value
   isPlaying.value = false
   if (_rafId !== null) { cancelAnimationFrame(_rafId); _rafId = null }
   _lastTs = null
   stopAudioPlayback()
+
+  if (broadcast && wasPlaying) sync.sendPlayhead(playheadFrame.value, false, { immediate: true })
 }
 
 function togglePlayback() {
@@ -123,7 +219,47 @@ function _tick(ts) {
     stopPlayback()
     return
   }
+
+  // Keep the playhead in view while playing.
+  const canvas = canvasRef.value
+  if (canvas) {
+    const x     = (playheadFrame.value - timeline.value.startFrame) * pxPerFrame.value
+    const viewL = canvas.scrollLeft
+    const viewR = viewL + canvas.clientWidth
+    if (x > viewR - 40 || x < viewL) {
+      canvas.scrollLeft = Math.max(0, x - canvas.clientWidth * 0.2)
+    }
+  }
+
+  // Periodic re-sync so followers correct drift.
+  const now = Date.now()
+  if (now - _lastSyncMs >= PLAYING_SYNC_INTERVAL_MS) {
+    _lastSyncMs = now
+    sync.sendPlayhead(playheadFrame.value, true)
+  }
+
   _rafId = requestAnimationFrame(_tick)
+}
+
+// ── Remote playhead ───────────────────────────────────────────────────────────
+function applyRemotePlayhead({ frame, isPlaying: remotePlaying }) {
+  if (!timeline.value) return
+  const fps = parseFloat(timeline.value.frameRate)
+
+  if (remotePlaying) {
+    if (!isPlaying.value) {
+      setPlayhead(frame, { broadcast: false })
+      startPlayback(false)
+    } else if (Math.abs(playheadFrame.value - frame) > fps / 2) {
+      // Drifted more than half a second — snap and restart audio at the new position.
+      stopPlayback(false)
+      setPlayhead(frame, { broadcast: false })
+      startPlayback(false)
+    }
+  } else {
+    if (isPlaying.value) stopPlayback(false)
+    setPlayhead(frame, { broadcast: false })
+  }
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
@@ -132,12 +268,19 @@ function onKeydown(e) {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
   if (e.code === 'Space') { e.preventDefault(); togglePlayback() }
   if (e.code === 'Home')  { e.preventDefault(); seekStart() }
+  if (e.code === 'End')   { e.preventDefault(); seekEnd() }
+  if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+    e.preventDefault()
+    const step = (e.shiftKey ? 10 : 1) * (e.code === 'ArrowLeft' ? -1 : 1)
+    setPlayhead(Math.round(playheadFrame.value) + step)
+  }
 }
 onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
-  stopPlayback()
+  stopPlayback(false)
   destroyAudioEngine()
+  sync.leave()
 })
 
 // ── Scroll sync ───────────────────────────────────────────────────────────────
@@ -150,13 +293,23 @@ function onCanvasScroll() {
   }
 }
 
-// ── Ruler click → set playhead ────────────────────────────────────────────────
-function onRulerClick(e) {
+// ── Ruler scrubbing ───────────────────────────────────────────────────────────
+function frameFromPointer(e) {
+  const rect = canvasRef.value.getBoundingClientRect()
+  const x    = e.clientX - rect.left + canvasRef.value.scrollLeft
+  return timeline.value.startFrame + x / pxPerFrame.value
+}
+
+function onScrubStart(e) {
   if (!canvasRef.value || !timeline.value) return
-  const rect  = canvasRef.value.getBoundingClientRect()
-  const x     = e.clientX - rect.left + canvasRef.value.scrollLeft
-  const frame = timeline.value.startFrame + x / pxPerFrame.value
-  playheadFrame.value = clamp(frame, timeline.value.startFrame, timeline.value.endFrame)
+  setPlayhead(frameFromPointer(e))
+  window.addEventListener('pointermove', onScrubMove)
+  window.addEventListener('pointerup', onScrubEnd)
+}
+function onScrubMove(e) { setPlayhead(frameFromPointer(e)) }
+function onScrubEnd() {
+  window.removeEventListener('pointermove', onScrubMove)
+  window.removeEventListener('pointerup', onScrubEnd)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -171,37 +324,31 @@ function getTrackSources(track) {
 const addTrackOpen = ref(false)
 
 function onTrackAdded(track) {
-  trackList.value.push({ ...track, clips: [] })
+  const added = upsertTrackLocal(track)
+  sync.sendTrackChange({ type: 'upsert', track: added })
 }
 
-async function toggleMute(track) {
+async function patchTrack(track, json) {
   const { ok, data } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}`,
-    { method: 'PATCH', json: { isMuted: !track.isMuted }, silent: true },
+    { method: 'PATCH', json, silent: true },
   )
-  if (ok) {
-    const idx = trackList.value.findIndex(t => t.id === track.id)
-    if (idx !== -1) trackList.value[idx] = { ...trackList.value[idx], ...data }
-  }
+  if (!ok) return
+  const merged = upsertTrackLocal({ ...data, id: track.id })
+  sync.sendTrackChange({ type: 'upsert', track: merged })
 }
 
-async function toggleLock(track) {
-  const { ok, data } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}`,
-    { method: 'PATCH', json: { isLocked: !track.isLocked }, silent: true },
-  )
-  if (ok) {
-    const idx = trackList.value.findIndex(t => t.id === track.id)
-    if (idx !== -1) trackList.value[idx] = { ...trackList.value[idx], ...data }
-  }
-}
+const toggleMute = (track) => patchTrack(track, { isMuted: !track.isMuted })
+const toggleLock = (track) => patchTrack(track, { isLocked: !track.isLocked })
 
 async function deleteTrack(track) {
   const { ok } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}`,
     { method: 'DELETE', silent: true },
   )
-  if (ok) trackList.value = trackList.value.filter(t => t.id !== track.id)
+  if (!ok) return
+  removeTrackLocal(track.id)
+  sync.sendTrackChange({ type: 'remove', trackId: track.id })
 }
 
 // ── Clip mutations ────────────────────────────────────────────────────────────
@@ -230,57 +377,39 @@ function closeClipDialog() {
 }
 
 function onClipSaved(savedClip) {
-  const idx = trackList.value.findIndex(t => t.id === clipDialog.value.track?.id)
-  if (idx === -1) return
-  const clips = trackList.value[idx].clips
-  const ci    = clips.findIndex(c => c.id === savedClip.id)
-  if (ci !== -1) clips[ci] = savedClip
-  else           clips.push(savedClip)
-  clips.sort((a, b) => a.position - b.position)
+  const trackId = clipDialog.value.track?.id
+  if (!trackId) return
+  const merged = upsertClipLocal(trackId, savedClip)
+  if (merged) sync.sendClipChange({ type: 'upsert', trackId, clip: merged })
   closeClipDialog()
 }
 
-async function moveClip(track, clip, position) {
+async function patchClip(track, clip, json) {
   const { ok, data } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}/clips/${clip.id}`,
-    { method: 'PATCH', json: { position }, silent: true },
+    { method: 'PATCH', json, silent: true },
   )
   if (!ok) return
-  const ti = trackList.value.findIndex(t => t.id === track.id)
-  if (ti === -1) return
-  const ci = trackList.value[ti].clips.findIndex(c => c.id === clip.id)
-  if (ci !== -1) {
-    trackList.value[ti].clips[ci] = { ...trackList.value[ti].clips[ci], ...data }
-    trackList.value[ti].clips.sort((a, b) => a.position - b.position)
-  }
+  const merged = upsertClipLocal(track.id, { ...data, id: clip.id })
+  if (merged) sync.sendClipChange({ type: 'upsert', trackId: track.id, clip: merged })
 }
 
-async function cropClip(track, clip, fields) {
-  const { ok, data } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}/clips/${clip.id}`,
-    { method: 'PATCH', json: fields, silent: true },
-  )
-  if (!ok) return
-  const ti = trackList.value.findIndex(t => t.id === track.id)
-  if (ti === -1) return
-  const ci = trackList.value[ti].clips.findIndex(c => c.id === clip.id)
-  if (ci !== -1) trackList.value[ti].clips[ci] = { ...trackList.value[ti].clips[ci], ...data }
-}
+const moveClip = (track, clip, position) => patchClip(track, clip, { position })
+const cropClip = (track, clip, fields)   => patchClip(track, clip, fields)
 
 async function deleteClip(track, clip) {
   const { ok } = await $fetch(
     `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}/clips/${clip.id}`,
     { method: 'DELETE', silent: true },
   )
-  if (ok) {
-    const idx = trackList.value.findIndex(t => t.id === track.id)
-    if (idx !== -1) trackList.value[idx].clips = trackList.value[idx].clips.filter(c => c.id !== clip.id)
-  }
+  if (!ok) return
+  removeClipLocal(track.id, clip.id)
+  sync.sendClipChange({ type: 'remove', trackId: track.id, clipId: clip.id })
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function goBack() {
-  stopPlayback()
+  stopPlayback(false)
   router.push(`/c/${route.params.cslug}/p/${route.params.pslug}/timelines`)
 }
 
@@ -326,12 +455,15 @@ provide('editor-sources',    sources)
         :px-per-frame="pxPerFrame"
         :playhead-frame="playheadFrame"
         :is-playing="isPlaying"
+        :peers="sync.peers.value"
+        :sync-connected="sync.connected.value"
         @go-back="goBack"
         @zoom-in="zoomIn"
         @zoom-out="zoomOut"
         @add-track="addTrackOpen = true"
         @toggle-play="togglePlayback"
         @seek-start="seekStart"
+        @seek-end="seekEnd"
       />
 
       <div class="flex flex-1 overflow-hidden">
@@ -365,14 +497,14 @@ provide('editor-sources',    sources)
         </div>
 
         <!-- Right panel: canvas -->
-        <div ref="canvasRef" class="flex-1 overflow-auto relative" @scroll="onCanvasScroll">
+        <div ref="canvasRef" class="flex-1 overflow-auto relative" @scroll="onCanvasScroll" @wheel="onCanvasWheel">
           <div :style="{ width: timelineWidth + 'px', minWidth: '100%', position: 'relative' }">
 
             <Ruler
               :timeline="timeline"
               :px-per-frame="pxPerFrame"
               :playhead-frame="playheadFrame"
-              @click="onRulerClick"
+              @scrub="onScrubStart"
             />
 
             <div class="relative" :style="{ minHeight: (trackList.length * 40) + 'px' }">

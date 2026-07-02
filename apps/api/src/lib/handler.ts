@@ -103,6 +103,13 @@ export async function readValidatedBody<T>(event: ApiEvent, schema: ZodType<T>):
   return result.data;
 }
 
+/** Drops keys whose value is `undefined` — e.g. building a PATCH update from an all-optional body. */
+export function pickDefined<T extends object>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined),
+  ) as Partial<T>;
+}
+
 export function getValidatedQuery<T>(event: ApiEvent, schema: ZodType<T>): T {
   const result = schema.safeParse(getQuery(event));
   if (!result.success) throw new ApiError(422, 'Invalid query parameters', result.error.flatten(), 'errors.generic.validationFailed');

@@ -1,15 +1,11 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import { db, timelines, tracks, trackTypes, sources, clips, storageFiles } from '@starling/db';
-import { defineEventHandler, getRouterParam, createError } from '../../../../../../lib/handler.js';
-import { requireProductionAccess } from '../../../../../../lib/production.js';
+import { defineEventHandler, createError } from '../../../../../../lib/handler.js';
+import { requireProductionRoute } from '../../../../../../lib/production.js';
 
 export default defineEventHandler(async (event) => {
-  const cslug = getRouterParam(event, 'cslug');
-  const pslug = getRouterParam(event, 'pslug');
-  const tlId  = getRouterParam(event, 'tlId');
-  if (!cslug || !pslug || !tlId) throw createError({ statusCode: 400, message: 'Missing params' });
-
-  const { production } = await requireProductionAccess(event, { cslug, pslug });
+  const { production, params } = await requireProductionRoute(event, { params: ['tlId'] });
+  const tlId = params.tlId!;
 
   const [timeline] = await db.select().from(timelines)
     .where(and(eq(timelines.id, tlId), eq(timelines.productionId, production.id)))

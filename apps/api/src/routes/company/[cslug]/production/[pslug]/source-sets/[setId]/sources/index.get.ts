@@ -1,15 +1,11 @@
 import { eq, and } from 'drizzle-orm';
 import { db, sources, sourceSet } from '@starling/db';
-import { defineEventHandler, getRouterParam, createError } from '../../../../../../../../lib/handler.js';
-import { requireProductionAccess } from '../../../../../../../../lib/production.js';
+import { defineEventHandler, createError } from '../../../../../../../../lib/handler.js';
+import { requireProductionRoute } from '../../../../../../../../lib/production.js';
 
 export default defineEventHandler(async (event) => {
-  const cslug = getRouterParam(event, 'cslug');
-  const pslug = getRouterParam(event, 'pslug');
-  const setId = getRouterParam(event, 'setId');
-  if (!cslug || !pslug || !setId) throw createError({ statusCode: 400, message: 'Missing params' });
-
-  const { production } = await requireProductionAccess(event, { cslug, pslug });
+  const { production, params } = await requireProductionRoute(event, { params: ['setId'] });
+  const setId = params.setId!;
 
   // Verify the source set belongs to this production
   const [set] = await db.select().from(sourceSet)

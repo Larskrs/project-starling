@@ -15,7 +15,7 @@ function displayName(member) {
 
 <template>
   <li class="flex items-center gap-3 px-5 py-3">
-    <Avatar :id="member.user?.avatarImageId" :quality="25" class="size-8 rounded-full shrink-0">
+    <Avatar :id="member.user?.avatarImageId" :created-at="member.user?.createdAt" :quality="25" class="size-8 rounded-full shrink-0">
       <span class="text-xs font-semibold">{{ (member.user?.firstName || member.user?.name || '?').charAt(0).toUpperCase() }}</span>
     </Avatar>
 
