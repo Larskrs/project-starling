@@ -26,10 +26,17 @@ const router = createRouter({
         { path: 'settings',               component: () => import('../views/Production/SettingsView.vue') },
         { path: 'members',                component: () => import('../views/Production/MembersView.vue') },
         { path: 'roles',                  component: () => import('../views/Production/RolesView.vue') },
+        { path: 'timelines',              component: () => import('../views/Production/TimelinesView.vue') },
         { path: 'track-types',            component: () => import('../views/Production/TrackTypesView.vue') },
         { path: 'source-sets',            component: () => import('../views/Production/SourceSetsView.vue') },
         { path: 'source-sets/:setId',     component: () => import('../views/Production/SourceSetDetailView.vue') },
       ],
+    },
+
+    {
+      path:      '/c/:cslug/p/:pslug/editor/:tlId',
+      component: () => import('../views/TimelineEditor/index.vue'),
+      meta:      { requiresAuth: true, layout: EmptyLayout },
     },
 
     { path: '/debug', component: () => import('../views/Debug/index.vue'), meta: { layout: DefaultLayout, title: 'Debug' } },

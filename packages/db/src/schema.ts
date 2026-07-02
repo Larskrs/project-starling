@@ -1,11 +1,11 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint, index, jsonb, numeric } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint, index, jsonb, numeric, check } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 export const companyRoleEnum = pgEnum('company_role', ['owner', 'admin', 'member']);
 export const trackModeEnum = pgEnum("track_mode", [
-  "free", // Point Events, trigger on position: bare position
-  "clip", // MediaClip: position + mediaStart + end
+  "event", // Point Events — cameras, people; position only
+  "clip",  // MediaClip — position + mediaStart + end + optional fileId
 ]);
 export const frameRateEnum = pgEnum("frame_rate", [
   "23.976", "24", "25", "29.97", "29.97df", "30", "50", "59.94", "60",
@@ -196,3 +196,66 @@ export const sources = pgTable("sources", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const clips = pgTable(
+  "clips",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    label: text("label").notNull().default(""),
+ 
+    position: integer("position").notNull(),
+ 
+    // Clip mode
+    fileId: uuid("file_id")
+      .references(() => storageFiles.id, { onDelete: "set null" }),
+    mediaStart: integer("media_start"),
+    end: integer("end"),
+ 
+    // Free mode
+    sourceId: uuid("source_id")
+      .references(() => sources.id, { onDelete: "set null" }),
+ 
+    // Type-specific data
+    data: jsonb("data"),
+ 
+    color: text("color"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("clips_track_position_idx").on(t.trackId, t.position),
+    index("clips_source_idx").on(t.sourceId),
+    check(
+      "clips_valid_media_range",
+      sql`"media_start" IS NULL OR "end" IS NULL OR "end" > "media_start"`,
+    ),
+    check(
+      "clips_media_pair",
+      sql`("media_start" IS NULL) = ("end" IS NULL)`,
+    ),
+  ],
+);
+ 
+// ─── Notater ─────────────────────────────────────────────────────────
+ 
+export const clipNotes = pgTable(
+  "clip_notes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clipId: uuid("clip_id")
+      .notNull()
+      .references(() => clips.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("clip_notes_clip_idx").on(t.clipId),
+  ],
+);

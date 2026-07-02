@@ -8,6 +8,20 @@
       "when": 1782925003997,
       "tag": "0000_omniscient_micromacro",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782946083317,
+      "tag": "0001_faulty_the_santerians",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783000000000,
+      "tag": "0002_rename_free_to_event",
+      "breakpoints": true
     }
   ]
 }

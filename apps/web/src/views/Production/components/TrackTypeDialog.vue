@@ -33,8 +33,8 @@ const error       = ref('')
 const isEdit = computed(() => props.trackType !== null)
 
 const modeOptions      = computed(() => [
-  { value: 'clip', label: t('trackTypes.modeClip') },
-  { value: 'free', label: t('trackTypes.modeFree') },
+  { value: 'clip',  label: t('trackTypes.modeClip') },
+  { value: 'event', label: t('trackTypes.modeEvent') },
 ])
 const sourceSetOptions = computed(() =>
   props.sourceSets.map(s => ({ value: s.id, label: s.name }))

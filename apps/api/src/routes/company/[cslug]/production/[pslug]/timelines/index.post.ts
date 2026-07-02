@@ -1,15 +1,20 @@
 import z from 'zod';
-import { db, trackTypes } from '@starling/db';
+import { db, timelines } from '@starling/db';
 import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../../../../../lib/handler.js';
 import { requireProductionAccess, requirePermission } from '../../../../../../lib/production.js';
 import { Permission } from '@starling/auth/permissions';
 
+const FRAME_RATES = ['23.976', '24', '25', '29.97', '29.97df', '30', '50', '59.94', '60'] as const;
+
 const bodySchema = z.object({
-  name:        z.string().min(1).max(64),
-  color:       z.string().max(32).nullable().optional(),
-  trackMode: z.enum(['event', 'clip']).default('clip'),
-  sourceSetId: z.string().uuid().nullable().optional(),
-  sortOrder:   z.number().int().min(0).default(0),
+  name:            z.string().min(1).max(128),
+  frameRate:       z.enum(FRAME_RATES).default('25'),
+  startFrame:      z.number().int().min(0).default(0),
+  endFrame:        z.number().int().min(1),
+  ltcOffsetFrames: z.number().int().default(0),
+}).refine(d => d.endFrame > d.startFrame, {
+  message: 'End frame must be after start frame',
+  path: ['endFrame'],
 });
 
 export default defineEventHandler(async (event) => {
@@ -23,14 +28,14 @@ export default defineEventHandler(async (event) => {
   const { production } = ctx;
   const body = await readValidatedBody(event, bodySchema);
 
-  const [trackType] = await db.insert(trackTypes).values({
-    productionId: production.id,
-    name:         body.name,
-    color:        body.color ?? null,
-    trackMode:    body.trackMode,
-    sourceSetId:  body.sourceSetId ?? null,
-    sortOrder:    body.sortOrder,
+  const [timeline] = await db.insert(timelines).values({
+    productionId:    production.id,
+    name:            body.name,
+    frameRate:       body.frameRate,
+    startFrame:      body.startFrame,
+    endFrame:        body.endFrame,
+    ltcOffsetFrames: body.ltcOffsetFrames,
   }).returning();
 
-  return trackType!;
+  return timeline!;
 });

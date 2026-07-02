@@ -77,6 +77,7 @@ const NAV_GROUPS = [
     key: 'configuration',
     label: 'nav.configuration',
     items: [
+      { id: 'timelines',   icon: 'mdi:timeline-outline',       label: 'nav.timelines',  permission: 'ADMINISTRATOR'  },
       { id: 'track-types', icon: 'mdi:music-note-outline',     label: 'nav.trackTypes', permission: 'ADMINISTRATOR'  },
       { id: 'source-sets', icon: 'mdi:layers-outline',         label: 'nav.sourceSets', permission: 'ADMINISTRATOR'  },
       { id: 'settings', icon: 'mdi:cog-outline', label: 'nav.settings', permission: 'ADMINISTRATOR' },
