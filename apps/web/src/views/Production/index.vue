@@ -62,6 +62,7 @@ const NAV_GROUPS = [
     label: 'nav.workspace',
     items: [
       { id: 'dashboard', icon: 'mdi:view-dashboard-outline', label: 'nav.dashboard', permission: null },
+      { id: 'timelines',   icon: 'mdi:timeline-outline',       label: 'nav.timelines',  permission: 'ADMINISTRATOR'  },
       { id: 'files',     icon: 'mdi:folder-outline',          label: 'nav.files',    permission: null },
     ],
   },
@@ -77,7 +78,6 @@ const NAV_GROUPS = [
     key: 'configuration',
     label: 'nav.configuration',
     items: [
-      { id: 'timelines',   icon: 'mdi:timeline-outline',       label: 'nav.timelines',  permission: 'ADMINISTRATOR'  },
       { id: 'track-types', icon: 'mdi:music-note-outline',     label: 'nav.trackTypes', permission: 'ADMINISTRATOR'  },
       { id: 'source-sets', icon: 'mdi:layers-outline',         label: 'nav.sourceSets', permission: 'ADMINISTRATOR'  },
       { id: 'settings', icon: 'mdi:cog-outline', label: 'nav.settings', permission: 'ADMINISTRATOR' },

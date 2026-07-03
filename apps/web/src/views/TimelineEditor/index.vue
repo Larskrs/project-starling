@@ -1,21 +1,22 @@
 <script setup>
-import { ref, computed, provide, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Skeleton } from '@starling/ui'
+import { Skeleton, ResizeHandle } from '@starling/ui'
 import { useApi } from '../../composables/useApi.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
-import { clamp } from './useEditorUtils.js'
+import { useCookie } from '../../composables/useCookie.js'
+import { useResizable } from '../../composables/useResizable.js'
+import { clamp, framesToTC } from './useEditorUtils.js'
 import { useTimelineSync } from './useTimelineSync.js'
-import {
-  startAudioPlayback,
-  stopAudioPlayback,
-  destroyAudioEngine,
-} from './useAudioEngine.js'
+import { usePlayback } from './usePlayback.js'
+import { destroyAudioEngine } from './useAudioEngine.js'
+import { clearWaveformCache } from './useWaveform.js'
 import EditorToolbar   from './components/EditorToolbar.vue'
 import Ruler           from './components/Ruler.vue'
 import TrackHeader     from './components/TrackHeader.vue'
 import TrackLane       from './components/TrackLane.vue'
+import SourceBar       from './components/SourceBar.vue'
 import AddTrackDialog  from './components/AddTrackDialog.vue'
 import ClipDialog      from './components/ClipDialog.vue'
 
@@ -32,14 +33,15 @@ const sources    = ref([])
 const loading    = ref(true)
 const error      = ref('')
 
+const timelineUrl = computed(() =>
+  `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}`,
+)
+const trackUrl = (trackId) => `${timelineUrl.value}/tracks/${trackId}`
+
 async function load() {
   loading.value = true
   error.value   = ''
-  const { cslug, pslug, tlId } = route.params
-  const { ok, data } = await $fetch(
-    `/api/company/${cslug}/production/${pslug}/timelines/${tlId}`,
-    { silent: true },
-  )
+  const { ok, data } = await $fetch(timelineUrl.value, { silent: true })
   loading.value = false
   if (!ok) { error.value = t('editor.couldNotLoad'); return }
   timeline.value   = data.timeline
@@ -47,6 +49,7 @@ async function load() {
   trackTypes.value = data.trackTypes
   sources.value    = data.sources
   sync.join(route.params.tlId)
+  nextTick(updateViewport)
 }
 
 onMounted(load)
@@ -99,7 +102,7 @@ const sync = useTimelineSync({
     if (change.type === 'remove' && change.trackId) removeTrackLocal(change.trackId)
   },
   onPlayhead(state) {
-    applyRemotePlayhead(state)
+    playback.applyRemotePlayhead(state)
   },
 })
 
@@ -129,6 +132,7 @@ function zoomBy(dir, anchorClientX = null) {
   if (canvas) {
     nextTick(() => {
       canvas.scrollLeft = (anchorFrame - timeline.value.startFrame) * pxPerFrame.value - anchorX
+      updateViewport()
     })
   }
 }
@@ -142,133 +146,119 @@ function onCanvasWheel(e) {
   zoomBy(e.deltaY < 0 ? 1 : -1, e.clientX)
 }
 
-// ── Playhead ──────────────────────────────────────────────────────────────────
-// Stored as float for smooth animation; TC display rounds it.
-const playheadFrame = ref(0)
-watch(timeline, tl => { if (tl) playheadFrame.value = tl.startFrame }, { immediate: true })
+// ── Scroll sync + viewport ────────────────────────────────────────────────────
+const canvasRef       = ref(null)
+const trackHeadersRef = ref(null)
 
-const playheadX = computed(() =>
-  timeline.value ? (playheadFrame.value - timeline.value.startFrame) * pxPerFrame.value : 0,
-)
-
-function setPlayhead(frame, { broadcast = true } = {}) {
-  if (!timeline.value) return
-  playheadFrame.value = clamp(frame, timeline.value.startFrame, timeline.value.endFrame)
-  if (broadcast) sync.sendPlayhead(playheadFrame.value, isPlaying.value)
+// Shared with EditorClip so each clip only rasterises the visible slice of its
+// waveform. rAF-coalesced so a burst of scroll events yields one update/frame.
+const viewport = ref({ scrollLeft: 0, width: 0 })
+let _viewportRaf = null
+function updateViewport() {
+  if (_viewportRaf) return
+  _viewportRaf = requestAnimationFrame(() => {
+    _viewportRaf = null
+    const el = canvasRef.value
+    if (el) viewport.value = { scrollLeft: el.scrollLeft, width: el.clientWidth }
+  })
 }
 
-function seekStart() {
-  stopPlayback(false)
-  setPlayhead(timeline.value?.startFrame ?? 0)
+function onCanvasScroll() {
+  if (trackHeadersRef.value && canvasRef.value) {
+    trackHeadersRef.value.scrollTop = canvasRef.value.scrollTop
+  }
+  updateViewport()
 }
 
-function seekEnd() {
-  stopPlayback(false)
-  setPlayhead(timeline.value?.endFrame ?? 0)
-}
+onMounted(() => window.addEventListener('resize', updateViewport))
+onUnmounted(() => window.removeEventListener('resize', updateViewport))
 
 // ── Playback ──────────────────────────────────────────────────────────────────
-const isPlaying = ref(false)
-let _rafId      = null
-let _lastTs     = null
-let _lastSyncMs = 0
+const playback = usePlayback({
+  timeline, trackList, pxPerFrame, canvasRef,
+  sendPlayhead: (...args) => sync.sendPlayhead(...args),
+})
+const {
+  playheadFrame, playheadX, isPlaying,
+  setPlayhead, seekStart, seekEnd, stopPlayback, togglePlayback,
+} = playback
 
-const PLAYING_SYNC_INTERVAL_MS = 1000
+// ── Layout: sidebar width + per-track heights (persisted in cookies) ─────────
+const TRACK_HEIGHT_DEFAULT = 48
+const TRACK_HEIGHT_MIN     = 32
+const TRACK_HEIGHT_MAX     = 128
 
-function startPlayback(broadcast = true) {
-  if (!timeline.value) return
-  if (playheadFrame.value >= timeline.value.endFrame) {
-    playheadFrame.value = timeline.value.startFrame
-  }
-  isPlaying.value = true
-  _lastTs         = null
-  _lastSyncMs     = Date.now()
-  _rafId          = requestAnimationFrame(_tick)
+const sidebarWidth = useCookie('editor-sidebar-width', 224)
+const trackHeights = useCookie('editor-track-heights', {})   // trackId → px
 
-  const fps      = parseFloat(timeline.value.frameRate)
-  const allClips = trackList.value.flatMap(t => t.clips)
-  startAudioPlayback(allClips, playheadFrame.value, fps)
+const trackHeight = (trackId) =>
+  clamp(trackHeights.value[trackId] ?? TRACK_HEIGHT_DEFAULT, TRACK_HEIGHT_MIN, TRACK_HEIGHT_MAX)
 
-  if (broadcast) sync.sendPlayhead(playheadFrame.value, true, { immediate: true })
+const totalTracksHeight = computed(() =>
+  trackList.value.reduce((sum, tr) => sum + trackHeight(tr.id), 0),
+)
+
+const sidebarResizer = useResizable({ axis: 'x', min: 160, max: 480 })
+const rowResizer     = useResizable({ axis: 'y', min: TRACK_HEIGHT_MIN, max: TRACK_HEIGHT_MAX })
+
+function startSidebarResize(e) {
+  sidebarResizer.start(e, {
+    value: sidebarWidth,
+    // Canvas width changes with the sidebar — keep the waveform viewport fresh.
+    set:   v => { sidebarWidth.value = v; updateViewport() },
+    get:   () => sidebarWidth.value,
+  })
 }
 
-function stopPlayback(broadcast = true) {
-  const wasPlaying = isPlaying.value
-  isPlaying.value = false
-  if (_rafId !== null) { cancelAnimationFrame(_rafId); _rafId = null }
-  _lastTs = null
-  stopAudioPlayback()
-
-  if (broadcast && wasPlaying) sync.sendPlayhead(playheadFrame.value, false, { immediate: true })
+function startRowResize(track, e) {
+  rowResizer.start(e, {
+    get: () => trackHeight(track.id),
+    set: h => { trackHeights.value = { ...trackHeights.value, [track.id]: h } },
+  })
 }
 
-function togglePlayback() {
-  isPlaying.value ? stopPlayback() : startPlayback()
+// ── Track selection + source bar ──────────────────────────────────────────────
+const selectedTrackId = ref(null)
+const selectedTrack   = computed(() =>
+  trackList.value.find(tr => tr.id === selectedTrackId.value) ?? null,
+)
+
+// The source bar shows when the selected track's type is bound to a source set.
+const selectedTrackHasSourceSet = computed(() => {
+  if (!selectedTrack.value) return false
+  const tt = trackTypes.value.find(x => x.id === selectedTrack.value.typeId)
+  return !!tt?.sourceSetId
+})
+const selectedTrackSources = computed(() =>
+  selectedTrack.value ? getTrackSources(selectedTrack.value) : [],
+)
+
+function selectTrack(track) {
+  selectedTrackId.value = selectedTrackId.value === track.id ? null : track.id
 }
 
-function _tick(ts) {
-  if (!_lastTs) _lastTs = ts
-  const elapsed = ts - _lastTs
-  _lastTs = ts
-
-  const fps = parseFloat(timeline.value.frameRate)
-  playheadFrame.value += elapsed * fps / 1000
-
-  if (playheadFrame.value >= timeline.value.endFrame) {
-    playheadFrame.value = timeline.value.endFrame
-    stopPlayback()
-    return
-  }
-
-  // Keep the playhead in view while playing.
-  const canvas = canvasRef.value
-  if (canvas) {
-    const x     = (playheadFrame.value - timeline.value.startFrame) * pxPerFrame.value
-    const viewL = canvas.scrollLeft
-    const viewR = viewL + canvas.clientWidth
-    if (x > viewR - 40 || x < viewL) {
-      canvas.scrollLeft = Math.max(0, x - canvas.clientWidth * 0.2)
-    }
-  }
-
-  // Periodic re-sync so followers correct drift.
-  const now = Date.now()
-  if (now - _lastSyncMs >= PLAYING_SYNC_INTERVAL_MS) {
-    _lastSyncMs = now
-    sync.sendPlayhead(playheadFrame.value, true)
-  }
-
-  _rafId = requestAnimationFrame(_tick)
-}
-
-// ── Remote playhead ───────────────────────────────────────────────────────────
-function applyRemotePlayhead({ frame, isPlaying: remotePlaying }) {
-  if (!timeline.value) return
-  const fps = parseFloat(timeline.value.frameRate)
-
-  if (remotePlaying) {
-    if (!isPlaying.value) {
-      setPlayhead(frame, { broadcast: false })
-      startPlayback(false)
-    } else if (Math.abs(playheadFrame.value - frame) > fps / 2) {
-      // Drifted more than half a second — snap and restart audio at the new position.
-      stopPlayback(false)
-      setPlayhead(frame, { broadcast: false })
-      startPlayback(false)
-    }
-  } else {
-    if (isPlaying.value) stopPlayback(false)
-    setPlayhead(frame, { broadcast: false })
-  }
+/** Create a clip for `source` on the selected track at the playhead. */
+async function addSourceClip(source) {
+  const track = selectedTrack.value
+  if (!track) return
+  const { ok, data } = await $fetch(`${trackUrl(track.id)}/clips`, {
+    method: 'POST',
+    json:   { position: Math.max(0, Math.round(playheadFrame.value)), sourceId: source.id },
+    silent: true,
+  })
+  if (!ok) return
+  upsertClipLocal(track.id, data)
+  sync.sendClipChange({ type: 'upsert', trackId: track.id, clip: data })
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 function onKeydown(e) {
   const tag = e.target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
-  if (e.code === 'Space') { e.preventDefault(); togglePlayback() }
-  if (e.code === 'Home')  { e.preventDefault(); seekStart() }
-  if (e.code === 'End')   { e.preventDefault(); seekEnd() }
+  if (e.code === 'Space')  { e.preventDefault(); togglePlayback() }
+  if (e.code === 'Home')   { e.preventDefault(); seekStart() }
+  if (e.code === 'End')    { e.preventDefault(); seekEnd() }
+  if (e.code === 'Escape') { selectedTrackId.value = null }
   if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
     e.preventDefault()
     const step = (e.shiftKey ? 10 : 1) * (e.code === 'ArrowLeft' ? -1 : 1)
@@ -280,18 +270,9 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
   stopPlayback(false)
   destroyAudioEngine()
+  clearWaveformCache()
   sync.leave()
 })
-
-// ── Scroll sync ───────────────────────────────────────────────────────────────
-const canvasRef       = ref(null)
-const trackHeadersRef = ref(null)
-
-function onCanvasScroll() {
-  if (trackHeadersRef.value && canvasRef.value) {
-    trackHeadersRef.value.scrollTop = canvasRef.value.scrollTop
-  }
-}
 
 // ── Ruler scrubbing ───────────────────────────────────────────────────────────
 function frameFromPointer(e) {
@@ -329,10 +310,7 @@ function onTrackAdded(track) {
 }
 
 async function patchTrack(track, json) {
-  const { ok, data } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}`,
-    { method: 'PATCH', json, silent: true },
-  )
+  const { ok, data } = await $fetch(trackUrl(track.id), { method: 'PATCH', json, silent: true })
   if (!ok) return
   const merged = upsertTrackLocal({ ...data, id: track.id })
   sync.sendTrackChange({ type: 'upsert', track: merged })
@@ -342,12 +320,10 @@ const toggleMute = (track) => patchTrack(track, { isMuted: !track.isMuted })
 const toggleLock = (track) => patchTrack(track, { isLocked: !track.isLocked })
 
 async function deleteTrack(track) {
-  const { ok } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}`,
-    { method: 'DELETE', silent: true },
-  )
+  const { ok } = await $fetch(trackUrl(track.id), { method: 'DELETE', silent: true })
   if (!ok) return
   removeTrackLocal(track.id)
+  if (selectedTrackId.value === track.id) selectedTrackId.value = null
   sync.sendTrackChange({ type: 'remove', trackId: track.id })
 }
 
@@ -385,10 +361,9 @@ function onClipSaved(savedClip) {
 }
 
 async function patchClip(track, clip, json) {
-  const { ok, data } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}/clips/${clip.id}`,
-    { method: 'PATCH', json, silent: true },
-  )
+  const { ok, data } = await $fetch(`${trackUrl(track.id)}/clips/${clip.id}`, {
+    method: 'PATCH', json, silent: true,
+  })
   if (!ok) return
   const merged = upsertClipLocal(track.id, { ...data, id: clip.id })
   if (merged) sync.sendClipChange({ type: 'upsert', trackId: track.id, clip: merged })
@@ -398,10 +373,9 @@ const moveClip = (track, clip, position) => patchClip(track, clip, { position })
 const cropClip = (track, clip, fields)   => patchClip(track, clip, fields)
 
 async function deleteClip(track, clip) {
-  const { ok } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${track.id}/clips/${clip.id}`,
-    { method: 'DELETE', silent: true },
-  )
+  const { ok } = await $fetch(`${trackUrl(track.id)}/clips/${clip.id}`, {
+    method: 'DELETE', silent: true,
+  })
   if (!ok) return
   removeClipLocal(track.id, clip.id)
   sync.sendClipChange({ type: 'remove', trackId: track.id, clipId: clip.id })
@@ -417,10 +391,11 @@ provide('editor-timeline',   timeline)
 provide('editor-pxPerFrame', pxPerFrame)
 provide('editor-playhead',   playheadFrame)
 provide('editor-sources',    sources)
+provide('editor-viewport',   viewport)
 </script>
 
 <template>
-  <div class="flex flex-col h-dvh bg-background overflow-hidden">
+  <div class="relative flex flex-col h-dvh bg-background overflow-hidden">
 
     <!-- Loading skeleton -->
     <template v-if="loading">
@@ -433,11 +408,11 @@ provide('editor-sources',    sources)
       <div class="flex-1 flex">
         <div class="w-56 border-r border-border flex flex-col gap-0">
           <Skeleton class="h-8 rounded-none" />
-          <Skeleton v-for="i in 3" :key="i" class="h-10 rounded-none border-b border-border" />
+          <Skeleton v-for="i in 3" :key="i" class="h-12 rounded-none border-b border-border" />
         </div>
         <div class="flex-1 p-6 flex flex-col gap-2">
           <Skeleton class="h-8 w-full rounded" />
-          <Skeleton v-for="i in 3" :key="i" class="h-10 w-full rounded" />
+          <Skeleton v-for="i in 3" :key="i" class="h-12 w-full rounded" />
         </div>
       </div>
     </template>
@@ -469,7 +444,10 @@ provide('editor-sources',    sources)
       <div class="flex flex-1 overflow-hidden">
 
         <!-- Left panel: track headers -->
-        <div class="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
+        <div
+          class="shrink-0 border-r border-border flex flex-col overflow-hidden"
+          :style="{ width: sidebarWidth + 'px' }"
+        >
           <div class="h-8 shrink-0 border-b border-border bg-muted/40" />
 
           <div ref="trackHeadersRef" class="flex-1 overflow-y-hidden">
@@ -477,6 +455,10 @@ provide('editor-sources',    sources)
               v-for="track in trackList"
               :key="track.id"
               :track="track"
+              :height="trackHeight(track.id)"
+              :selected="track.id === selectedTrackId"
+              @select="selectTrack(track)"
+              @resize-start="startRowResize(track, $event)"
               @toggle-mute="toggleMute(track)"
               @toggle-lock="toggleLock(track)"
               @add-clip="openAddClip(track)"
@@ -496,6 +478,14 @@ provide('editor-sources',    sources)
           </button>
         </div>
 
+        <!-- Sidebar width resize handle -->
+        <ResizeHandle
+          axis="x"
+          class="self-stretch -ml-0.5"
+          :active="sidebarResizer.resizing.value"
+          @pointerdown="startSidebarResize"
+        />
+
         <!-- Right panel: canvas -->
         <div ref="canvasRef" class="flex-1 overflow-auto relative" @scroll="onCanvasScroll" @wheel="onCanvasWheel">
           <div :style="{ width: timelineWidth + 'px', minWidth: '100%', position: 'relative' }">
@@ -507,7 +497,7 @@ provide('editor-sources',    sources)
               @scrub="onScrubStart"
             />
 
-            <div class="relative" :style="{ minHeight: (trackList.length * 40) + 'px' }">
+            <div class="relative" :style="{ minHeight: totalTracksHeight + 'px' }">
               <!-- Playhead line -->
               <div
                 class="absolute top-0 bottom-0 w-px bg-primary/70 pointer-events-none z-10"
@@ -520,6 +510,9 @@ provide('editor-sources',    sources)
                 :track="track"
                 :timeline="timeline"
                 :px-per-frame="pxPerFrame"
+                :height="trackHeight(track.id)"
+                :selected="track.id === selectedTrackId"
+                @select="selectTrack(track)"
                 @edit-clip="openEditClip(track, $event)"
                 @delete-clip="deleteClip(track, $event)"
                 @crop-clip="cropClip(track, $event.clip, $event.fields)"
@@ -535,6 +528,16 @@ provide('editor-sources',    sources)
         </div>
 
       </div>
+
+      <!-- Source island: floats bottom-center while a source-set track is selected -->
+      <SourceBar
+        v-if="selectedTrack && selectedTrackHasSourceSet"
+        :track="selectedTrack"
+        :sources="selectedTrackSources"
+        :tc="framesToTC(playheadFrame, timeline.frameRate)"
+        @add="addSourceClip"
+        @close="selectedTrackId = null"
+      />
     </template>
 
     <AddTrackDialog

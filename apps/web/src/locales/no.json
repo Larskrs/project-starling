@@ -255,6 +255,12 @@
     "zoomOut": "Zoom ut",
     "liveSync": "Direktesynk aktiv — avspilling og endringer følger alle i denne editoren",
     "syncOffline": "Direktesynk frakoblet",
+    "sourceBar": {
+      "hint": "Klikk en kilde for å legge til et klipp ved spillehodet",
+      "addsAt": "Klikk en kilde for å legge til et klipp ved {tc}",
+      "noSources": "Dette kildesettet har ingen kilder ennå",
+      "close": "Fjern valg av spor"
+    },
     "failedToSaveTrack": "Klarte ikke å lagre sporet",
     "failedToSaveClip": "Klarte ikke å lagre klippet",
     "cancel": "Avbryt",

@@ -255,6 +255,12 @@
     "zoomOut": "Zoom out",
     "liveSync": "Live sync active — playback and edits follow everyone in this editor",
     "syncOffline": "Live sync offline",
+    "sourceBar": {
+      "hint": "Click a source to add a clip at the playhead",
+      "addsAt": "Click a source to add a clip at {tc}",
+      "noSources": "This source set has no sources yet",
+      "close": "Deselect track"
+    },
     "failedToSaveTrack": "Failed to save track",
     "failedToSaveClip": "Failed to save clip",
     "cancel": "Cancel",

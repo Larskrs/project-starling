@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject, watch } from 'vue'
+import { ref, shallowRef, computed, inject, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { clipLeft, clipWidth } from '../useEditorUtils.js'
 import { getPeakPyramid, pickLevel } from '../useWaveform.js'
@@ -9,6 +9,7 @@ const props = defineProps({
   track:        { type: Object, required: true },
   timeline:     { type: Object, required: true },
   pxPerFrame:   { type: Number, required: true },
+  height:       { type: Number, default: 48 },   // track row height
   nextPosition: { type: Number, default: null },
 })
 
@@ -141,7 +142,9 @@ const bgStyle = computed(() => ({
 
 // ── Waveform (multi-resolution, viewport-culled) ───────────────────────────────
 const waveCanvas = ref(null)
-const pyramid    = ref(null)
+// shallowRef: the pyramid holds large Float32Arrays and is immutable — no point
+// paying for Vue's deep reactive proxying of it.
+const pyramid    = shallowRef(null)
 
 const isAudioClip = computed(() =>
   !!props.clip.fileId && props.clip.fileType === 'audio' && !isPoint.value && !isEventTrack.value,
@@ -181,7 +184,7 @@ function drawWaveform() {
 
   const dpr = window.devicePixelRatio || 1
   const W   = Math.max(1, win.width)
-  const H   = 38
+  const H   = Math.max(8, props.height - 8)  // clip is inset top-1/bottom-1 in the row
   canvas.width  = Math.round(W * dpr)
   canvas.height = Math.round(H * dpr)
 
@@ -219,14 +222,20 @@ function drawWaveform() {
   ctx.fill()
 }
 
-// Build/fetch the peak pyramid whenever the file changes.
-watch(() => props.clip.fileId, async () => {
-  pyramid.value = null
-  if (!isAudioClip.value) return
-  try {
-    pyramid.value = await getPeakPyramid(props.clip.fileId)
-  } catch {}
-}, { immediate: true })
+// Build/fetch the peak pyramid lazily — only once the clip is on screen (or
+// within the prefetch margin), so opening a timeline doesn't fetch and decode
+// every audio file up front. Off-screen clips stay undecoded until scrolled to.
+watch(
+  [() => props.clip.fileId, isAudioClip, () => visibleWindow.value !== null],
+  ([fileId, audio, visible], prev) => {
+    if (prev && fileId !== prev[0]) pyramid.value = null
+    if (!audio || !visible || pyramid.value) return
+    getPeakPyramid(fileId)
+      .then(p => { if (props.clip.fileId === fileId) pyramid.value = p })
+      .catch(() => {})
+  },
+  { immediate: true },
+)
 
 // Redraw on peaks ready, zoom, clip bounds, crop, or viewport scroll.
 // Explicit deps avoid the reactivity gaps watchEffect can miss when props.clip
@@ -234,7 +243,7 @@ watch(() => props.clip.fileId, async () => {
 watch(
   [waveCanvas, pyramid, visibleWindow,
    () => props.clip.mediaStart, () => props.clip.end,
-   () => props.pxPerFrame,
+   () => props.pxPerFrame, () => props.height,
    () => cropAdj.value.left, () => cropAdj.value.width],
   drawWaveform,
   { flush: 'post' },

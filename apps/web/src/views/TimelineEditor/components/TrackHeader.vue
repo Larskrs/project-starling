@@ -1,20 +1,28 @@
 <script setup>
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
+import { ResizeHandle } from '@starling/ui'
 
 const props = defineProps({
-  track: { type: Object, required: true },
+  track:    { type: Object,  required: true },
+  height:   { type: Number,  default: 48 },
+  selected: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['toggle-mute', 'toggle-lock', 'add-clip', 'delete'])
+const emit = defineEmits(['select', 'toggle-mute', 'toggle-lock', 'add-clip', 'delete', 'resize-start'])
 
 const hovered = ref(false)
 </script>
 
 <template>
   <div
-    class="h-10 flex items-center gap-1.5 px-2 border-b border-border group"
-    :class="track.isMuted ? 'opacity-50' : ''"
+    class="relative flex items-center gap-1.5 px-2 border-b border-border group cursor-pointer transition-colors"
+    :class="[
+      track.isMuted ? 'opacity-50' : '',
+      selected ? 'bg-accent/70 border-l-2 border-l-primary' : 'hover:bg-accent/30',
+    ]"
+    :style="{ height: height + 'px' }"
+    @click="$emit('select')"
     @mouseenter="hovered = true"
     @mouseleave="hovered = false"
   >
@@ -68,5 +76,13 @@ const hovered = ref(false)
         <Icon icon="mdi:trash-can-outline" class="size-3.5" />
       </button>
     </div>
+
+    <!-- Row height resize handle (click.stop so finishing a drag doesn't toggle selection) -->
+    <ResizeHandle
+      axis="y"
+      class="absolute bottom-0 inset-x-0"
+      @pointerdown.stop="$emit('resize-start', $event)"
+      @click.stop
+    />
   </div>
 </template>
