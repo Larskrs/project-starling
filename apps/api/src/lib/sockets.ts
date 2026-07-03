@@ -96,13 +96,23 @@ function onlineUsers(): OnlineUser[] {
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 export function setupSockets(httpServer: HttpServer): SocketIOServer {
+
+  console.log('[server] Setting up Socket.IO server');
+  
   const io = new SocketIOServer(httpServer, {
     path: '/socket',
     // Same origin policy as the HTTP server — a disallowed site can neither
     // read the handshake nor establish a credentialed connection.
-    allowRequest: (req, callback) => {
-      callback(null, isOriginAllowed(req.headers.origin, req.headers.host));
-    },
+    
+    // allowRequest: (req, callback) => {
+    //   callback(null, isOriginAllowed(req.headers.origin, req.headers.host));
+    //   console.log({
+    //     url: req.url,
+    //     host: req.headers.host,
+    //     origin: req.headers.origin,
+    //     upgrade: req.headers.upgrade,
+    //   });
+    // },
     cors: {
       origin: (origin, callback) => {
         if (isOriginAllowed(origin ?? undefined, undefined)) callback(null, origin ?? true);
