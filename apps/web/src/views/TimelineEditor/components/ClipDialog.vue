@@ -9,6 +9,7 @@ import DialogHeader  from '@starling/ui/DialogHeader'
 import DialogTitle   from '@starling/ui/DialogTitle'
 import DialogFooter  from '@starling/ui/DialogFooter'
 import { Input, Label, Button, Skeleton } from '@starling/ui'
+import HuePicker from '../../Production/components/HuePicker.vue'
 import { useApi } from '../../../composables/useApi.js'
 
 const props = defineProps({
@@ -32,9 +33,15 @@ const mediaStart = ref(0)
 const mediaEnd   = ref(100)
 const sourceId   = ref(null)
 const fileId     = ref(null)
-const color      = ref('')
+const hue        = ref(null)   // null = inherit the track type's hue
 const loading    = ref(false)
 const error      = ref('')
+
+// HuePicker needs a number; null shows the neutral default until the user drags.
+const hueProxy = computed({
+  get: () => hue.value ?? 250,
+  set: (v) => { hue.value = v },
+})
 
 // Audio file list (loaded when clip-mode dialog opens)
 const audioFiles    = ref([])
@@ -63,7 +70,7 @@ watch(() => props.open, async (open) => {
     mediaEnd.value   = props.clip.end ?? 100
     sourceId.value   = props.clip.sourceId ?? null
     fileId.value     = props.clip.fileId ?? null
-    color.value      = props.clip.color ?? ''
+    hue.value        = props.clip.hue ?? null
   } else {
     label.value      = ''
     position.value   = props.defaultPosition
@@ -71,7 +78,7 @@ watch(() => props.open, async (open) => {
     mediaEnd.value   = 100
     sourceId.value   = null
     fileId.value     = null
-    color.value      = ''
+    hue.value        = null
   }
 
   if (!isEventMode.value && audioFiles.value.length === 0) {
@@ -131,7 +138,7 @@ async function submit() {
   const body = {
     label:    label.value,
     position: Number(position.value),
-    color:    color.value || null,
+    hue:      hue.value,
     ...modeFields,
   }
 
@@ -270,22 +277,18 @@ async function submit() {
 
         </template>
 
-        <!-- Color -->
+        <!-- Hue override (null = inherit the track type's hue) -->
         <div class="flex flex-col gap-1.5">
-          <Label>{{ $t('editor.clipColor') }}</Label>
-          <div class="flex items-center gap-2">
-            <input
-              v-model="color"
-              type="color"
-              class="h-9 w-14 rounded-md border border-input bg-background cursor-pointer p-1"
-            />
+          <div class="flex items-center justify-between">
+            <Label>{{ $t('editor.clipColor') }}</Label>
             <button
-              v-if="color"
+              v-if="hue !== null"
               type="button"
               class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              @click="color = ''"
+              @click="hue = null"
             >{{ $t('editor.resetColor') }}</button>
           </div>
+          <HuePicker v-model="hueProxy" :class="hue === null ? 'opacity-50' : ''" />
         </div>
 
         <p v-if="error" class="text-sm text-destructive">{{ error }}</p>

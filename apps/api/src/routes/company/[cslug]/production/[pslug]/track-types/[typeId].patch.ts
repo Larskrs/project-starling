@@ -3,14 +3,16 @@ import { eq, and } from 'drizzle-orm';
 import { db, trackTypes } from '@starling/db';
 import { defineEventHandler, readValidatedBody, createError, pickDefined } from '../../../../../../lib/handler.js';
 import { requireProductionRoute } from '../../../../../../lib/production.js';
+import { trackBehaviorPatchFields } from '../../../../../../lib/trackTypeSettings.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
   name:        z.string().min(1).max(64).optional(),
-  color:       z.string().max(32).nullable().optional(),
+  hue:         z.number().int().min(0).max(360).optional(),
   trackMode:   z.enum(['event', 'clip']).optional(),
   sourceSetId: z.string().uuid().nullable().optional(),
   sortOrder:   z.number().int().min(0).optional(),
+  ...trackBehaviorPatchFields,
 });
 
 export default defineEventHandler(async (event) => {

@@ -227,8 +227,12 @@
     "ltcOffset": "LTC-forskyvning (bilder)",
     "frames": "b",
     "endFrameMustBeAfterStart": "Sluttbildet må være etter startbildet",
-    "addDialog": { "title": "Legg til tidslinje" },
-    "editDialog": { "title": "Rediger tidslinje" },
+    "addDialog": {
+      "title": "Legg til tidslinje"
+    },
+    "editDialog": {
+      "title": "Rediger tidslinje"
+    },
     "save": "Lagre",
     "create": "Legg til",
     "cancel": "Avbryt",
@@ -261,6 +265,12 @@
       "noSources": "Dette kildesettet har ingen kilder ennå",
       "close": "Fjern valg av spor"
     },
+    "bpmClip": {
+      "addTitle": "Legg til BPM-endring",
+      "editTitle": "Rediger BPM-endring",
+      "bpm": "BPM",
+      "beatsPerBar": "Slag per takt"
+    },
     "failedToSaveTrack": "Klarte ikke å lagre sporet",
     "failedToSaveClip": "Klarte ikke å lagre klippet",
     "cancel": "Avbryt",
@@ -283,9 +293,15 @@
     "clipColor": "Klippfarge",
     "resetColor": "Tilbakestill",
     "endMustBeAfterStart": "Slutt må være etter mediestart",
-    "addTrackDialog": { "title": "Legg til spor" },
-    "addClipDialog":  { "title": "Legg til klipp" },
-    "editClipDialog": { "title": "Rediger klipp" }
+    "addTrackDialog": {
+      "title": "Legg til spor"
+    },
+    "addClipDialog": {
+      "title": "Legg til klipp"
+    },
+    "editClipDialog": {
+      "title": "Rediger klipp"
+    }
   },
   "trackTypes": {
     "title": "Sportyper",
@@ -302,15 +318,36 @@
     "modeEvent": "Hendelse",
     "sourceSet": "Kildesett",
     "noSourceSet": "Ingen",
-    "addDialog": { "title": "Legg til sportype" },
-    "editDialog": { "title": "Rediger sportype" },
+    "addDialog": {
+      "title": "Legg til sportype"
+    },
+    "editDialog": {
+      "title": "Rediger sportype"
+    },
     "save": "Lagre",
     "create": "Legg til",
     "cancel": "Avbryt",
     "edit": "Rediger sportype",
     "delete": "Slett",
     "confirmDeleteTitle": "Slett sportype?",
-    "confirmDelete": "Slett \"{name}\"? Dette kan ikke angres."
+    "confirmDelete": "Slett \"{name}\"? Dette kan ikke angres.",
+    "settings": {
+      "title": "Editoroppførsel",
+      "trackDisplay": "Sporvisning",
+      "displayNormal": "Normal",
+      "displayRuler": "Linjalstripe",
+      "nameDisplay": "Klipptekstvisning",
+      "nameNormal": "Normal",
+      "nameStretch": "Strekk",
+      "nameEmphasize": "Fremhev",
+      "metronome": "Metronom — klipp setter BPM",
+      "tts": "Les klipptekst høyt under avspilling",
+      "clipDisplay": "Klippvisning",
+      "clipNormal": "Normal",
+      "clipZebra": "Sebra",
+      "clipBorder": "Ramme",
+      "clipTransparent": "Gjennomsiktig"
+    }
   },
   "sourceSets": {
     "title": "Kildesett",
@@ -321,8 +358,12 @@
     "failedToSave": "Klarte ikke å lagre kildesettet",
     "name": "Navn",
     "namePlaceholder": "f.eks. Kameraer",
-    "addDialog": { "title": "Legg til kildesett" },
-    "renameDialog": { "title": "Gi kildesett nytt navn" },
+    "addDialog": {
+      "title": "Legg til kildesett"
+    },
+    "renameDialog": {
+      "title": "Gi kildesett nytt navn"
+    },
     "save": "Lagre",
     "create": "Legg til",
     "cancel": "Avbryt",
@@ -345,8 +386,12 @@
     "shortName": "Kortnavn",
     "shortNamePlaceholder": "f.eks. K1",
     "hue": "Farge",
-    "addDialog": { "title": "Legg til kilde" },
-    "editDialog": { "title": "Rediger kilde" },
+    "addDialog": {
+      "title": "Legg til kilde"
+    },
+    "editDialog": {
+      "title": "Rediger kilde"
+    },
     "save": "Lagre",
     "create": "Legg til",
     "cancel": "Avbryt",

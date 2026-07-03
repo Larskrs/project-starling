@@ -7,6 +7,9 @@ export const trackModeEnum = pgEnum("track_mode", [
   "event", // Point Events — cameras, people; position only
   "clip",  // MediaClip — position + mediaStart + end + optional fileId
 ]);
+export const trackDisplayEnum = pgEnum("track_display", ["normal", "ruler"]);
+export const nameDisplayEnum  = pgEnum("name_display", ["normal", "stretch", "emphasize"]);
+export const clipDisplayEnum  = pgEnum("clip_display", ["normal", "zebra", "border", "transparent"]);
 export const frameRateEnum = pgEnum("frame_rate", [
   "23.976", "24", "25", "29.97", "29.97df", "30", "50", "59.94", "60",
 ]);
@@ -120,11 +123,17 @@ export const trackTypes = pgTable(
       .notNull()
       .references(() => productions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    color: text("color"),
+    hue: integer("hue").notNull().default(250), // oklch hue 0-360; theme decides lightness/chroma
     trackMode: trackModeEnum("track_mode").notNull().default("clip"),
     sourceSetId: uuid("source_set_id")
       .references(() => sourceSet.id, { onDelete: "set null" }),
     sortOrder: integer("sort_order").notNull().default(0),
+    // Editor behaviors — configured per type on the track-types page.
+    trackDisplay: trackDisplayEnum("track_display").notNull().default("normal"), // 'ruler' = slim pinned strip
+    nameDisplay:  nameDisplayEnum("name_display").notNull().default("normal"),   // clip label rendering
+    clipDisplay:  clipDisplayEnum("clip_display").notNull().default("normal"),   // clip body rendering
+    metronome:    boolean("metronome").notNull().default(false),                 // clips carry data.bpm
+    tts:          boolean("tts").notNull().default(false),                       // read clip labels aloud
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
@@ -221,7 +230,7 @@ export const clips = pgTable(
     // Type-specific data
     data: jsonb("data"),
  
-    color: text("color"),
+    hue: integer("hue"), // oklch hue 0-360; null = inherit the track type's hue
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

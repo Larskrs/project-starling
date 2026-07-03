@@ -12,7 +12,7 @@ const bodySchema = z.object({
   mediaStart: z.number().int().min(0).nullable().optional(),
   end:        z.number().int().min(0).nullable().optional(),
   sourceId:   z.string().uuid().nullable().optional(),
-  color:      z.string().max(32).nullable().optional(),
+  hue:        z.number().int().min(0).max(360).nullable().optional(),
   data:       z.any().optional(),
 }).refine(
   d => !(d.mediaStart !== null && d.mediaStart !== undefined && d.end !== null && d.end !== undefined) || d.end > d.mediaStart,
@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
     mediaStart: body.mediaStart ?? null,
     end:        body.end ?? null,
     sourceId:   body.sourceId ?? null,
-    color:      body.color ?? null,
+    hue:        body.hue ?? null,
     data:       body.data ?? null,
   }).returning();
 

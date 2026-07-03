@@ -2,11 +2,14 @@
 import EditorClip from './EditorClip.vue'
 
 const props = defineProps({
-  track:      { type: Object,  required: true },
-  timeline:   { type: Object,  required: true },
-  pxPerFrame: { type: Number,  required: true },
-  height:     { type: Number,  default: 48 },
-  selected:   { type: Boolean, default: false },
+  track:       { type: Object,  required: true },
+  timeline:    { type: Object,  required: true },
+  pxPerFrame:  { type: Number,  required: true },
+  height:      { type: Number,  default: 48 },
+  selected:    { type: Boolean, default: false },
+  muted:       { type: Boolean, default: false },
+  nameDisplay: { type: String,  default: 'normal' },
+  clipDisplay: { type: String,  default: 'normal' },
 })
 
 const emit = defineEmits(['select', 'edit-clip', 'delete-clip', 'crop-clip', 'move-clip'])
@@ -15,7 +18,7 @@ const emit = defineEmits(['select', 'edit-clip', 'delete-clip', 'crop-clip', 'mo
 <template>
   <div
     class="relative border-b border-border"
-    :class="props.track.isMuted ? 'opacity-50' : ''"
+    :class="muted ? 'opacity-50' : ''"
     :style="{ height: height + 'px' }"
   >
     <div
@@ -32,6 +35,8 @@ const emit = defineEmits(['select', 'edit-clip', 'delete-clip', 'crop-clip', 'mo
       :timeline="timeline"
       :px-per-frame="pxPerFrame"
       :height="height"
+      :name-display="nameDisplay"
+      :clip-display="clipDisplay"
       :next-position="track.clips[i + 1]?.position ?? timeline.endFrame"
       @edit="$emit('edit-clip', clip)"
       @delete="$emit('delete-clip', clip)"

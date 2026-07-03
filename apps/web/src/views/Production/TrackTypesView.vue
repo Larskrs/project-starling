@@ -71,10 +71,17 @@ function setName(id) {
         <!-- Color dot -->
         <span
           class="size-2.5 rounded-full shrink-0"
-          :style="{ backgroundColor: tt.color ?? 'oklch(65% 0.18 250)' }"
+          :style="{ backgroundColor: `oklch(65% 0.18 ${tt.hue ?? 250})` }"
         />
         <span class="flex-1 text-sm font-medium text-foreground truncate">{{ tt.name }}</span>
         <Badge>{{ tt.trackMode === 'event' ? $t('trackTypes.modeEvent') : $t('trackTypes.modeClip') }}</Badge>
+        <Badge v-if="tt.trackDisplay === 'ruler'">{{ $t('trackTypes.settings.displayRuler') }}</Badge>
+        <Badge v-if="tt.nameDisplay && tt.nameDisplay !== 'normal'">
+          {{ tt.nameDisplay === 'stretch' ? $t('trackTypes.settings.nameStretch') : $t('trackTypes.settings.nameEmphasize') }}
+        </Badge>
+        <Badge v-if="tt.clipDisplay && tt.clipDisplay !== 'normal'">{{ $t(`trackTypes.settings.clip${tt.clipDisplay.charAt(0).toUpperCase() + tt.clipDisplay.slice(1)}`) }}</Badge>
+        <Badge v-if="tt.metronome">BPM</Badge>
+        <Badge v-if="tt.tts">TTS</Badge>
         <Badge v-if="tt.sourceSetId" variant="primary" class="max-w-28 truncate">{{ setName(tt.sourceSetId) }}</Badge>
         <IconButton icon="mdi:pencil-outline" :title="$t('trackTypes.edit')" @click="editTarget = tt" />
         <IconButton icon="mdi:trash-can-outline" destructive :title="$t('trackTypes.delete')" @click="deleteTarget = tt" />

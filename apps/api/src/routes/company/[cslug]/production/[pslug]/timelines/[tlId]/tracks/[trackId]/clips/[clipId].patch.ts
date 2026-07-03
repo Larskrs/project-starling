@@ -12,7 +12,7 @@ const bodySchema = z.object({
   mediaStart: z.number().int().min(0).nullable().optional(),
   end:        z.number().int().min(0).nullable().optional(),
   sourceId:   z.string().uuid().nullable().optional(),
-  color:      z.string().max(32).nullable().optional(),
+  hue:        z.number().int().min(0).max(360).nullable().optional(),
   data:       z.any().optional(),
 });
 
@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
   if (body.mediaStart !== undefined) update.mediaStart = body.mediaStart;
   if (body.end        !== undefined) update.end        = body.end;
   if (body.sourceId   !== undefined) update.sourceId   = body.sourceId;
-  if (body.color      !== undefined) update.color      = body.color;
+  if (body.hue        !== undefined) update.hue        = body.hue;
   if (body.data       !== undefined) update.data       = body.data;
 
   if (Object.keys(update).length === 0) throw createError({ statusCode: 422, message: 'Nothing to update' });

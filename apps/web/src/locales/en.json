@@ -227,8 +227,12 @@
     "ltcOffset": "LTC offset (frames)",
     "frames": "fr",
     "endFrameMustBeAfterStart": "End frame must be after start frame",
-    "addDialog": { "title": "Add Timeline" },
-    "editDialog": { "title": "Edit Timeline" },
+    "addDialog": {
+      "title": "Add Timeline"
+    },
+    "editDialog": {
+      "title": "Edit Timeline"
+    },
     "save": "Save",
     "create": "Add",
     "cancel": "Cancel",
@@ -261,6 +265,12 @@
       "noSources": "This source set has no sources yet",
       "close": "Deselect track"
     },
+    "bpmClip": {
+      "addTitle": "Add BPM change",
+      "editTitle": "Edit BPM change",
+      "bpm": "BPM",
+      "beatsPerBar": "Beats per bar"
+    },
     "failedToSaveTrack": "Failed to save track",
     "failedToSaveClip": "Failed to save clip",
     "cancel": "Cancel",
@@ -283,9 +293,15 @@
     "clipColor": "Clip colour",
     "resetColor": "Reset",
     "endMustBeAfterStart": "End must be after media start",
-    "addTrackDialog": { "title": "Add Track" },
-    "addClipDialog":  { "title": "Add Clip" },
-    "editClipDialog": { "title": "Edit Clip" }
+    "addTrackDialog": {
+      "title": "Add Track"
+    },
+    "addClipDialog": {
+      "title": "Add Clip"
+    },
+    "editClipDialog": {
+      "title": "Edit Clip"
+    }
   },
   "trackTypes": {
     "title": "Track Types",
@@ -302,15 +318,36 @@
     "modeEvent": "Event",
     "sourceSet": "Source set",
     "noSourceSet": "None",
-    "addDialog": { "title": "Add Track Type" },
-    "editDialog": { "title": "Edit Track Type" },
+    "addDialog": {
+      "title": "Add Track Type"
+    },
+    "editDialog": {
+      "title": "Edit Track Type"
+    },
     "save": "Save",
     "create": "Add",
     "cancel": "Cancel",
     "edit": "Edit track type",
     "delete": "Delete",
     "confirmDeleteTitle": "Delete track type?",
-    "confirmDelete": "Delete \"{name}\"? This cannot be undone."
+    "confirmDelete": "Delete \"{name}\"? This cannot be undone.",
+    "settings": {
+      "title": "Editor behaviors",
+      "trackDisplay": "Track display",
+      "displayNormal": "Normal",
+      "displayRuler": "Ruler strip",
+      "nameDisplay": "Clip text display",
+      "nameNormal": "Normal",
+      "nameStretch": "Stretch",
+      "nameEmphasize": "Emphasize",
+      "metronome": "Metronome — clips set the BPM",
+      "tts": "Read clip text aloud during playback",
+      "clipDisplay": "Clip display",
+      "clipNormal": "Normal",
+      "clipZebra": "Zebra",
+      "clipBorder": "Border",
+      "clipTransparent": "Transparent"
+    }
   },
   "sourceSets": {
     "title": "Source Sets",
@@ -321,8 +358,12 @@
     "failedToSave": "Failed to save source set",
     "name": "Name",
     "namePlaceholder": "e.g. Cameras",
-    "addDialog": { "title": "Add Source Set" },
-    "renameDialog": { "title": "Rename Source Set" },
+    "addDialog": {
+      "title": "Add Source Set"
+    },
+    "renameDialog": {
+      "title": "Rename Source Set"
+    },
     "save": "Save",
     "create": "Add",
     "cancel": "Cancel",
@@ -345,8 +386,12 @@
     "shortName": "Code",
     "shortNamePlaceholder": "e.g. C1",
     "hue": "Colour",
-    "addDialog": { "title": "Add Source" },
-    "editDialog": { "title": "Edit Source" },
+    "addDialog": {
+      "title": "Add Source"
+    },
+    "editDialog": {
+      "title": "Edit Source"
+    },
     "save": "Save",
     "create": "Add",
     "cancel": "Cancel",

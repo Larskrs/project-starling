@@ -10,6 +10,8 @@ const props = defineProps({
   timeline:     { type: Object, required: true },
   pxPerFrame:   { type: Number, required: true },
   height:       { type: Number, default: 48 },   // track row height
+  nameDisplay:  { type: String, default: 'normal' }, // 'normal' | 'stretch' | 'emphasize' (track type setting)
+  clipDisplay:  { type: String, default: 'normal' }, // 'normal' | 'zebra' | 'border' | 'transparent'
   nextPosition: { type: Number, default: null },
 })
 
@@ -40,10 +42,25 @@ const source = computed(() =>
   props.clip.sourceId ? allSources.value.find(s => s.id === props.clip.sourceId) : null,
 )
 
-const color = computed(() => {
-  if (source.value?.hue != null) return `oklch(62% 0.17 ${source.value.hue})`
-  return props.clip.color ?? props.track.typeColor ?? 'oklch(65% 0.18 250)'
-})
+// Hue precedence: source → clip override → track type → default. Lightness and
+// chroma come from theme-aware CSS (see the style block), so the same hue reads
+// correctly in light and dark mode and per clip-display method.
+const hue = computed(() =>
+  source.value?.hue ?? props.clip.hue ?? props.track.typeHue ?? 250,
+)
+
+// Faint bodies (border/transparent) sit on the lane background — their text and
+// waveform must follow the theme's foreground rather than assume a dark fill.
+const faintBody = computed(() => props.clipDisplay === 'border' || props.clipDisplay === 'transparent')
+
+// Label text + stretch-mode SVG geometry: viewBox sized to the text's natural
+// proportions, preserveAspectRatio="none" then distorts it to fill the clip.
+const labelText = computed(() =>
+  isEventTrack.value && source.value ? source.value.shortName : (props.clip.label || props.track.name),
+)
+const stretchViewBox = computed(() =>
+  `0 0 ${Math.max(24, labelText.value.length * 11)} 40`,
+)
 
 // ── Drag to move ──────────────────────────────────────────────────────────────
 const moveAdj  = ref(0)   // pixel offset applied during drag
@@ -132,8 +149,14 @@ function onCropEnd(e) {
 const displayedLeft  = computed(() => left.value + cropAdj.value.left + moveAdj.value)
 const displayedWidth = computed(() => Math.max(2, baseWidth.value + cropAdj.value.width))
 
+// Body rendering is class-based (tl-clip-*) off a --clip-hue variable, so the
+// theme (`.dark`) picks appropriate lightness/chroma per display method.
+const clipBodyClass = computed(() =>
+  `tl-clip-${['normal', 'zebra', 'border', 'transparent'].includes(props.clipDisplay) ? props.clipDisplay : 'normal'}`,
+)
+
 const bgStyle = computed(() => ({
-  backgroundColor: color.value,
+  '--clip-hue': hue.value,
   left:   displayedLeft.value + 'px',
   width:  displayedWidth.value + 'px',
   cursor: dragging.value ? 'grabbing' : 'grab',
@@ -205,7 +228,9 @@ function drawWaveform() {
   }
 
   // Filled trace: top edge (max) left→right, bottom edge (min) right→left.
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'
+  // Solid bodies get a white trace; faint bodies use the hue so the waveform
+  // stays visible against the lane background in either theme.
+  ctx.fillStyle = faintBody.value ? `oklch(55% 0.16 ${hue.value} / 0.6)` : 'rgba(255,255,255,0.5)'
   ctx.beginPath()
   ctx.moveTo(0, mid)
   for (let px = 0; px < W; px++) {
@@ -241,7 +266,7 @@ watch(
 // Explicit deps avoid the reactivity gaps watchEffect can miss when props.clip
 // is replaced with a fresh object after a PATCH.
 watch(
-  [waveCanvas, pyramid, visibleWindow,
+  [waveCanvas, pyramid, visibleWindow, hue, faintBody,
    () => props.clip.mediaStart, () => props.clip.end,
    () => props.pxPerFrame, () => props.height,
    () => cropAdj.value.left, () => cropAdj.value.width],
@@ -254,7 +279,7 @@ watch(
   <!-- Narrow point marker: source-backed clips on clip-mode tracks -->
   <div
     v-if="isPoint"
-    class="absolute top-1 bottom-1 rounded-sm flex items-start justify-center select-none"
+    class="absolute top-1 bottom-1 rounded-sm flex items-start justify-center select-none tl-clip-normal"
     :style="bgStyle"
     @mousedown="startMove"
     @click.stop="onClipClick"
@@ -265,7 +290,7 @@ watch(
       v-if="hovered && !dragging"
       class="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-popover border border-border rounded shadow-sm px-1.5 py-0.5 z-20 whitespace-nowrap"
     >
-      <span v-if="source" class="text-[10px] font-bold" :style="{ color }">{{ source.shortName }}</span>
+      <span v-if="source" class="text-[10px] font-bold" :style="{ color: `oklch(62% 0.17 ${source.hue})` }">{{ source.shortName }}</span>
       <span v-if="clip.label" class="text-[10px] text-muted-foreground">{{ clip.label }}</span>
       <button class="size-4 flex items-center justify-center text-muted-foreground hover:text-foreground ml-0.5" @mousedown.stop @click.stop="$emit('edit')">
         <Icon icon="mdi:pencil-outline" class="size-3" />
@@ -280,6 +305,7 @@ watch(
   <div
     v-else
     class="absolute top-1 bottom-1 rounded flex items-center overflow-hidden select-none"
+    :class="clipBodyClass"
     :style="bgStyle"
     @mousedown="startMove"
     @click.stop="onClipClick"
@@ -310,10 +336,37 @@ watch(
       :style="{ left: visibleWindow.offset + 'px', width: visibleWindow.width + 'px', height: '100%' }"
     />
 
-    <!-- Label -->
-    <span class="relative z-10 text-[10px] font-semibold text-white/90 truncate leading-none select-none px-2 flex-1">
-      {{ isEventTrack && source ? source.shortName : (clip.label || track.name) }}
+    <!-- Label — stretch: SVG text distorted to fill the clip; emphasize: bold/centered; normal.
+         Faint clip bodies use the theme foreground; solid bodies use white. -->
+    <svg
+      v-if="nameDisplay === 'stretch'"
+      class="absolute inset-0 w-full h-full pointer-events-none z-10 px-1"
+      :class="faintBody ? 'text-foreground/90' : ''"
+      :viewBox="stretchViewBox"
+      preserveAspectRatio="none"
+    >
+      <text
+        x="50%" y="55%"
+        text-anchor="middle" dominant-baseline="middle"
+        font-size="26" font-weight="700"
+        :fill="faintBody ? 'currentColor' : 'rgba(255,255,255,0.92)'"
+      >{{ labelText }}</text>
+    </svg>
+    <span
+      v-else-if="nameDisplay === 'emphasize'"
+      class="relative z-10 text-sm font-bold tracking-wide truncate leading-none select-none px-2 flex-1 text-center"
+      :class="faintBody ? 'text-foreground' : 'text-white'"
+    >
+      {{ labelText }}
     </span>
+    <span
+      v-else
+      class="relative z-10 text-[10px] font-semibold truncate leading-none select-none px-2 flex-1"
+      :class="faintBody ? 'text-foreground/90' : 'text-white/90'"
+    >
+      {{ labelText }}
+    </span>
+    <span v-if="nameDisplay === 'stretch'" class="flex-1" />
 
     <!-- Hover actions (hidden while dragging) -->
     <div
@@ -338,3 +391,27 @@ watch(
     />
   </div>
 </template>
+
+<!-- Unscoped: the .dark ancestor selector must reach the html element.
+     Lightness/chroma per theme; the clip supplies only --clip-hue. -->
+<style>
+.tl-clip-normal        { background: oklch(58% 0.14 var(--clip-hue)); }
+.dark .tl-clip-normal  { background: oklch(50% 0.12 var(--clip-hue)); }
+
+.tl-clip-zebra {
+  background: repeating-linear-gradient(45deg,
+    oklch(58% 0.14 var(--clip-hue)) 0 10px,
+    oklch(50% 0.12 var(--clip-hue)) 10px 20px);
+}
+.dark .tl-clip-zebra {
+  background: repeating-linear-gradient(45deg,
+    oklch(50% 0.12 var(--clip-hue)) 0 10px,
+    oklch(42% 0.10 var(--clip-hue)) 10px 20px);
+}
+
+.tl-clip-border        { background: oklch(58% 0.14 var(--clip-hue) / 0.08); border: 2px solid oklch(55% 0.16 var(--clip-hue)); }
+.dark .tl-clip-border  { background: oklch(70% 0.13 var(--clip-hue) / 0.10); border-color: oklch(70% 0.14 var(--clip-hue)); }
+
+.tl-clip-transparent       { background: oklch(58% 0.14 var(--clip-hue) / 0.18); }
+.dark .tl-clip-transparent { background: oklch(70% 0.13 var(--clip-hue) / 0.20); }
+</style>

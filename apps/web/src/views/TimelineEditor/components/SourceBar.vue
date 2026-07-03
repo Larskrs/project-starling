@@ -19,7 +19,7 @@ defineEmits(['add', 'close'])
     <template #header>
       <span
         class="size-2.5 rounded-full shrink-0"
-        :style="{ backgroundColor: track.typeColor ?? 'oklch(65% 0.18 250)' }"
+        :style="{ backgroundColor: `oklch(65% 0.18 ${track.typeHue ?? 250})` }"
       />
       <div class="min-w-0">
         <p class="text-sm font-semibold text-foreground truncate leading-tight">{{ track.name }}</p>

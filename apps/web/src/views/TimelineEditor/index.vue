@@ -12,6 +12,8 @@ import { useTimelineSync } from './useTimelineSync.js'
 import { usePlayback } from './usePlayback.js'
 import { destroyAudioEngine } from './useAudioEngine.js'
 import { clearWaveformCache } from './useWaveform.js'
+import { resolveTrackSettings, RULER_TRACK_HEIGHT, bpmAtFrame } from './behaviors/trackSettings.js'
+import RulerLane       from './behaviors/RulerLane.vue'
 import EditorToolbar   from './components/EditorToolbar.vue'
 import Ruler           from './components/Ruler.vue'
 import TrackHeader     from './components/TrackHeader.vue'
@@ -19,6 +21,7 @@ import TrackLane       from './components/TrackLane.vue'
 import SourceBar       from './components/SourceBar.vue'
 import AddTrackDialog  from './components/AddTrackDialog.vue'
 import ClipDialog      from './components/ClipDialog.vue'
+import BpmClipDialog   from './components/BpmClipDialog.vue'
 
 const route      = useRoute()
 const router     = useRouter()
@@ -173,9 +176,56 @@ function onCanvasScroll() {
 onMounted(() => window.addEventListener('resize', updateViewport))
 onUnmounted(() => window.removeEventListener('resize', updateViewport))
 
+// ── Track behavior settings (from track types) ────────────────────────────────
+const settingsFor = (track) => resolveTrackSettings(track, trackTypes.value)
+
+// Ruler-display tracks (BPM strips etc.) pin to the top of the track stack.
+const orderedTracks = computed(() => {
+  const rulers = trackList.value.filter(tr => settingsFor(tr).trackDisplay === 'ruler')
+  const rest   = trackList.value.filter(tr => settingsFor(tr).trackDisplay !== 'ruler')
+  return [...rulers, ...rest]
+})
+
+// Header badge: live BPM for metronome tracks; the active clip's label otherwise.
+function headerBadge(track) {
+  if (settingsFor(track).metronome) {
+    const bpm = bpmAtFrame(track.clips, playheadFrame.value)
+    return bpm ? `♩ ${bpm}` : '♩ —'
+  }
+  return activeClipLabel(track)
+}
+
+// The clip under the playhead: last clip at/before it, still running if it has
+// a length (clip mode); event-mode clips stay active until the next clip.
+function activeClipLabel(track) {
+  const frame = playheadFrame.value
+  let active = null
+  for (const clip of track.clips) {
+    if (clip.position > frame) break
+    active = clip
+  }
+  if (!active) return ''
+  if (active.end != null) {
+    const len = active.end - (active.mediaStart ?? 0)
+    if (frame >= active.position + len) return ''
+  }
+  return active.label || ''
+}
+
+// ── Client-local mute (cookie — never saved to the server) ────────────────────
+const mutedTracks  = useCookie('editor-muted-tracks', {})   // trackId → true
+const isTrackMuted = (track) => !!mutedTracks.value[track.id]
+
+function toggleMute(track) {
+  const next = { ...mutedTracks.value }
+  if (next[track.id]) delete next[track.id]
+  else next[track.id] = true
+  mutedTracks.value = next
+}
+
 // ── Playback ──────────────────────────────────────────────────────────────────
 const playback = usePlayback({
-  timeline, trackList, pxPerFrame, canvasRef,
+  timeline, trackList, trackTypes, mutedTracks, pxPerFrame, canvasRef,
   sendPlayhead: (...args) => sync.sendPlayhead(...args),
 })
 const {
@@ -191,11 +241,13 @@ const TRACK_HEIGHT_MAX     = 128
 const sidebarWidth = useCookie('editor-sidebar-width', 224)
 const trackHeights = useCookie('editor-track-heights', {})   // trackId → px
 
-const trackHeight = (trackId) =>
-  clamp(trackHeights.value[trackId] ?? TRACK_HEIGHT_DEFAULT, TRACK_HEIGHT_MIN, TRACK_HEIGHT_MAX)
+const trackHeight = (track) =>
+  settingsFor(track).trackDisplay === 'ruler'
+    ? RULER_TRACK_HEIGHT
+    : clamp(trackHeights.value[track.id] ?? TRACK_HEIGHT_DEFAULT, TRACK_HEIGHT_MIN, TRACK_HEIGHT_MAX)
 
 const totalTracksHeight = computed(() =>
-  trackList.value.reduce((sum, tr) => sum + trackHeight(tr.id), 0),
+  trackList.value.reduce((sum, tr) => sum + trackHeight(tr), 0),
 )
 
 const sidebarResizer = useResizable({ axis: 'x', min: 160, max: 480 })
@@ -212,7 +264,7 @@ function startSidebarResize(e) {
 
 function startRowResize(track, e) {
   rowResizer.start(e, {
-    get: () => trackHeight(track.id),
+    get: () => trackHeight(track),
     set: h => { trackHeights.value = { ...trackHeights.value, [track.id]: h } },
   })
 }
@@ -316,7 +368,6 @@ async function patchTrack(track, json) {
   sync.sendTrackChange({ type: 'upsert', track: merged })
 }
 
-const toggleMute = (track) => patchTrack(track, { isMuted: !track.isMuted })
 const toggleLock = (track) => patchTrack(track, { isLocked: !track.isLocked })
 
 async function deleteTrack(track) {
@@ -329,8 +380,13 @@ async function deleteTrack(track) {
 
 // ── Clip mutations ────────────────────────────────────────────────────────────
 const clipDialog = ref({ open: false, track: null, clip: null, defaultPosition: 0, trackSources: [] })
+const bpmDialog  = ref({ open: false, track: null, clip: null, defaultPosition: 0 })
 
 function openAddClip(track) {
+  if (settingsFor(track).metronome) {
+    bpmDialog.value = { open: true, track, clip: null, defaultPosition: Math.round(playheadFrame.value) }
+    return
+  }
   clipDialog.value = {
     open:            true,
     track,
@@ -340,6 +396,10 @@ function openAddClip(track) {
   }
 }
 function openEditClip(track, clip) {
+  if (settingsFor(track).metronome) {
+    bpmDialog.value = { open: true, track, clip, defaultPosition: clip.position }
+    return
+  }
   clipDialog.value = {
     open:            true,
     track,
@@ -347,6 +407,13 @@ function openEditClip(track, clip) {
     defaultPosition: clip.position,
     trackSources:    getTrackSources(track),
   }
+}
+
+function onBpmClipSaved(clip) {
+  const trackId = bpmDialog.value.track?.id
+  if (!trackId) return
+  const merged = upsertClipLocal(trackId, clip)
+  if (merged) sync.sendClipChange({ type: 'upsert', trackId, clip: merged })
 }
 function closeClipDialog() {
   clipDialog.value = { ...clipDialog.value, open: false }
@@ -452,11 +519,14 @@ provide('editor-viewport',   viewport)
 
           <div ref="trackHeadersRef" class="flex-1 overflow-y-hidden">
             <TrackHeader
-              v-for="track in trackList"
+              v-for="track in orderedTracks"
               :key="track.id"
               :track="track"
-              :height="trackHeight(track.id)"
+              :height="trackHeight(track)"
               :selected="track.id === selectedTrackId"
+              :badge="headerBadge(track)"
+              :resizable="settingsFor(track).trackDisplay !== 'ruler'"
+              :muted="isTrackMuted(track)"
               @select="selectTrack(track)"
               @resize-start="startRowResize(track, $event)"
               @toggle-mute="toggleMute(track)"
@@ -504,20 +574,38 @@ provide('editor-viewport',   viewport)
                 :style="{ left: playheadX + 'px' }"
               />
 
-              <TrackLane
-                v-for="track in trackList"
-                :key="track.id"
-                :track="track"
-                :timeline="timeline"
-                :px-per-frame="pxPerFrame"
-                :height="trackHeight(track.id)"
-                :selected="track.id === selectedTrackId"
-                @select="selectTrack(track)"
-                @edit-clip="openEditClip(track, $event)"
-                @delete-clip="deleteClip(track, $event)"
-                @crop-clip="cropClip(track, $event.clip, $event.fields)"
-                @move-clip="moveClip(track, $event.clip, $event.position)"
-              />
+              <template v-for="track in orderedTracks" :key="track.id">
+                <RulerLane
+                  v-if="settingsFor(track).trackDisplay === 'ruler'"
+                  :track="track"
+                  :timeline="timeline"
+                  :px-per-frame="pxPerFrame"
+                  :height="trackHeight(track)"
+                  :selected="track.id === selectedTrackId"
+                  :muted="isTrackMuted(track)"
+                  :metronome="settingsFor(track).metronome"
+                  @select="selectTrack(track)"
+                  @edit-clip="openEditClip(track, $event)"
+                  @delete-clip="deleteClip(track, $event)"
+                  @move-clip="moveClip(track, $event.clip, $event.position)"
+                />
+                <TrackLane
+                  v-else
+                  :track="track"
+                  :timeline="timeline"
+                  :px-per-frame="pxPerFrame"
+                  :height="trackHeight(track)"
+                  :selected="track.id === selectedTrackId"
+                  :muted="isTrackMuted(track)"
+                  :name-display="settingsFor(track).nameDisplay"
+                  :clip-display="settingsFor(track).clipDisplay"
+                  @select="selectTrack(track)"
+                  @edit-clip="openEditClip(track, $event)"
+                  @delete-clip="deleteClip(track, $event)"
+                  @crop-clip="cropClip(track, $event.clip, $event.fields)"
+                  @move-clip="moveClip(track, $event.clip, $event.position)"
+                />
+              </template>
 
               <div v-if="trackList.length === 0" class="absolute inset-0 flex items-center justify-center">
                 <p class="text-sm text-muted-foreground">{{ $t('editor.addTrackHint') }}</p>
@@ -557,6 +645,15 @@ provide('editor-viewport',   viewport)
       :timeline="timeline"
       @update:open="!$event && closeClipDialog()"
       @saved="onClipSaved"
+    />
+
+    <BpmClipDialog
+      :open="bpmDialog.open"
+      :track="bpmDialog.track"
+      :clip="bpmDialog.clip"
+      :default-position="bpmDialog.defaultPosition"
+      @update:open="bpmDialog = { ...bpmDialog, open: $event }"
+      @saved="onBpmClipSaved"
     />
 
   </div>

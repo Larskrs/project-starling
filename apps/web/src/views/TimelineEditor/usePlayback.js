@@ -1,6 +1,9 @@
 import { ref, computed, watch } from 'vue'
 import { clamp } from './useEditorUtils.js'
 import { startAudioPlayback, stopAudioPlayback } from './useAudioEngine.js'
+import { resolveTrackSettings } from './behaviors/trackSettings.js'
+import { createMetronome } from './behaviors/metronome.js'
+import { createCueSpeaker } from './behaviors/tts.js'
 
 const PLAYING_SYNC_INTERVAL_MS = 1000
 
@@ -14,12 +17,14 @@ const PLAYING_SYNC_INTERVAL_MS = 1000
  * @param {{
  *   timeline:     import('vue').Ref<object|null>,
  *   trackList:    import('vue').Ref<Array>,
+ *   trackTypes:   import('vue').Ref<Array>,
+ *   mutedTracks:  import('vue').Ref<Record<string, boolean>>,  // client-local mute (cookie)
  *   pxPerFrame:   import('vue').Ref<number>,
  *   canvasRef:    import('vue').Ref<HTMLElement|null>,
  *   sendPlayhead: (frame: number, isPlaying: boolean, opts?: object) => void,
  * }} deps
  */
-export function usePlayback({ timeline, trackList, pxPerFrame, canvasRef, sendPlayhead }) {
+export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPerFrame, canvasRef, sendPlayhead }) {
   // Stored as float for smooth animation; TC display rounds it.
   const playheadFrame = ref(0)
   const isPlaying     = ref(false)
@@ -35,15 +40,40 @@ export function usePlayback({ timeline, trackList, pxPerFrame, canvasRef, sendPl
   let _lastSyncMs  = 0
   let _resyncTimer = null
 
+  // Mute is client-local (cookie), not the server's isMuted flag.
+  const isMuted = (track) => !!mutedTracks?.value?.[track.id]
+
   // Clips that should currently sound: everything on unmuted tracks.
-  const currentClips = () => trackList.value.flatMap(t => t.isMuted ? [] : t.clips)
+  const currentClips = () => trackList.value.flatMap(t => isMuted(t) ? [] : t.clips)
+
+  // Behavior playback controllers (metronome, TTS, …) active for this run —
+  // built from each unmuted track's type settings.
+  let _behaviors = []
+
+  function _startBehaviors(fps) {
+    for (const track of trackList.value) {
+      if (isMuted(track)) continue
+      const settings = resolveTrackSettings(track, trackTypes?.value ?? [])
+      if (settings.metronome) _behaviors.push(createMetronome({ clips: track.clips, fps, endFrame: timeline.value.endFrame }))
+      if (settings.tts)       _behaviors.push(createCueSpeaker({ clips: track.clips, fps }))
+    }
+    for (const b of _behaviors) b.start(playheadFrame.value)
+  }
+
+  function _stopBehaviors() {
+    for (const b of _behaviors) { try { b.stop() } catch {} }
+    _behaviors = []
+  }
 
   // Re-point the audio at the live timeline state (position, mutes, clip edits)
   // without touching the visual rAF loop, so playback keeps rolling. A restart
   // is cheap here: each run is its own gain subtree, torn down cleanly on stop.
   function resyncAudio() {
     if (!isPlaying.value || !timeline.value) return
-    startAudioPlayback(currentClips(), playheadFrame.value, parseFloat(timeline.value.frameRate))
+    const fps = parseFloat(timeline.value.frameRate)
+    startAudioPlayback(currentClips(), playheadFrame.value, fps)
+    _stopBehaviors()
+    _startBehaviors(fps)
   }
 
   // Coalesce high-frequency triggers (scrubbing) into a single trailing resync.
@@ -58,7 +88,9 @@ export function usePlayback({ timeline, trackList, pxPerFrame, canvasRef, sendPl
   // (not every frame), so the watch stays cheap.
   const audioStateKey = computed(() =>
     trackList.value
-      .map(t => (t.isMuted ? 'm' : '') + t.clips.map(c => `${c.id}:${c.position}:${c.mediaStart}:${c.end}:${c.fileId}`).join(','))
+      .map(t => (isMuted(t) ? 'm' : '') + t.clips.map(c =>
+        `${c.id}:${c.position}:${c.mediaStart}:${c.end}:${c.fileId}:${c.data?.bpm ?? ''}:${c.data?.beatsPerBar ?? ''}:${c.label ?? ''}`,
+      ).join(','))
       .join('|'),
   )
   watch(audioStateKey, () => { if (isPlaying.value) resyncAudio() })
@@ -92,7 +124,9 @@ export function usePlayback({ timeline, trackList, pxPerFrame, canvasRef, sendPl
     _lastSyncMs     = Date.now()
     _rafId          = requestAnimationFrame(_tick)
 
-    startAudioPlayback(currentClips(), playheadFrame.value, parseFloat(timeline.value.frameRate))
+    const fps = parseFloat(timeline.value.frameRate)
+    startAudioPlayback(currentClips(), playheadFrame.value, fps)
+    _startBehaviors(fps)
 
     if (broadcast) sendPlayhead(playheadFrame.value, true, { immediate: true })
   }
@@ -104,6 +138,7 @@ export function usePlayback({ timeline, trackList, pxPerFrame, canvasRef, sendPl
     if (_resyncTimer) { clearTimeout(_resyncTimer); _resyncTimer = null }
     _lastTs = null
     stopAudioPlayback()
+    _stopBehaviors()
 
     if (broadcast && wasPlaying) sendPlayhead(playheadFrame.value, false, { immediate: true })
   }

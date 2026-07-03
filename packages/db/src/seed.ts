@@ -134,7 +134,7 @@ if (!camTrackType) {
   [camTrackType] = await db.insert(trackTypes).values({
     productionId: production.id,
     name:         'Camera',
-    color:        'oklch(62% 0.17 215)',
+    hue:          215,
     trackMode:    'event',
     sourceSetId:  camSet!.id,
     sortOrder:    0,
@@ -150,7 +150,7 @@ if (!audioTrackType) {
   [audioTrackType] = await db.insert(trackTypes).values({
     productionId: production.id,
     name:         'Audio',
-    color:        'oklch(62% 0.17 45)',
+    hue:          45,
     trackMode:    'clip',
     sortOrder:    1,
   }).returning();

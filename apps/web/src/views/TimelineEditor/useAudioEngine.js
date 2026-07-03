@@ -43,6 +43,17 @@ function getContext() {
   return _ctx
 }
 
+/** Shared AudioContext — behavior controllers (metronome etc.) schedule on it. */
+export function getAudioContext() {
+  return getContext()
+}
+
+/** Master gain node — route generated audio through it so master volume applies. */
+export function getMasterGain() {
+  getContext()
+  return _master
+}
+
 /** Global playback volume in [0, 1]. */
 export function setMasterVolume(v) {
   _masterVolume = Math.max(0, Math.min(1, v))

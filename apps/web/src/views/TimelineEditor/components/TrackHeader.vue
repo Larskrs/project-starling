@@ -4,9 +4,15 @@ import { Icon } from '@iconify/vue'
 import { ResizeHandle } from '@starling/ui'
 
 const props = defineProps({
-  track:    { type: Object,  required: true },
-  height:   { type: Number,  default: 48 },
-  selected: { type: Boolean, default: false },
+  track:     { type: Object,  required: true },
+  height:    { type: Number,  default: 48 },
+  selected:  { type: Boolean, default: false },
+  /** Live info chip after the name (e.g. current BPM on metronome tracks). */
+  badge:     { type: String,  default: '' },
+  /** Ruler-display tracks have a fixed slim height — no resize handle. */
+  resizable: { type: Boolean, default: true },
+  /** Client-local mute state (persisted in a cookie, not on the server). */
+  muted:     { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['select', 'toggle-mute', 'toggle-lock', 'add-clip', 'delete', 'resize-start'])
@@ -18,7 +24,7 @@ const hovered = ref(false)
   <div
     class="relative flex items-center gap-1.5 px-2 border-b border-border group cursor-pointer transition-colors"
     :class="[
-      track.isMuted ? 'opacity-50' : '',
+      muted ? 'opacity-50' : '',
       selected ? 'bg-accent/70 border-l-2 border-l-primary' : 'hover:bg-accent/30',
     ]"
     :style="{ height: height + 'px' }"
@@ -29,11 +35,18 @@ const hovered = ref(false)
     <!-- Type color dot -->
     <span
       class="size-2 rounded-full shrink-0"
-      :style="{ backgroundColor: track.typeColor ?? 'oklch(65% 0.18 250)' }"
+      :style="{ backgroundColor: `oklch(65% 0.18 ${track.typeHue ?? 250})` }"
     />
 
     <!-- Name -->
     <span class="flex-1 text-xs font-medium text-foreground truncate min-w-0">{{ track.name }}</span>
+
+    <!-- Live badge (current BPM etc.) -->
+    <span
+      v-if="badge"
+      class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-muted text-muted-foreground tabular-nums max-w-24 truncate"
+      :title="badge"
+    >{{ badge }}</span>
 
     <!-- Controls (always visible) -->
     <div class="flex items-center gap-0.5 shrink-0">
@@ -46,14 +59,14 @@ const hovered = ref(false)
         <Icon icon="mdi:plus" class="size-3.5" />
       </button>
 
-      <!-- Mute -->
+      <!-- Mute (client-local) -->
       <button
         class="size-5 flex items-center justify-center rounded transition-colors"
-        :class="track.isMuted ? 'text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-accent'"
-        :title="track.isMuted ? $t('editor.unmute') : $t('editor.mute')"
+        :class="muted ? 'text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-accent'"
+        :title="muted ? $t('editor.unmute') : $t('editor.mute')"
         @click.stop="$emit('toggle-mute')"
       >
-        <Icon :icon="track.isMuted ? 'mdi:volume-off' : 'mdi:volume-medium'" class="size-3.5" />
+        <Icon :icon="muted ? 'mdi:volume-off' : 'mdi:volume-medium'" class="size-3.5" />
       </button>
 
       <!-- Lock -->
@@ -79,6 +92,7 @@ const hovered = ref(false)
 
     <!-- Row height resize handle (click.stop so finishing a drag doesn't toggle selection) -->
     <ResizeHandle
+      v-if="resizable"
       axis="y"
       class="absolute bottom-0 inset-x-0"
       @pointerdown.stop="$emit('resize-start', $event)"
