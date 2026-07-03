@@ -113,13 +113,13 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
     //     upgrade: req.headers.upgrade,
     //   });
     // },
-    cors: {
-      origin: (origin, callback) => {
-        if (isOriginAllowed(origin ?? undefined, undefined)) callback(null, origin ?? true);
-        else callback(new Error('Origin not allowed'));
-      },
-      credentials: true,
-    },
+    // cors: {
+    //   origin: (origin, callback) => {
+    //     if (isOriginAllowed(origin ?? undefined, undefined)) callback(null, origin ?? true);
+    //     else callback(new Error('Origin not allowed'));
+    //   },
+    //   credentials: true,
+    // },
   });
 
   io.use(socketAuth);
