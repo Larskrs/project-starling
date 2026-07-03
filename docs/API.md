@@ -30,9 +30,9 @@ apps/api/src/
 
 One `createServer` callback handles everything, in this order:
 
-1. **Origin policy + security headers** (`lib/security.ts`) — every response gets `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `Vary: Origin`. Cross-site requests are checked against an allowlist: no `Origin` header (same-origin/CLI), an origin whose host equals the request's `Host`, localhost, or an entry in the `CORS_ORIGINS` env var (comma-separated full origins). Allowed origins get credentialed CORS headers; **disallowed origins are refused with `403` before any handler runs** (origins are never reflected blindly alongside `Allow-Credentials`). `OPTIONS` preflights short-circuit with `204`.
+1. **Origin policy + security headers** (`lib/security.ts`) — every response gets `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `Vary: Origin`. Cross-site requests are checked against an allowlist: no `Origin` header (same-origin pages, CLI clients, and reverse proxies that strip it), **same-site origins — exact host or subdomain in either direction** (`app.cino.no` ↔ `cino.no`, the Plesk "app on a subdomain, API on the apex" layout works with zero config), localhost, or an entry in the `CORS_ORIGINS` env var (comma-separated full origins). The request's own host honours `X-Forwarded-Host` (`requestHost()`), so proxy Host rewriting doesn't break the comparison. Allowed origins get credentialed CORS headers; **disallowed origins are refused with `403` before any handler runs**. `OPTIONS` preflights short-circuit with `204`.
 2. **`/health`** → `{ "status": "ok" }`.
-3. **`/app` and `/app/*`** — static hosting of the built web app (`apps/web/dist`). Paths with a file extension are served as assets (`/assets/*` get `Cache-Control: public, max-age=31536000, immutable`); everything else falls back to `index.html` (SPA routing) with `no-cache`. If the web app isn't built, non-asset requests return `503` with a hint.
+3. **`/app` and `/app/*`** — static hosting of the built web app (`apps/web/dist`) through an in-memory cache: files are read from disk once (revalidated by mtime), **pre-gzipped** when compressible (html/js/css/svg/json over 1 KB), and served with `ETag`/`304` conditional handling. `/assets/*` (content-hashed filenames) get `Cache-Control: public, max-age=31536000, immutable`; everything else falls back to `index.html` (SPA routing) with `no-cache` + ETag revalidation. A resolved-path containment check makes traversal structurally impossible. If the web app isn't built, non-asset requests return `503` with a hint.
 4. **`/api/*`** — matched against the route table (below). No match → `404 { error, path }`.
 5. Anything else → `404`.
 
@@ -41,6 +41,8 @@ Socket.IO is attached to the same server via `setupSockets(server)` (see §8), a
 ### Response envelope
 
 A route handler returns a plain value; the server serializes it:
+
+JSON responses ≥ 2 KB are gzipped when the client sends `Accept-Encoding: gzip` (`sendJson`), which matters for the timeline bootstrap and storage listings.
 
 | Handler outcome | Response |
 | --- | --- |
@@ -284,7 +286,7 @@ storage/c/{companyId}/p/{productionId}/profile/{slot}/{fileId}@…       (produc
 
 ## 8. Sockets — engine & authentication (`lib/sockets.ts`)
 
-One Socket.IO server rides the HTTP server at **path `/socket`**. Handshakes enforce the **same origin allowlist as HTTP** (`isOriginAllowed` via both `allowRequest` and the CORS callback) — disallowed sites can't open a credentialed socket. There are two namespaces: the **root** namespace (global chat + presence) and **`/timeline`** (editor live-sync). They share:
+One Socket.IO server rides the HTTP server at **path `/socket`**. Handshakes enforce the **same origin allowlist as HTTP** inside `allowRequest` (where the full request — including `X-Forwarded-Host` — is available); the `cors` option only reflects the already-vetted origin so browsers accept cross-subdomain polling responses. A missing `Origin` header is allowed (proxies like Plesk can strip it; same-origin pages never send it) — do **not** move the check into a `cors.origin` callback, which sees neither the request host nor a way to distinguish these cases. There are two namespaces: the **root** namespace (global chat + presence) and **`/timeline`** (editor live-sync). They share:
 
 ```ts
 export async function socketAuth(socket, next)

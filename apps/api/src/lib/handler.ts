@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import type { ZodType } from 'zod';
 import type { SessionData } from './session.js';
 import { sessionFromCookies } from './session.js';
@@ -139,10 +140,38 @@ export function getValidatedQuery<T>(event: ApiEvent, schema: ZodType<T>): T {
   return result.data;
 }
 
+/** Adds a value to the Vary header without clobbering what's already there. */
+export function appendVary(res: ServerResponse, value: string): void {
+  const prev = res.getHeader('Vary');
+  if (!prev) { res.setHeader('Vary', value); return }
+  if (String(prev).toLowerCase().includes(value.toLowerCase())) return;
+  res.setHeader('Vary', `${prev}, ${value}`);
+}
+
+export function acceptsGzip(req: IncomingMessage | undefined): boolean {
+  return /\bgzip\b/.test(String(req?.headers['accept-encoding'] ?? ''));
+}
+
+// Compress sizeable JSON payloads (timeline bootstraps, file listings) — below
+// this gzip overhead outweighs the savings.
+const COMPRESS_MIN_BYTES = 2048;
+
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(body));
+
+  const payload = Buffer.from(JSON.stringify(body));
+  if (payload.length >= COMPRESS_MIN_BYTES && acceptsGzip(res.req)) {
+    const compressed = gzipSync(payload);
+    appendVary(res, 'Accept-Encoding');
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Content-Length', compressed.length);
+    res.end(compressed);
+    return;
+  }
+
+  res.setHeader('Content-Length', payload.length);
+  res.end(payload);
 }
 
 // ── Multipart helpers ─────────────────────────────────────────────────────────

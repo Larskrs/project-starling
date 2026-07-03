@@ -1,9 +1,10 @@
-import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { dirname, extname, join } from 'node:path';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFile, stat } from 'node:fs/promises';
+import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import { loadRoutes, matchRoute, type Route } from './router.js';
-import { ApiError, type ApiEvent, sendJson } from './lib/handler.js';
+import { ApiError, type ApiEvent, sendJson, appendVary, acceptsGzip } from './lib/handler.js';
 import { setupSockets } from './lib/sockets.js';
 import { applyCors, applySecurityHeaders } from './lib/security.js';
 
@@ -63,6 +64,67 @@ function printRouteTree(routes: Route[]): void {
 const routes = await loadRoutes(apiDir);
 printRouteTree(routes);
 
+// ── Static file cache ─────────────────────────────────────────────────────────
+// Web-app assets are read from disk once, pre-gzipped when compressible, and
+// revalidated by mtime — so a page load costs memory lookups, not disk reads.
+
+const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.svg', '.json']);
+
+interface StaticEntry { mtimeMs: number; body: Buffer; gzip: Buffer | null; etag: string }
+const staticCache = new Map<string, StaticEntry>();
+
+/** Serves a file with caching, ETag/304, and gzip. Returns false when missing. */
+async function serveStatic(
+  req: IncomingMessage,
+  res: ServerResponse,
+  filePath: string,
+  contentType: string,
+  cacheControl: string,
+): Promise<boolean> {
+  // Containment guard — the URL parser already normalises dot segments, this
+  // makes traversal structurally impossible even if that ever changes.
+  if (!resolve(filePath).startsWith(resolve(webDist))) return false;
+
+  let st;
+  try { st = await stat(filePath); } catch { return false; }
+
+  let entry = staticCache.get(filePath);
+  if (!entry || entry.mtimeMs !== st.mtimeMs) {
+    const body = await readFile(filePath);
+    const ext  = extname(filePath);
+    entry = {
+      mtimeMs: st.mtimeMs,
+      body,
+      gzip:    COMPRESSIBLE.has(ext) && body.length > 1024 ? gzipSync(body) : null,
+      etag:    `"${st.size}-${Math.round(st.mtimeMs)}"`,
+    };
+    staticCache.set(filePath, entry);
+  }
+
+  res.setHeader('Cache-Control', cacheControl);
+  res.setHeader('ETag', entry.etag);
+
+  if (req.headers['if-none-match'] === entry.etag) {
+    res.statusCode = 304;
+    res.end();
+    return true;
+  }
+
+  res.statusCode = 200;
+  res.setHeader('Content-Type', contentType);
+
+  if (entry.gzip && acceptsGzip(req)) {
+    appendVary(res, 'Accept-Encoding');
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Content-Length', entry.gzip.length);
+    res.end(entry.gzip);
+  } else {
+    res.setHeader('Content-Length', entry.body.length);
+    res.end(entry.body);
+  }
+  return true;
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
@@ -87,14 +149,14 @@ const server = createServer(async (req, res) => {
     const ext     = extname(rel);
     const isAsset = ext.length > 0;
 
-    try {
-      const body        = await readFile(isAsset ? join(webDist, rel) : join(webDist, 'index.html'));
-      const contentType = MIME[isAsset ? ext : '.html'] ?? 'application/octet-stream';
-      res.setHeader('Content-Type',  contentType);
-      res.setHeader('Cache-Control', rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
-      res.statusCode = 200;
-      res.end(body);
-    } catch {
+    const filePath     = isAsset ? join(webDist, rel) : join(webDist, 'index.html');
+    const contentType  = MIME[isAsset ? ext : '.html'] ?? 'application/octet-stream';
+    const cacheControl = rel.startsWith('/assets/')
+      ? 'public, max-age=31536000, immutable'   // content-hashed filenames
+      : 'no-cache';                             // revalidates via ETag → 304
+
+    const served = await serveStatic(req, res, filePath, contentType, cacheControl);
+    if (!served) {
       if (isAsset) {
         sendJson(res, 404, { error: 'Not found' });
       } else {

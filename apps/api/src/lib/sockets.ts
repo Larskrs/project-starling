@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db, users } from '@starling/db';
 import { sessionFromCookies } from './session.js';
 import { setupTimelineSockets } from './timelineSockets.js';
-import { isOriginAllowed } from './security.js';
+import { isOriginAllowed, requestHost } from './security.js';
 import { createRateLimiter } from './rateLimit.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -101,25 +101,18 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
   
   const io = new SocketIOServer(httpServer, {
     path: '/socket',
-    // Same origin policy as the HTTP server — a disallowed site can neither
-    // read the handshake nor establish a credentialed connection.
-    
-    // allowRequest: (req, callback) => {
-    //   callback(null, isOriginAllowed(req.headers.origin, req.headers.host));
-    //   console.log({
-    //     url: req.url,
-    //     host: req.headers.host,
-    //     origin: req.headers.origin,
-    //     upgrade: req.headers.upgrade,
-    //   });
-    // },
-    // cors: {
-    //   origin: (origin, callback) => {
-    //     if (isOriginAllowed(origin ?? undefined, undefined)) callback(null, origin ?? true);
-    //     else callback(new Error('Origin not allowed'));
-    //   },
-    //   credentials: true,
-    // },
+    // Same origin policy as the HTTP server, evaluated in allowRequest where the
+    // full request is available: forwarded host honoured (Plesk/nginx rewrite the
+    // Host header), and a MISSING Origin is allowed — same-origin pages, native
+    // clients, and reverse proxies that strip the header all arrive without one.
+    // The previous cors-callback approach broke on Plesk because it had neither
+    // the request host nor a way to treat absent origins as same-origin.
+    allowRequest: (req, callback) => {
+      callback(null, isOriginAllowed(req.headers.origin, requestHost(req)));
+    },
+    // Headers only — reflects the origin allowRequest already vetted, so
+    // browsers accept cross-subdomain polling responses (app.cino.no → cino.no).
+    cors: { origin: true, credentials: true },
   });
 
   io.use(socketAuth);
