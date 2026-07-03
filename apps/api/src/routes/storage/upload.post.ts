@@ -11,8 +11,10 @@ const metaSchema = z.object({
   folder_id:     z.uuid().optional(),
 });
 
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024; // audio files can be large
+
 export default defineEventHandler(async (event) => {
-  const { fields, files } = await readMultipart(event);
+  const { fields, files } = await readMultipart(event, { maxBytes: MAX_UPLOAD_BYTES });
 
   const meta = metaSchema.safeParse(fields);
   if (!meta.success) throw new ApiError(422, 'Invalid fields', meta.error.flatten());

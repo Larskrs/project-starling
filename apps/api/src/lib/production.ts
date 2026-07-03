@@ -12,6 +12,8 @@ export interface ProductionContext {
   privileged:   boolean;
   /** The member's current roleId; null when they have no role. Always null when privileged. */
   memberRoleId: string | null;
+  /** The member's role permission bits, resolved during the access check. Null when privileged or roleless. */
+  rolePermissions: bigint | null;
 }
 
 export type ProductionRef =
@@ -19,26 +21,29 @@ export type ProductionRef =
   | { productionId: string; companyId?: string };
 
 async function resolveRef(ref: ProductionRef): Promise<{ company: typeof companies.$inferSelect; production: typeof productions.$inferSelect }> {
+  // One joined query for the happy path; the extra company lookup only runs on
+  // the failure path to pick the more precise 404 errorKey.
+  const where = 'cslug' in ref
+    ? and(eq(companies.slug, ref.cslug), eq(productions.slug, ref.pslug))
+    : ref.companyId !== undefined
+      ? and(eq(productions.id, ref.productionId), eq(productions.companyId, ref.companyId))
+      : eq(productions.id, ref.productionId);
+
+  const [row] = await db
+    .select({ company: companies, production: productions })
+    .from(productions)
+    .innerJoin(companies, eq(productions.companyId, companies.id))
+    .where(where)
+    .limit(1);
+
+  if (row) return row;
+
   if ('cslug' in ref) {
-    const [company] = await db.select().from(companies).where(eq(companies.slug, ref.cslug)).limit(1);
+    const [company] = await db.select({ id: companies.id }).from(companies)
+      .where(eq(companies.slug, ref.cslug)).limit(1);
     if (!company) throw createError({ statusCode: 404, message: 'Company not found', errorKey: 'errors.company.notFound' });
-
-    const [production] = await db.select().from(productions)
-      .where(and(eq(productions.companyId, company.id), eq(productions.slug, ref.pslug)))
-      .limit(1);
-    if (!production) throw createError({ statusCode: 404, message: 'Production not found', errorKey: 'errors.production.notFound' });
-
-    return { company, production };
-  } else {
-    const [production] = await db.select().from(productions).where(eq(productions.id, ref.productionId)).limit(1);
-    if (!production) throw createError({ statusCode: 404, message: 'Production not found', errorKey: 'errors.production.notFound' });
-
-    const companyId = ref.companyId ?? production.companyId;
-    const [company] = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
-    if (!company) throw createError({ statusCode: 404, message: 'Company not found', errorKey: 'errors.company.notFound' });
-
-    return { company, production };
   }
+  throw createError({ statusCode: 404, message: 'Production not found', errorKey: 'errors.production.notFound' });
 }
 
 /**
@@ -55,33 +60,43 @@ export async function requireProductionAccess(
   const { company, production } = await resolveRef(ref);
 
   if (auth.role === 'admin') {
-    return { auth, company, production, privileged: true, memberRoleId: null };
+    return { auth, company, production, privileged: true, memberRoleId: null, rolePermissions: null };
   }
 
-  const [companyMem] = await db.select({ id: companyMembers.id })
-    .from(companyMembers)
-    .where(and(
-      eq(companyMembers.companyId, company.id),
-      eq(companyMembers.userId, auth.userId),
-      or(eq(companyMembers.role, 'owner'), eq(companyMembers.role, 'admin')),
-    ))
-    .limit(1);
+  // Both membership checks are independent — run them in parallel, and resolve
+  // the member's role permissions in the same query so requirePermission never
+  // needs another round-trip.
+  const [[companyMem], [prodMem]] = await Promise.all([
+    db.select({ id: companyMembers.id })
+      .from(companyMembers)
+      .where(and(
+        eq(companyMembers.companyId, company.id),
+        eq(companyMembers.userId, auth.userId),
+        or(eq(companyMembers.role, 'owner'), eq(companyMembers.role, 'admin')),
+      ))
+      .limit(1),
+    db.select({ roleId: productionMembers.roleId, permissions: productionRoles.permissions })
+      .from(productionMembers)
+      .leftJoin(productionRoles, eq(productionMembers.roleId, productionRoles.id))
+      .where(and(
+        eq(productionMembers.productionId, production.id),
+        eq(productionMembers.userId, auth.userId),
+      ))
+      .limit(1),
+  ]);
 
   if (companyMem) {
-    return { auth, company, production, privileged: true, memberRoleId: null };
+    return { auth, company, production, privileged: true, memberRoleId: null, rolePermissions: null };
   }
-
-  const [prodMem] = await db.select({ id: productionMembers.id, roleId: productionMembers.roleId })
-    .from(productionMembers)
-    .where(and(
-      eq(productionMembers.productionId, production.id),
-      eq(productionMembers.userId, auth.userId),
-    ))
-    .limit(1);
 
   if (!prodMem) throw createError({ statusCode: 403, message: 'Access denied', errorKey: 'errors.generic.accessDenied' });
 
-  return { auth, company, production, privileged: false, memberRoleId: prodMem.roleId };
+  return {
+    auth, company, production,
+    privileged:      false,
+    memberRoleId:    prodMem.roleId,
+    rolePermissions: prodMem.permissions ?? null,
+  };
 }
 
 /**
@@ -133,16 +148,8 @@ export async function requirePermission(
 ): Promise<void> {
   if (ctx.privileged) return;
 
-  let rolePermissions: bigint | null = null;
-  if (ctx.memberRoleId) {
-    const [role] = await db.select({ permissions: productionRoles.permissions })
-      .from(productionRoles)
-      .where(eq(productionRoles.id, ctx.memberRoleId))
-      .limit(1);
-    rolePermissions = role?.permissions ?? null;
-  }
-
-  if (!can(ctx.auth.role, rolePermissions, required)) {
+  // Role permissions were joined in during the access check — no extra query.
+  if (!can(ctx.auth.role, ctx.rolePermissions, required)) {
     const name = (Object.entries(Permission) as [PermissionName, bigint][])
       .find(([, bit]) => bit === required)?.[0];
     const description = name ? PERMISSION_MESSAGES[name] : 'perform this action';

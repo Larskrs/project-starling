@@ -87,10 +87,33 @@ export function getRouterParam(event: ApiEvent, name: string): string | undefine
   return event.params[name];
 }
 
-export async function readBody<T = unknown>(event: ApiEvent): Promise<T> {
+const MAX_JSON_BODY_BYTES      = 1 * 1024 * 1024;   // JSON endpoints
+const MAX_MULTIPART_BODY_BYTES = 64 * 1024 * 1024;  // default for multipart; override per route
+
+/**
+ * Buffers the request body up to `maxBytes`; beyond that the request is
+ * aborted with 413 instead of buffering unbounded client input into memory.
+ */
+export async function readRawBody(event: ApiEvent, maxBytes: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
-  for await (const chunk of event.req) chunks.push(chunk as Buffer);
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
+  let total = 0;
+  for await (const chunk of event.req) {
+    total += (chunk as Buffer).length;
+    if (total > maxBytes) {
+      // Stop reading and close the connection after the 413 is written —
+      // destroying the request here would kill the socket before the client
+      // ever sees the response.
+      event.res.setHeader('Connection', 'close');
+      event.req.pause();
+      throw new ApiError(413, 'Payload too large', { maxBytes }, 'errors.generic.payloadTooLarge');
+    }
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function readBody<T = unknown>(event: ApiEvent): Promise<T> {
+  const raw = (await readRawBody(event, MAX_JSON_BODY_BYTES)).toString('utf8').trim();
   if (!raw) return undefined as T;
   try { return JSON.parse(raw) as T; }
   catch { throw new ApiError(400, 'Invalid JSON body', undefined, 'errors.generic.invalidBody'); }
@@ -151,14 +174,15 @@ function parsePartHeaders(raw: string): Record<string, string> {
 }
 
 /** Parse a multipart/form-data request body without external dependencies. */
-export async function readMultipart(event: ApiEvent): Promise<MultipartResult> {
+export async function readMultipart(
+  event: ApiEvent,
+  { maxBytes = MAX_MULTIPART_BODY_BYTES }: { maxBytes?: number } = {},
+): Promise<MultipartResult> {
   const ct = event.req.headers['content-type'] ?? '';
   const boundary = extractBoundary(ct);
   if (!boundary) throw new ApiError(400, 'Missing multipart boundary', undefined, 'errors.generic.invalidBody');
 
-  const chunks: Buffer[] = [];
-  for await (const chunk of event.req) chunks.push(chunk as Buffer);
-  const body = Buffer.concat(chunks);
+  const body = await readRawBody(event, maxBytes);
 
   const fields: Record<string, string> = {};
   const files:  Record<string, MultipartFile> = {};

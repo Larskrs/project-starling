@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { db, users } from '@starling/db';
 import { defineEventHandler, readValidatedBody, ApiError } from '../../lib/handler.js';
 import { hashPassword } from '../../lib/auth.js';
-import { createSession, SESSION_COOKIE, SESSION_TTL_SEC } from '../../lib/session.js';
+import { createSession, sessionCookieHeader } from '../../lib/session.js';
+import { createRateLimiter } from '../../lib/rateLimit.js';
+import { getClientIp } from '../../lib/security.js';
 
 const schema = z.object({
   email:          z.string().email(),
@@ -11,8 +13,16 @@ const schema = z.object({
   password:       z.string().min(8),
 });
 
+// Registration abuse guard: 5 accounts per 10 minutes per IP.
+const registerLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 5 });
+
 export default defineEventHandler(async (event) => {
   const { email, first_name, last_name, password } = await readValidatedBody(event, schema);
+
+  if (!registerLimiter.check(getClientIp(event.req))) {
+    throw new ApiError(429, 'Too many registrations — try again later', undefined, 'errors.generic.rateLimited');
+  }
+
   const name = first_name + ' ' + last_name;
   const hashedPassword = await hashPassword(password);
 
@@ -25,23 +35,17 @@ export default defineEventHandler(async (event) => {
     throw err;
   }
 
-  console.log(`User ${user.email} registered! Bring out the champagne!`);
-
   const sessionId = await createSession(user!.id);
-
-  event.res.setHeader(
-    'Set-Cookie',
-    `${SESSION_COOKIE}=${sessionId}; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_SEC}; Path=/`,
-  );
+  event.res.setHeader('Set-Cookie', sessionCookieHeader(sessionId));
 
   return {
     user: {
-      id:              user!.id,
-      email:           user!.email,
-      name:            user!.name,
-      first_name:      user!.first_name,
-      last_name:       user!.last_name,
-      role: user!.role,
+      id:         user!.id,
+      email:      user!.email,
+      name:       user!.name,
+      first_name: user!.first_name,
+      last_name:  user!.last_name,
+      role:       user!.role,
     },
   };
 });

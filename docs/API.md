@@ -30,7 +30,7 @@ apps/api/src/
 
 One `createServer` callback handles everything, in this order:
 
-1. **CORS** — every response gets `Access-Control-Allow-Origin: <request origin>` (falls back to `*`), `Allow-Methods: GET,POST,PUT,PATCH,DELETE,OPTIONS`, `Allow-Headers: Content-Type`, `Allow-Credentials: true`. `OPTIONS` preflights short-circuit with `204`.
+1. **Origin policy + security headers** (`lib/security.ts`) — every response gets `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `Vary: Origin`. Cross-site requests are checked against an allowlist: no `Origin` header (same-origin/CLI), an origin whose host equals the request's `Host`, localhost, or an entry in the `CORS_ORIGINS` env var (comma-separated full origins). Allowed origins get credentialed CORS headers; **disallowed origins are refused with `403` before any handler runs** (origins are never reflected blindly alongside `Allow-Credentials`). `OPTIONS` preflights short-circuit with `204`.
 2. **`/health`** → `{ "status": "ok" }`.
 3. **`/app` and `/app/*`** — static hosting of the built web app (`apps/web/dist`). Paths with a file extension are served as assets (`/assets/*` get `Cache-Control: public, max-age=31536000, immutable`); everything else falls back to `index.html` (SPA routing) with `no-cache`. If the web app isn't built, non-asset requests return `503` with a hint.
 4. **`/api/*`** — matched against the route table (below). No match → `404 { error, path }`.
@@ -91,11 +91,14 @@ Nuxt/Nitro-style file conventions under `src/routes`. The filename encodes the m
 
 **Body / query**:
 
+- `readRawBody(event, maxBytes)` — buffers the body up to a cap; beyond it the client gets `413` (`errors.generic.payloadTooLarge`) and the connection closes. **All body readers go through this** — JSON bodies cap at 1 MB, multipart defaults to 64 MB (the storage upload route raises its own cap to 200 MB).
 - `readBody(event)` — raw JSON (`400 errors.generic.invalidBody` on parse failure, `undefined` on empty body).
 - `readValidatedBody(event, zodSchema)` — parse + validate; failure → `422` with `data` = Zod `flatten()` and `errorKey: errors.generic.validationFailed`.
 - `getQuery` / `getValidatedQuery(event, schema)` — query-string equivalents (`422` on failure).
 - `pickDefined(obj)` — drops `undefined` keys; the standard way to turn an all-optional PATCH body into a Drizzle `set()` object.
-- `readMultipart(event)` — dependency-free `multipart/form-data` parser → `{ fields: Record<string,string>, files: Record<string,{ filename, mimeType, data: Buffer }> }`.
+- `readMultipart(event, { maxBytes? })` — dependency-free `multipart/form-data` parser → `{ fields: Record<string,string>, files: Record<string,{ filename, mimeType, data: Buffer }> }`.
+
+**Cross-cutting utilities** — `lib/rateLimit.ts` (`createRateLimiter({ windowMs, max }).check(key)`, sliding window, in-memory), `lib/cache.ts` (`TtlCache` with size cap), `lib/security.ts` (`isOriginAllowed`, `applyCors`, `applySecurityHeaders`, `getClientIp`).
 
 **Production-scoped routes** (`lib/production.ts`) — the standard preamble for anything under `/company/[cslug]/production/[pslug]/…`:
 
@@ -124,17 +127,17 @@ Lower-level pieces it composes: `requireProductionAccess(event, ref)` (accepts `
 
 ## 4. Authentication — sessions (`lib/session.ts`)
 
-- Cookie: **`syncsw_sid`**, `HttpOnly; SameSite=Lax; Path=/`, `Max-Age` = **24h**. Value is a 64-hex-char random id.
-- Sessions live in the `sessions` table (`id, userId, expiresAt`); `getSession` joins `users` to return `{ userId, role }` and deletes expired rows on read. A 5-minute interval sweeps expired sessions.
+- Cookie: **`syncsw_sid`**, `HttpOnly; SameSite=Lax; Path=/` (+ `Secure` when `NODE_ENV=production`), `Max-Age` = **24h**. Value is a 64-hex-char random id. Cookie strings are built only by `sessionCookieHeader()` / `clearSessionCookieHeader()` — never assembled inline.
+- Sessions live in the `sessions` table (`id, userId, expiresAt`); `getSession` joins `users` to return `{ userId, role }` and deletes expired rows on read. Reads go through a **30s in-memory `TtlCache`** (invalidated immediately by `destroySession`), so steady-state requests skip the session query. A 5-minute interval sweeps expired sessions.
 - The same cookie authenticates **both REST and sockets** (socket middleware reads `handshake.headers.cookie`).
 
 Endpoints:
 
 | Route | Behavior |
 | --- | --- |
-| `POST /api/auth/register` | create user, hash password (`lib/auth.ts`) |
-| `POST /api/auth/login` | verify credentials (`401` on mismatch), create session, set cookie, return `{ user }` |
-| `POST /api/auth/logout` | destroy session from cookie |
+| `POST /api/auth/register` | create user, hash password (scrypt, `lib/auth.ts`); rate-limited **5 / 10 min per IP** |
+| `POST /api/auth/login` | rate-limited **10 / min per IP+email** (429 `errors.generic.rateLimited`); timing-equalized — a missing user still costs one scrypt verify against a dummy hash, so response time doesn't leak account existence; `401` on mismatch; sets cookie, returns `{ user }` |
+| `POST /api/auth/logout` | destroy session from cookie, clear cookie |
 | `GET /api/auth/me`, `GET /api/user/me` | current user info |
 
 ---
@@ -161,6 +164,8 @@ Permission bits (`@starling/auth/permissions` — bit positions are frozen forev
 | `1n << 7n` | `MANAGE_TIMELINES` | timelines CRUD |
 
 `can(globalRole, rolePermissions, required)` implements: global admin → yes; `ADMINISTRATOR` bit → yes; else `(perms & required) !== 0n`. A denied check throws `403` with a human message from `PERMISSION_MESSAGES` and `data: { missingPermission: 'MANAGE_ROLES', role }` (`errorKey: errors.permission.missing`).
+
+**Query cost** — an access-checked request is 2–3 queries total: one joined company⋈production resolve, then (non-admins) the company-membership check and the production-membership⋈role join **in parallel**. The member's `rolePermissions` ride along in `ProductionContext`, so `requirePermission` is pure bit math with no DB access.
 
 ---
 
@@ -279,7 +284,7 @@ storage/c/{companyId}/p/{productionId}/profile/{slot}/{fileId}@…       (produc
 
 ## 8. Sockets — engine & authentication (`lib/sockets.ts`)
 
-One Socket.IO server rides the HTTP server at **path `/socket`** (CORS: any origin, credentials on). There are two namespaces: the **root** namespace (global chat + presence) and **`/timeline`** (editor live-sync). They share:
+One Socket.IO server rides the HTTP server at **path `/socket`**. Handshakes enforce the **same origin allowlist as HTTP** (`isOriginAllowed` via both `allowRequest` and the CORS callback) — disallowed sites can't open a credentialed socket. There are two namespaces: the **root** namespace (global chat + presence) and **`/timeline`** (editor live-sync). They share:
 
 ```ts
 export async function socketAuth(socket, next)
@@ -298,7 +303,7 @@ In-memory state (lost on restart): a rolling history of the last **100** message
 | S→C on connect | `history` | last ≤100 `ChatMessage`s |
 | S→C on connect | `online` | `OnlineUser[]` (`{ id, name }` — role is deliberately stripped) |
 | S→C | `user:joined` / `user:left` | fired on a user's first socket / last disconnect |
-| C→S | `message:send` | `{ text, attachments? }` + ack. Text trimmed, capped at 2000 chars; attachments filtered to `{ type: 'gif', url }`, max 10. Ack: `{ ok: true }` or `{ error }` |
+| C→S | `message:send` | `{ text, attachments? }` + ack. Text trimmed, capped at 2000 chars; attachments filtered to `{ type: 'gif', url }`, max 10; **rate-limited 8 messages / 10s per user**. Ack: `{ ok: true }` or `{ error }` |
 | S→C | `message:new` | `{ id (uuid), text, attachments, user, sentAt (ISO) }` broadcast to everyone including sender |
 
 ### 8.2 `/timeline` namespace — editor live-sync (`lib/timelineSockets.ts`)
@@ -312,8 +317,8 @@ Design: **REST is the source of truth for persistent data.** The socket layer on
 | C→S | `timeline:join` `{ timelineId }` + ack | `canAccessTimeline` check: timeline→production→company; allowed if global admin, company owner/admin, or production member (mirrors §5 layers 1–2 + membership; per-permission bits are *not* rechecked here — REST enforces those on the actual writes). Ack `{ ok }` or `{ error: 'Access denied' … }`. On success: join room, add to presence, emit presence to the room. |
 | C→S | `timeline:leave` | leave room + presence (also on `disconnect`) |
 | S→C | `timeline:presence` | `PresenceUser[]` — `{ id, name, avatarImageId, createdAt }`, deduped per user across tabs; sent to the whole room on every join/leave |
-| C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — relayed verbatim to the room **except the sender** (`socket.to(room)`). `clip` is the full REST response row. |
-| C→S / S→C | `track:change` | `{ type: 'upsert'\|'remove', track?, trackId? }` — same relay semantics |
+| C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — relayed verbatim to the room **except the sender** (`socket.to(room)`). `clip` is the full REST response row. Payloads over **32 KB** are dropped (relay amplification guard). |
+| C→S / S→C | `track:change` | `{ type: 'upsert'\|'remove', track?, trackId? }` — same relay semantics and size cap |
 | C→S | `playhead:update` | `{ frame: number, isPlaying: boolean }` — validated finite; **rate-limited server-side to one relay per 80ms per socket** (excess silently dropped) |
 | S→C | `playhead:sync` | `{ frame, isPlaying, userId }` — the relay of the above, to everyone else in the room |
 
@@ -351,7 +356,8 @@ Design: **REST is the source of truth for persistent data.** The socket layer on
 
 **Gotchas worth knowing**
 
-- The `sessions` cleanup interval and chat history are per-process state — multi-instance deployment would need sticky sessions for Socket.IO and shared stores for history/presence.
+- The `sessions` cleanup interval, session read cache, rate limiters, and chat history are per-process state — multi-instance deployment would need sticky sessions for Socket.IO and shared stores for history/presence/limits.
+- Deploying the web app on a different origin than the API requires listing it in `CORS_ORIGINS` (comma-separated full origins) or requests will be rejected with 403.
 - `requireProductionRoute` returns `params` values as non-empty strings but TypeScript can't see which keys exist — the codebase uses `params.tlId!` after requesting `params: ['tlId']`.
 - Handlers that stream (`serve.get.ts`) end the response themselves; the dispatcher detects `res.writableEnded` and skips the JSON envelope.
 - The route scanner picks up **every** `*.{method}.ts` file under `src/routes` — don't park helper modules there.

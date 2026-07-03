@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { loadRoutes, matchRoute, type Route } from './router.js';
 import { ApiError, type ApiEvent, sendJson } from './lib/handler.js';
 import { setupSockets } from './lib/sockets.js';
+import { applyCors, applySecurityHeaders } from './lib/security.js';
 
 const here    = dirname(fileURLToPath(import.meta.url));
 const apiDir  = join(here, 'routes');
@@ -63,13 +64,16 @@ const routes = await loadRoutes(apiDir);
 printRouteTree(routes);
 
 const server = createServer(async (req, res) => {
-  const url    = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-  const origin = req.headers.origin;
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
-  res.setHeader('Access-Control-Allow-Origin',      origin ?? '*');
-  res.setHeader('Access-Control-Allow-Methods',     'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers',     'Content-Type');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  applySecurityHeaders(res);
+
+  // Disallowed cross-site origins are refused outright — never reflected into
+  // Access-Control-Allow-Origin alongside credentials, and never executed.
+  if (!applyCors(req, res)) {
+    sendJson(res, 403, { error: 'Origin not allowed' });
+    return;
+  }
 
   if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
 

@@ -4,6 +4,8 @@ import { eq } from 'drizzle-orm';
 import { db, users } from '@starling/db';
 import { sessionFromCookies } from './session.js';
 import { setupTimelineSockets } from './timelineSockets.js';
+import { isOriginAllowed } from './security.js';
+import { createRateLimiter } from './rateLimit.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -84,6 +86,9 @@ const MAX_HISTORY = 100;
 const history: ChatMessage[] = [];
 const online  = new Map<string, { user: OnlineUser; sockets: Set<string> }>(); // userId → {user, socketIds}
 
+// Per-user chat flood guard: 8 messages per 10 seconds.
+const chatLimiter = createRateLimiter({ windowMs: 10_000, max: 8 });
+
 function onlineUsers(): OnlineUser[] {
   return [...online.values()].map(e => e.user);
 }
@@ -93,7 +98,18 @@ function onlineUsers(): OnlineUser[] {
 export function setupSockets(httpServer: HttpServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
     path: '/socket',
-    cors: { origin: true, credentials: true },
+    // Same origin policy as the HTTP server — a disallowed site can neither
+    // read the handshake nor establish a credentialed connection.
+    allowRequest: (req, callback) => {
+      callback(null, isOriginAllowed(req.headers.origin, req.headers.host));
+    },
+    cors: {
+      origin: (origin, callback) => {
+        if (isOriginAllowed(origin ?? undefined, undefined)) callback(null, origin ?? true);
+        else callback(new Error('Origin not allowed'));
+      },
+      credentials: true,
+    },
   });
 
   io.use(socketAuth);
@@ -119,6 +135,11 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
     socket.on('message:send', ({ text, attachments = [] }, ack) => {
       if (typeof text !== 'string' || !text.trim()) {
         ack?.({ error: 'Empty message' });
+        return;
+      }
+
+      if (!chatLimiter.check(user.id)) {
+        ack?.({ error: 'Too many messages — slow down' });
         return;
       }
 

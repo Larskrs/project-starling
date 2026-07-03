@@ -108,7 +108,15 @@ async function canAccessTimeline(user: SocketUser, timelineId: string): Promise<
 
 // ── Namespace setup ───────────────────────────────────────────────────────────
 
-const PLAYHEAD_MIN_INTERVAL_MS = 80; // server-side guard against event floods
+const PLAYHEAD_MIN_INTERVAL_MS = 80;        // server-side guard against event floods
+const MAX_RELAY_BYTES          = 32 * 1024; // cap relayed clip/track payloads
+
+// Relays fan a sender's payload out to everyone in the room — bound the size so
+// one client can't broadcast megabytes to every peer.
+function relayTooLarge(payload: unknown): boolean {
+  try { return JSON.stringify(payload).length > MAX_RELAY_BYTES; }
+  catch { return true; }
+}
 
 export function setupTimelineSockets(io: SocketIOServer): void {
   const nsp = io.of('/timeline');
@@ -183,6 +191,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       const timelineId = socket.data.timelineId;
       if (!timelineId || !change || typeof change.trackId !== 'string') return;
       if (change.type !== 'upsert' && change.type !== 'remove') return;
+      if (relayTooLarge(change)) return;
       socket.to(roomName(timelineId)).emit('clip:change', change);
     });
 
@@ -190,6 +199,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       const timelineId = socket.data.timelineId;
       if (!timelineId || !change) return;
       if (change.type !== 'upsert' && change.type !== 'remove') return;
+      if (relayTooLarge(change)) return;
       socket.to(roomName(timelineId)).emit('track:change', change);
     });
 
