@@ -236,7 +236,7 @@ const {
 // ── Layout: sidebar width + per-track heights (persisted in cookies) ─────────
 const TRACK_HEIGHT_DEFAULT = 48
 const TRACK_HEIGHT_MIN     = 32
-const TRACK_HEIGHT_MAX     = 128
+const TRACK_HEIGHT_MAX     = 256
 
 const sidebarWidth = useCookie('editor-sidebar-width', 224)
 const trackHeights = useCookie('editor-track-heights', {})   // trackId → px

@@ -22,12 +22,20 @@ let _masterVolume = 1
 
 // The active run, or null when stopped. Async scheduler callbacks capture their
 // run and bail if it's no longer `_run` (stale = superseded or stopped).
-let _run = null   // { gain, frameRate, startCtxTime, startFrame, clips, scheduled:Set, voices:[], timer }
+let _run = null   // { gain, frameRate, startCtxTime, startFrame, clips, scheduled:Set, sigs:Map, voices:[], timer }
 
 const _bufferPromises = new Map()  // fileId → Promise<AudioBuffer>
 
 const FADE_S = 0.008   // declick ramp at each clip's edges
 const STOP_S = 0.03    // fade-out ramp applied to a whole run when it stops
+const VOICE_STOP_S = 0.03  // fade-out for a single voice retired during a resync
+
+// Scheduling signature of a clip: the fields that decide WHAT plays and WHEN.
+// A resync only reschedules clips whose signature changed; clips whose signature
+// is unchanged keep their currently-playing voice untouched (no gap).
+function _clipSig(clip) {
+  return `${clip.position}:${clip.mediaStart ?? 0}:${clip.end}:${clip.fileId}`
+}
 
 const TICK_MS          = 200   // scheduler poll interval
 const SCHEDULE_AHEAD_S = 0.5   // create + start sources this far ahead of playtime
@@ -118,6 +126,7 @@ export function startAudioPlayback(clips, playheadFrame, frameRate) {
     startFrame:   playheadFrame,
     clips:        schedulable,
     scheduled:    new Set(),
+    sigs:         new Map(),   // clipId → _clipSig at schedule time (for resync diffing)
     voices:       [],
     timer:        null,
   }
@@ -140,7 +149,7 @@ function _scheduleDue() {
     const startAt = run.startCtxTime + Math.max(0, clip.position - run.startFrame) / run.frameRate
     const endAt   = run.startCtxTime + (clip.position + durationFrames - run.startFrame) / run.frameRate
 
-    if (endAt <= t) { run.scheduled.add(clip.id); continue }   // window already passed
+    if (endAt <= t) { run.scheduled.add(clip.id); run.sigs.set(clip.id, _clipSig(clip)); continue }  // window already passed
     if (startAt > t + DECODE_AHEAD_S) continue                 // too far out to care yet
 
     // Warm the decode cache ahead of time so the buffer is ready when due.
@@ -148,6 +157,7 @@ function _scheduleDue() {
 
     if (startAt <= t + SCHEDULE_AHEAD_S) {
       run.scheduled.add(clip.id)
+      run.sigs.set(clip.id, _clipSig(clip))
       _scheduleClip(clip, run)
     }
   }
@@ -185,9 +195,73 @@ function _scheduleClip(clip, run) {
     gain.gain.linearRampToValueAtTime(0, when + dur)
 
     src.start(when, bufferStart + lost, dur)
-    run.voices.push({ src, gain })
-    src.onended = () => { try { src.disconnect(); gain.disconnect() } catch {} }
+    const voice = { clipId: clip.id, src, gain }
+    run.voices.push(voice)
+    src.onended = () => {
+      try { src.disconnect(); gain.disconnect() } catch {}
+      const i = run.voices.indexOf(voice)
+      if (i !== -1) run.voices.splice(i, 1)
+    }
   }).catch(() => {})
+}
+
+/** Fade out and stop every live voice belonging to one clip, then drop them. */
+function _retireClipVoices(run, clipId) {
+  if (!_ctx) return
+  const t      = _ctx.currentTime
+  const stopAt = t + VOICE_STOP_S
+  run.voices = run.voices.filter(voice => {
+    if (voice.clipId !== clipId) return true
+    try {
+      voice.gain.gain.cancelScheduledValues(t)
+      voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), t)
+      voice.gain.gain.linearRampToValueAtTime(0, stopAt)
+      voice.src.onended = null  // we manage removal here; don't double-splice
+      voice.src.stop(stopAt)
+      setTimeout(() => { try { voice.src.disconnect(); voice.gain.disconnect() } catch {} }, (VOICE_STOP_S + 0.05) * 1000)
+    } catch {}
+    return false
+  })
+}
+
+/**
+ * Re-point a LIVE run at edited timeline state without tearing it down. Voices
+ * for clips whose scheduling signature is unchanged keep playing untouched — so
+ * moving/cropping one clip (or a peer's edit arriving) no longer gaps the whole
+ * mix. Only changed clips are faded + rescheduled; removed clips fade out; added
+ * or moved-into-range clips get picked up by the scheduler on the spot.
+ *
+ * Falls back to a clean start when there's no live run, or when the frame rate
+ * changed (the run's whole time reference would be invalid).
+ */
+export function resyncAudioPlayback(clips, playheadFrame, frameRate) {
+  const run = _run
+  if (!run || !_ctx || run.frameRate !== frameRate) {
+    startAudioPlayback(clips, playheadFrame, frameRate)
+    return
+  }
+
+  const schedulable = clips.filter(clip => {
+    if (!clip.fileId) return false
+    const ms = clip.mediaStart ?? 0
+    const me = clip.end
+    return me != null && me > ms
+  })
+  const nextById = new Map(schedulable.map(c => [c.id, c]))
+
+  // Retire voices + scheduling for clips that were removed or whose timing changed.
+  for (const clipId of [...run.scheduled]) {
+    const next = nextById.get(clipId)
+    if (next && _clipSig(next) === run.sigs.get(clipId)) continue  // unchanged → leave playing
+    _retireClipVoices(run, clipId)
+    run.scheduled.delete(clipId)
+    run.sigs.delete(clipId)
+  }
+
+  // Swap in the new set; the scheduler picks up adds/moves on its next walk,
+  // which we run now so a clip moved under the playhead re-attacks immediately.
+  run.clips = schedulable
+  _scheduleDue()
 }
 
 /**

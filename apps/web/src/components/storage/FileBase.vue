@@ -23,7 +23,7 @@ const props = defineProps({ file: { type: Object, required: true } })
 const emit  = defineEmits(['select', 'delete', 'renamed', 'moved'])
 
 const productionId = inject('storage-production-id', null)
-const menuOpen  = ref(false)
+  const menuOpen  = ref(false)
 const { $fetch } = useApi()
 
 // ── Selection ─────────────────────────────────────────────────────────────────

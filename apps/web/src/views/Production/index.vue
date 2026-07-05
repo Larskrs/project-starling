@@ -62,7 +62,7 @@ const NAV_GROUPS = [
     label: 'nav.workspace',
     items: [
       { id: 'dashboard', icon: 'mdi:view-dashboard-outline', label: 'nav.dashboard', permission: null },
-      { id: 'timelines',   icon: 'mdi:timeline-outline',       label: 'nav.timelines',  permission: 'ADMINISTRATOR'  },
+      { id: 'timelines',   icon: 'mdi:timeline-outline',       label: 'nav.timelines',  permission: null  },
       { id: 'files',     icon: 'mdi:folder-outline',          label: 'nav.files',    permission: null },
     ],
   },

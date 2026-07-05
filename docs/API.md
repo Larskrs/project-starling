@@ -316,12 +316,12 @@ Design: **REST is the source of truth for persistent data.** The socket layer on
 
 | Direction | Event | Behavior |
 | --- | --- | --- |
-| C→S | `timeline:join` `{ timelineId }` + ack | `canAccessTimeline` check: timeline→production→company; allowed if global admin, company owner/admin, or production member (mirrors §5 layers 1–2 + membership; per-permission bits are *not* rechecked here — REST enforces those on the actual writes). Ack `{ ok }` or `{ error: 'Access denied' … }`. On success: join room, add to presence, emit presence to the room. |
+| C→S | `timeline:join` `{ timelineId }` + ack | `resolveTimelineAccess` check: timeline→production→company; allowed if global admin, company owner/admin, or production member (mirrors §5 layers 1–2 + membership). The member's role permission bits are resolved in the same pass and the resulting `EDIT_TIMELINE` capability is cached on the socket to gate the mutation relays below. Ack `{ ok }` or `{ error: 'Access denied' … }`. On success: join room, add to presence, emit presence to the room. |
 | C→S | `timeline:leave` | leave room + presence (also on `disconnect`) |
 | S→C | `timeline:presence` | `PresenceUser[]` — `{ id, name, avatarImageId, createdAt }`, deduped per user across tabs; sent to the whole room on every join/leave |
-| C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — relayed verbatim to the room **except the sender** (`socket.to(room)`). `clip` is the full REST response row. Payloads over **32 KB** are dropped (relay amplification guard). |
-| C→S / S→C | `track:change` | `{ type: 'upsert'\|'remove', track?, trackId? }` — same relay semantics and size cap |
-| C→S | `playhead:update` | `{ frame: number, isPlaying: boolean }` — validated finite; **rate-limited server-side to one relay per 80ms per socket** (excess silently dropped) |
+| C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — relayed verbatim to the room **except the sender** (`socket.to(room)`). **Requires `EDIT_TIMELINE`** (the cached join-time capability) — sockets without it are silently dropped, matching the REST mutation routes. `clip` is the full REST response row. Payloads over **32 KB** are dropped (relay amplification guard). |
+| C→S / S→C | `track:change` | `{ type: 'upsert'\|'remove', track?, trackId? }` — same relay semantics, **`EDIT_TIMELINE` gate**, and size cap |
+| C→S | `playhead:update` | `{ frame: number, isPlaying: boolean }` — validated finite; VIEW-level (any joined member drives the shared transport); **rate-limited server-side to one relay per 80ms per socket** (excess silently dropped) |
 | S→C | `playhead:sync` | `{ frame, isPlaying, userId }` — the relay of the above, to everyone else in the room |
 
 **Playhead protocol (client contract)** — implemented in `useTimelineSync.js` + `usePlayback.js`:

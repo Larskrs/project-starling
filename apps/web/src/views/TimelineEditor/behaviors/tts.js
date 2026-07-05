@@ -20,10 +20,10 @@ export function createCueSpeaker({ clips, fps, }) {
   async function speak(clip, remainingMs) {
     let text = (clip.label ?? '').trim()
     if (!text) return
-    
+
     await EasySpeech.speak({
       text,
-      pitch: 1,
+      pitch: 0.9,
       rate: 1.25,
       volume: 1.2,
     })

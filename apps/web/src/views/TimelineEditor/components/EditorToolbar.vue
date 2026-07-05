@@ -44,9 +44,6 @@ function initials(name) {
     <div class="flex items-center gap-2 min-w-0">
       <Icon icon="mdi:timeline-outline" class="size-4 text-muted-foreground shrink-0" />
       <span class="text-sm font-semibold text-foreground truncate">{{ timeline.name }}</span>
-      <span class="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
-        {{ timeline.frameRate }} fps
-      </span>
     </div>
 
     <div class="flex-1" />

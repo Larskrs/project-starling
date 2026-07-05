@@ -1,8 +1,11 @@
 <script setup>
 import { ref, shallowRef, computed, inject, watch } from 'vue'
-import { Icon } from '@iconify/vue'
 import { clipLeft, clipWidth } from '../useEditorUtils.js'
 import { getPeakPyramid, pickLevel } from '../useWaveform.js'
+import { ContextMenuRoot, ContextMenuTrigger } from 'radix-vue'
+import ContextMenuContent   from '@starling/ui/ContextMenuContent'
+import ContextMenuItem      from '@starling/ui/ContextMenuItem'
+import ContextMenuSeparator from '@starling/ui/ContextMenuSeparator'
 
 const props = defineProps({
   clip:         { type: Object, required: true },
@@ -18,7 +21,6 @@ const props = defineProps({
 const emit = defineEmits(['edit', 'delete', 'crop', 'move'])
 
 const allSources = inject('editor-sources', ref([]))
-const hovered    = ref(false)
 const dragging   = ref(false)
 
 const isEventTrack = computed(() => props.track.mode === 'event')
@@ -96,8 +98,10 @@ function onMoveEnd(e) {
   dragging.value = false
 }
 
-// Prevent "edit" from opening when the user just finished a drag.
-function onClipClick() {
+// Double-click opens the clip settings dialog (single click is reserved for
+// selecting / dragging); the context menu's "Edit" item does the same. Guard
+// against a drag that ends in a stray double-click.
+function onClipDblClick() {
   if (_didMove) { _didMove = false; return }
   emit('edit')
 }
@@ -276,127 +280,107 @@ watch(
 </script>
 
 <template>
-  <!-- Narrow point marker: source-backed clips on clip-mode tracks -->
-  <div
-    v-if="isPoint"
-    class="absolute top-1 bottom-1 rounded-sm flex items-start justify-center select-none tl-clip-normal"
-    :style="bgStyle"
-    @mousedown="startMove"
-    @click.stop="onClipClick"
-    @mouseenter="hovered = true"
-    @mouseleave="hovered = false"
-  >
-    <div
-      v-if="hovered && !dragging"
-      class="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-popover border border-border rounded shadow-sm px-1.5 py-0.5 z-20 whitespace-nowrap"
-    >
-      <span v-if="source" class="text-[10px] font-bold" :style="{ color: `oklch(62% 0.17 ${source.hue})` }">{{ source.shortName }}</span>
-      <span v-if="clip.label" class="text-[10px] text-muted-foreground">{{ clip.label }}</span>
-      <button class="size-4 flex items-center justify-center text-muted-foreground hover:text-foreground ml-0.5" @mousedown.stop @click.stop="$emit('edit')">
-        <Icon icon="mdi:pencil-outline" class="size-3" />
-      </button>
-      <button class="size-4 flex items-center justify-center text-muted-foreground hover:text-destructive" @mousedown.stop @click.stop="$emit('delete')">
-        <Icon icon="mdi:trash-can-outline" class="size-3" />
-      </button>
-    </div>
-  </div>
+  <ContextMenuRoot>
+    <!-- as-child: the clip element itself is the right-click target; the menu
+         opens at the cursor position (ContextMenu, not an anchored dropdown).
+         v-if = narrow point marker (source-backed, clip-mode); v-else = block. -->
+    <ContextMenuTrigger as-child>
+      <div
+        v-if="isPoint"
+        class="absolute top-1 bottom-1 rounded-sm flex items-start justify-center select-none tl-clip-normal"
+        :style="bgStyle"
+        @mousedown="startMove"
+        @click.stop
+        @dblclick.stop="onClipDblClick"
+      />
 
-  <!-- Block: event-mode (span-to-next) and clip-mode media blocks -->
-  <div
-    v-else
-    class="absolute top-1 bottom-1 rounded flex items-center overflow-hidden select-none"
-    :class="clipBodyClass"
-    :style="bgStyle"
-    @mousedown="startMove"
-    @click.stop="onClipClick"
-    @mouseenter="hovered = true"
-    @mouseleave="hovered = false"
-  >
-    <!-- Left crop handle (clip-mode only) -->
-    <div
-      v-if="!isEventTrack"
-      class="absolute left-0 top-0 bottom-0 w-1.5 z-20 cursor-col-resize bg-black/20 hover:bg-white/30 transition-colors rounded-l"
-      @mousedown.stop="startCrop('left', $event)"
-    />
+      <div
+        v-else
+        class="absolute top-1 bottom-1 rounded flex items-center overflow-hidden select-none"
+        :class="clipBodyClass"
+        :style="bgStyle"
+        @mousedown="startMove"
+        @click.stop
+        @dblclick.stop="onClipDblClick"
+      >
+        <!-- Left crop handle (clip-mode only) -->
+        <div
+          v-if="!isEventTrack"
+          class="absolute left-0 top-0 bottom-0 w-1.5 z-20 cursor-col-resize bg-black/20 hover:bg-white/30 transition-colors rounded-l"
+          @mousedown.stop="startCrop('left', $event)"
+        />
 
-    <!-- Image background (image clips) -->
-    <img
-      v-if="clip.fileId && clip.fileType === 'image'"
-      :src="`/api/storage/${clip.fileId}/serve?quality=30`"
-      class="absolute inset-0 w-full h-full object-cover pointer-events-none"
-      style="opacity: 0.55;"
-      :alt="clip.label || ''"
-    />
+        <!-- Image background (image clips) -->
+        <img
+          v-if="clip.fileId && clip.fileType === 'image'"
+          :src="`/api/storage/${clip.fileId}/serve?quality=30`"
+          class="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          style="opacity: 0.55;"
+          :alt="clip.label || ''"
+        />
 
-    <!-- Waveform canvas (audio clips) — sized/positioned to the visible window only -->
-    <canvas
-      v-else-if="isAudioClip && visibleWindow"
-      ref="waveCanvas"
-      class="absolute top-0 bottom-0 pointer-events-none"
-      :style="{ left: visibleWindow.offset + 'px', width: visibleWindow.width + 'px', height: '100%' }"
-    />
+        <!-- Waveform canvas (audio clips) — sized/positioned to the visible window only -->
+        <canvas
+          v-else-if="isAudioClip && visibleWindow"
+          ref="waveCanvas"
+          class="absolute top-0 bottom-0 pointer-events-none"
+          :style="{ left: visibleWindow.offset + 'px', width: visibleWindow.width + 'px', height: '100%' }"
+        />
 
-    <!-- Label — stretch: SVG text distorted to fill the clip; emphasize: bold/centered; normal.
-         Faint clip bodies use the theme foreground; solid bodies use white. -->
-    <svg
-      v-if="nameDisplay === 'stretch'"
-      class="absolute inset-0 w-full h-full pointer-events-none z-10 px-1"
-      :class="faintBody ? 'text-foreground/90' : ''"
-      :viewBox="stretchViewBox"
-      preserveAspectRatio="none"
-    >
-      <text
-        x="50%" y="55%"
-        text-anchor="middle" dominant-baseline="middle"
-        font-size="26" font-weight="700"
-        :fill="faintBody ? 'currentColor' : 'rgba(255,255,255,0.92)'"
-      >{{ labelText }}</text>
-    </svg>
-    <span
-      v-else-if="nameDisplay === 'emphasize'"
-      class="relative z-10 text-sm font-bold tracking-wide truncate leading-none select-none px-2 flex-1 text-center"
-      :class="faintBody ? 'text-foreground' : 'text-white'"
-    >
-      {{ labelText }}
-    </span>
-    <span
-      v-else
-      class="relative z-10 text-[10px] font-semibold truncate leading-none select-none px-2 flex-1"
-      :class="faintBody ? 'text-foreground/90' : 'text-white/90'"
-    >
-      {{ labelText }}
-    </span>
-    <span v-if="nameDisplay === 'stretch'" class="flex-1" />
+        <!-- Label — stretch: SVG text distorted to fill the clip; emphasize: bold/centered; normal.
+             Faint clip bodies use the theme foreground; solid bodies use white. -->
+        <svg
+          v-if="nameDisplay === 'stretch'"
+          class="absolute inset-0 w-full h-full pointer-events-none z-10 px-1"
+          :class="faintBody ? 'text-foreground/90' : ''"
+          :viewBox="stretchViewBox"
+          preserveAspectRatio="none"
+        >
+          <text
+            x="50%" y="55%"
+            text-anchor="middle" dominant-baseline="middle"
+            font-size="26" font-weight="700"
+            :fill="faintBody ? 'currentColor' : 'rgba(255,255,255,0.92)'"
+          >{{ labelText }}</text>
+        </svg>
+        <span
+          v-else-if="nameDisplay === 'emphasize'"
+          class="relative z-10 text-sm font-bold tracking-wide truncate leading-none select-none px-2 flex-1 text-start"
+          :class="faintBody ? 'text-foreground' : 'text-white'"
+        >
+          {{ labelText }}
+        </span>
+        <span
+          v-else
+          class="relative z-10 text-[10px] font-semibold truncate leading-none select-none px-2 flex-1"
+          :class="faintBody ? 'text-foreground/90' : 'text-white/90'"
+        >
+          {{ labelText }}
+        </span>
+        <span v-if="nameDisplay === 'stretch'" class="flex-1" />
 
-    <!-- Hover actions (hidden while dragging) -->
-    <div
-      v-if="hovered && !dragging"
-      class="relative z-10 flex gap-0.5 bg-black/30 rounded px-0.5 py-0.5 shrink-0 mr-2"
-      @mousedown.stop
-      @click.stop
-    >
-      <button class="size-4 flex items-center justify-center text-white/80 hover:text-white" @click.stop="$emit('edit')">
-        <Icon icon="mdi:pencil-outline" class="size-3" />
-      </button>
-      <button class="size-4 flex items-center justify-center text-white/80 hover:text-red-300" @click.stop="$emit('delete')">
-        <Icon icon="mdi:trash-can-outline" class="size-3" />
-      </button>
-    </div>
+        <!-- Right crop handle (clip-mode only) -->
+        <div
+          v-if="!isEventTrack"
+          class="absolute right-0 top-0 bottom-0 w-1.5 z-20 cursor-col-resize bg-black/20 hover:bg-white/30 transition-colors rounded-r"
+          @mousedown.stop="startCrop('right', $event)"
+        />
+      </div>
+    </ContextMenuTrigger>
 
-    <!-- Right crop handle (clip-mode only) -->
-    <div
-      v-if="!isEventTrack"
-      class="absolute right-0 top-0 bottom-0 w-1.5 z-20 cursor-col-resize bg-black/20 hover:bg-white/30 transition-colors rounded-r"
-      @mousedown.stop="startCrop('right', $event)"
-    />
-  </div>
+    <ContextMenuContent>
+      <ContextMenuItem icon="mdi:pencil-outline" @click="$emit('edit')">Edit</ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem icon="mdi:delete-outline" destructive @click="$emit('delete')">Delete</ContextMenuItem>
+    </ContextMenuContent>
+  </ContextMenuRoot>
 </template>
 
 <!-- Unscoped: the .dark ancestor selector must reach the html element.
      Lightness/chroma per theme; the clip supplies only --clip-hue. -->
 <style>
-.tl-clip-normal        { background: oklch(58% 0.14 var(--clip-hue)); }
-.dark .tl-clip-normal  { background: oklch(50% 0.12 var(--clip-hue)); }
+.tl-clip-normal        { background: oklch(68% 0.2 var(--clip-hue)); }
+.dark .tl-clip-normal  { background: oklch(58% 0.2 var(--clip-hue)); }
 
 .tl-clip-zebra {
   background: repeating-linear-gradient(45deg,
@@ -409,9 +393,9 @@ watch(
     oklch(42% 0.10 var(--clip-hue)) 10px 20px);
 }
 
-.tl-clip-border        { background: oklch(58% 0.14 var(--clip-hue) / 0.08); border: 2px solid oklch(55% 0.16 var(--clip-hue)); }
-.dark .tl-clip-border  { background: oklch(70% 0.13 var(--clip-hue) / 0.10); border-color: oklch(70% 0.14 var(--clip-hue)); }
+.tl-clip-border        { background: oklch(58% 0.14 var(--clip-hue) / 0.15); border: 2px solid oklch(50% 0.16 var(--clip-hue)); }
+.dark .tl-clip-border  { background: oklch(70% 0.25 var(--clip-hue) / 0.25); border-color: oklch(50% 0.25 var(--clip-hue)); }
 
-.tl-clip-transparent       { background: oklch(58% 0.14 var(--clip-hue) / 0.18); }
-.dark .tl-clip-transparent { background: oklch(70% 0.13 var(--clip-hue) / 0.20); }
+.tl-clip-transparent       { background: transparent }
+.dark .tl-clip-transparent { background: transparent }
 </style>

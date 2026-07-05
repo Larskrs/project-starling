@@ -1,7 +1,9 @@
 import type { Server as SocketIOServer, Socket } from 'socket.io';
 import { eq, and, or } from 'drizzle-orm';
-import { db, timelines, productions, companyMembers, productionMembers } from '@starling/db';
+import { db, timelines, productions, companyMembers, productionMembers, productionRoles } from '@starling/db';
 import { socketAuth, type SocketData, type SocketUser } from './sockets.js';
+import { can } from './permissions.js';
+import { Permission } from '@starling/auth/permissions';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,6 +56,9 @@ interface ClientToServerEvents {
 interface TimelineSocketData extends SocketData {
   timelineId?: string;
   lastPlayheadAt?: number;
+  // Whether the joined member holds EDIT_TIMELINE for the current timeline.
+  // Resolved once at join time and gates the clip/track mutation relays.
+  canEdit?: boolean;
 }
 
 type TimelineSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, TimelineSocketData>;
@@ -72,19 +77,27 @@ function presenceList(timelineId: string): PresenceUser[] {
 }
 
 // ── Access check ──────────────────────────────────────────────────────────────
-// Mirrors requireProductionAccess: global admin, company owner/admin,
-// or explicit production membership.
+// Mirrors requireProductionAccess: global admin, company owner/admin, or explicit
+// production membership. Resolves the member's role permission bits in the same
+// pass so per-event permission checks (EDIT_TIMELINE) need no extra round-trip.
 
-async function canAccessTimeline(user: SocketUser, timelineId: string): Promise<boolean> {
+interface TimelineAccess {
+  /** Global admin or company owner/admin — every permission check passes. */
+  privileged:      boolean;
+  /** The member's role permission bits; null when privileged or role-less. */
+  rolePermissions: bigint | null;
+}
+
+async function resolveTimelineAccess(user: SocketUser, timelineId: string): Promise<TimelineAccess | null> {
   const [tl] = await db
     .select({ productionId: timelines.productionId, companyId: productions.companyId })
     .from(timelines)
     .innerJoin(productions, eq(timelines.productionId, productions.id))
     .where(eq(timelines.id, timelineId))
     .limit(1);
-  if (!tl) return false;
+  if (!tl) return null;
 
-  if (user.role === 'admin') return true;
+  if (user.role === 'admin') return { privileged: true, rolePermissions: null };
 
   const [companyMem] = await db.select({ id: companyMembers.id })
     .from(companyMembers)
@@ -94,16 +107,25 @@ async function canAccessTimeline(user: SocketUser, timelineId: string): Promise<
       or(eq(companyMembers.role, 'owner'), eq(companyMembers.role, 'admin')),
     ))
     .limit(1);
-  if (companyMem) return true;
+  if (companyMem) return { privileged: true, rolePermissions: null };
 
-  const [prodMem] = await db.select({ id: productionMembers.id })
+  const [prodMem] = await db.select({ roleId: productionMembers.roleId, permissions: productionRoles.permissions })
     .from(productionMembers)
+    .leftJoin(productionRoles, eq(productionMembers.roleId, productionRoles.id))
     .where(and(
       eq(productionMembers.productionId, tl.productionId),
       eq(productionMembers.userId, user.id),
     ))
     .limit(1);
-  return !!prodMem;
+  if (!prodMem) return null;
+
+  return { privileged: false, rolePermissions: prodMem.permissions ?? null };
+}
+
+/** Whether the resolved access grants a specific production permission. */
+function accessGrants(access: TimelineAccess, user: SocketUser, required: bigint): boolean {
+  if (access.privileged) return true;
+  return can(user.role, access.rolePermissions, required);
 }
 
 // ── Namespace setup ───────────────────────────────────────────────────────────
@@ -145,6 +167,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       const timelineId = socket.data.timelineId;
       if (!timelineId) return;
       socket.data.timelineId = undefined;
+      socket.data.canEdit = undefined;
       void socket.leave(roomName(timelineId));
 
       const room = rooms.get(timelineId);
@@ -163,18 +186,23 @@ export function setupTimelineSockets(io: SocketIOServer): void {
         return;
       }
 
+      let access: TimelineAccess | null;
       try {
-        if (!(await canAccessTimeline(user, timelineId))) {
-          ack?.({ error: 'Access denied' });
-          return;
-        }
+        access = await resolveTimelineAccess(user, timelineId);
       } catch {
         ack?.({ error: 'Access check failed' });
+        return;
+      }
+      if (!access) {
+        ack?.({ error: 'Access denied' });
         return;
       }
 
       leavePresence(); // a socket follows one timeline at a time
       socket.data.timelineId = timelineId;
+      // Cache the edit capability for this timeline so the mutation relays
+      // below don't hit the DB on every clip/track event.
+      socket.data.canEdit = accessGrants(access, user, Permission.EDIT_TIMELINE);
       await socket.join(roomName(timelineId));
       joinPresence(timelineId);
       socket.emit('timeline:presence', presenceList(timelineId));
@@ -185,11 +213,15 @@ export function setupTimelineSockets(io: SocketIOServer): void {
 
     // ── Relays ────────────────────────────────────────────────────────────
     // REST is the source of truth for clip/track data; the socket only
-    // fans out the change the sender already persisted.
+    // fans out the change the sender already persisted. Broadcasting a clip
+    // or track mutation requires EDIT_TIMELINE — the same permission the REST
+    // mutation routes enforce — so a view-only member can't inject forged
+    // changes into other editors' timelines.
 
     socket.on('clip:change', (change) => {
       const timelineId = socket.data.timelineId;
-      if (!timelineId || !change || typeof change.trackId !== 'string') return;
+      if (!timelineId || !socket.data.canEdit) return;
+      if (!change || typeof change.trackId !== 'string') return;
       if (change.type !== 'upsert' && change.type !== 'remove') return;
       if (relayTooLarge(change)) return;
       socket.to(roomName(timelineId)).emit('clip:change', change);
@@ -197,12 +229,15 @@ export function setupTimelineSockets(io: SocketIOServer): void {
 
     socket.on('track:change', (change) => {
       const timelineId = socket.data.timelineId;
-      if (!timelineId || !change) return;
+      if (!timelineId || !socket.data.canEdit) return;
+      if (!change) return;
       if (change.type !== 'upsert' && change.type !== 'remove') return;
       if (relayTooLarge(change)) return;
       socket.to(roomName(timelineId)).emit('track:change', change);
     });
 
+    // Playhead sync is a shared-viewing feature, so it stays at join (VIEW)
+    // level — any member in the room can drive the synced transport.
     socket.on('playhead:update', (state) => {
       const timelineId = socket.data.timelineId;
       if (!timelineId || !state || typeof state.frame !== 'number' || !Number.isFinite(state.frame)) return;

@@ -5,6 +5,7 @@ import { useSocket }      from '../../composables/useSocket.js'
 import Button             from '@starling/ui/Button'
 import Input              from '@starling/ui/Input'
 import GifPickerDialog     from './GifPickerDialog.vue'
+import { Avatar } from '@starling/ui'
 
 const { user, logout, fetchUser } = useAuth()
 const { messages, onlineUsers, connected, connect, disconnect, sendMessage } = useSocket()
@@ -91,9 +92,7 @@ function fmt(iso) {
             class="flex gap-3 items-start"
           >
             <!-- Avatar -->
-            <div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-semibold shrink-0 select-none">
-              {{ initials(msg.user.name) }}
-            </div>
+            <Avatar :src="msg.user.avatarImageId" :alt="msg.user.name" class="w-8 h-8" />
 
             <!-- Bubble -->
             <div>
