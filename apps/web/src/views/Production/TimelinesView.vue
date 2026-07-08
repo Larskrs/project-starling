@@ -17,7 +17,7 @@ const {
   items: timelinesList, loading, error, load,
   createOpen, editTarget, deleteTarget, deleting,
   onCreated, onUpdated, confirmDelete,
-} = useProductionCrud(() => `/api/timelines?pid=${data?.production?.id}`, {
+} = useProductionCrud(() => `/api/timelines?pid=${data.value?.production?.id}`, {
   loadError: () => t('timelines.couldNotLoad'),
   itemBase:  '/api/timeline',
 })
