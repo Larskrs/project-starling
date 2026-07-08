@@ -38,10 +38,11 @@ export default defineEventHandler(async (event) => {
 
   return {
     user: {
-      id:    user.id,
-      email: user.email,
-      name:  user.name,
-      role:  user.role,
+      id:             user.id,
+      email:          user.email,
+      name:           user.name,
+      role:           user.role,
+      avatarImageId:  user.avatarImageId
     },
   };
 });
