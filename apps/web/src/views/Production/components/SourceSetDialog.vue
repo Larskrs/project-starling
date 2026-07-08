@@ -1,6 +1,5 @@
 <script setup>
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FormDialog, FormField, Input } from '@starling/ui'
 import { useEntityDialog } from '../../../composables/useEntityDialog.js'
@@ -12,7 +11,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:open', 'created', 'updated'])
 
-const route = useRoute()
+const data = inject('production-data')
 const { t } = useI18n()
 
 const name = ref('')
@@ -21,7 +20,7 @@ const { isEdit, loading, error, submit } = useEntityDialog({
   open:   () => props.open,
   entity: () => props.sourceSet,
   emit,
-  url: () => `/api/company/${route.params.cslug}/production/${route.params.pslug}/source-sets`,
+  url: () => `/api/production/${data.value?.production?.id}/source-sets`,
   fill:  (s) => { name.value = s.name },
   reset: ()  => { name.value = '' },
   payload:       () => ({ name: name.value.trim() }),

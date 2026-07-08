@@ -16,9 +16,8 @@ const data   = inject('production-data')
 const { t }  = useI18n()
 const { $fetch } = useApi()
 
-const uploadUrl = computed(() =>
-  `/api/company/${route.params.cslug}/production/${route.params.pslug}/profile`,
-)
+const productionUrl = computed(() => `/api/production/${data.value?.production?.id}`)
+const uploadUrl     = computed(() => `${productionUrl.value}/profile`)
 
 const bannerSrc = computed(() => data.value?.production?.bannerImageId
   ? `/api/storage/${data.value.production.bannerImageId}/serve?quality=67` : null)
@@ -46,7 +45,7 @@ async function saveName() {
   nameError.value   = ''
   nameSuccess.value = false
   const { ok, data: resData, error } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
+    productionUrl.value,
     { method: 'PATCH', json: { name: nameInput.value.trim() }, silent: true },
   )
   nameSaving.value = false
@@ -96,7 +95,7 @@ async function saveStorage() {
   storageError.value   = ''
   storageSuccess.value = false
   const { ok, data: resData, error } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
+    productionUrl.value,
     { method: 'PATCH', json: { allocatedStorage: storageBytes.value }, silent: true },
   )
   storageSaving.value = false
@@ -124,7 +123,7 @@ async function submitRenameSlug() {
   renameSlugLoading.value = true
   renameSlugError.value   = ''
   const { ok, data: resData, error } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
+    productionUrl.value,
     { method: 'PATCH', json: { slug: newSlug.value.trim() }, silent: true },
   )
   renameSlugLoading.value = false
@@ -144,7 +143,7 @@ async function submitDelete() {
   deleteLoading.value = true
   deleteError.value   = ''
   const { ok, error } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}`,
+    productionUrl.value,
     { method: 'DELETE', silent: true },
   )
   deleteLoading.value = false

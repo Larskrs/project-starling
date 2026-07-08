@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import Dialog        from '@starling/ui/Dialog'
@@ -23,7 +22,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:open', 'saved'])
 
-const route      = useRoute()
 const { t }      = useI18n()
 const { $fetch } = useApi()
 
@@ -89,7 +87,7 @@ watch(() => props.open, async (open) => {
 async function loadAudioFiles() {
   loadingFiles.value = true
   const { ok, data } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/files?type=audio`,
+    `/api/production/${props.timeline?.productionId}/files?type=audio`,
     { silent: true },
   )
   loadingFiles.value = false
@@ -117,10 +115,8 @@ async function submit() {
   loading.value = true
   error.value   = ''
 
-  const { cslug, pslug, tlId } = route.params
-  const trackId = props.track?.id
-  const base    = `/api/company/${cslug}/production/${pslug}/timelines/${tlId}/tracks/${trackId}/clips`
-  const url     = isEdit.value ? `${base}/${props.clip.id}` : base
+  const tlId = props.track?.timelineId ?? props.timeline?.id
+  const url  = isEdit.value ? `/api/timeline/${tlId}/clips/${props.clip.id}` : `/api/timeline/${tlId}/clips`
 
   let modeFields
   if (sourceId.value != null) {
@@ -136,6 +132,7 @@ async function submit() {
   }
 
   const body = {
+    ...(isEdit.value ? {} : { trackId: props.track?.id }),
     label:    label.value,
     position: Number(position.value),
     hue:      hue.value,

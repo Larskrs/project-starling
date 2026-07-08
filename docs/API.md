@@ -17,7 +17,8 @@ apps/api/src/
 │  ├─ session.ts       cookie sessions (DB-backed)
 │  ├─ auth.ts          password hashing/verification
 │  ├─ permissions.ts   can() — permission bit check
-│  ├─ production.ts    company/production resolution + access + permission guards
+│  ├─ production.ts    production resolution + access + permission guards (query/id scoping)
+│  ├─ company.ts       company resolution + company-admin guard
 │  ├─ storage.ts       disk layout, sharp image pipeline, audio writes
 │  ├─ sockets.ts       Socket.IO server, shared auth middleware, chat namespace
 │  └─ timelineSockets.ts  /timeline namespace: rooms, presence, relays, playhead
@@ -102,16 +103,27 @@ Nuxt/Nitro-style file conventions under `src/routes`. The filename encodes the m
 
 **Cross-cutting utilities** — `lib/rateLimit.ts` (`createRateLimiter({ windowMs, max }).check(key)`, sliding window, in-memory), `lib/cache.ts` (`TtlCache` with size cap), `lib/security.ts` (`isOriginAllowed`, `applyCors`, `applySecurityHeaders`, `getClientIp`).
 
-**Production-scoped routes** (`lib/production.ts`) — the standard preamble for anything under `/company/[cslug]/production/[pslug]/…`:
+**Production-scoped routes** (`lib/production.ts`) — resources hang off an **id-scoped path prefix** rather than the old slug chain: everything a production owns lives under `/api/production/[pid]/…`, and everything a timeline owns lives under `/api/timeline/[tlId]/…`. The two collections that create these ids stay at the top level (`/api/production/list`, `/api/timelines?pid=…`). Three preambles cover all of it:
 
 ```ts
-const { production, params } = await requireProductionRoute(event, {
-  permission: Permission.MANAGE_TIMELINES,   // optional — omit for read-only VIEW-by-membership
-  params:     ['tlId'],                      // extra router params, validated non-empty (400)
+// /api/production/[pid]/…  — pid is a path param
+const { production } = await requireProductionParam(event, {
+  permission: Permission.MANAGE_ROLES,   // optional
+});
+
+// /api/timeline/[tlId]/…  — resolves the timeline, then access on its production;
+// the full timeline row rides along so handlers don't re-fetch it
+const { production, timeline } = await requireTimelineParam(event, {
+  permission: Permission.EDIT_TIMELINE,
+});
+
+// Top-level collections scoped by ?pid=…  (/api/timelines)
+const { production } = await requireProductionQuery(event, {
+  permission: Permission.MANAGE_TIMELINES,
 });
 ```
 
-`requireProductionRoute` extracts `cslug`/`pslug` (+ named extras), resolves company + production (`404` with `errors.company.notFound` / `errors.production.notFound`), verifies access, optionally asserts a permission, and returns `ProductionContext & { params }`:
+All three resolve the owning production, verify access (`404` on a missing/invalid id, `422` for a missing `pid` query), optionally assert a permission, and return a `ProductionContext`. Item handlers still scope their `WHERE` by the resolved id chain (e.g. `eq(tracks.id, trackId) AND eq(tracks.timelineId, timeline.id)`) so foreign ids `404` rather than leak. `ProductionContext`:
 
 ```ts
 interface ProductionContext {
@@ -123,7 +135,7 @@ interface ProductionContext {
 }
 ```
 
-Lower-level pieces it composes: `requireProductionAccess(event, ref)` (accepts `{ cslug, pslug }` or `{ productionId, companyId? }` — the latter is used by storage routes) and `requirePermission(ctx, bit)`. `productionAccessFilter(auth)` builds a WHERE fragment for listing only accessible productions.
+Lower-level pieces they compose: `requireProductionAccess(event, ref)` (accepts `{ cslug, pslug }` — used only by `GET /production/find` — or `{ productionId, companyId? }`) and `requirePermission(ctx, bit)`. `productionAccessFilter(auth)` builds a WHERE fragment for listing only accessible productions. Company routes use `requireCompanyAccess` / `requireCompanyAdmin` (`lib/company.ts`), which accept `{ slug }` or `{ companyId }`.
 
 ---
 
@@ -173,7 +185,15 @@ Permission bits (`@starling/auth/permissions` — bit positions are frozen forev
 
 ## 6. REST route catalog
 
-All paths are prefixed `/api`. "Access" is what the handler enforces beyond a valid session. PATCH bodies are all-optional versions of the POST bodies unless noted; PATCH/DELETE return the updated row / `{ ok: true }`, and mutations scope every WHERE by the resolved production id (so cross-production ids 404).
+All paths are prefixed `/api`. "Access" is what the handler enforces beyond a valid session. PATCH bodies are all-optional versions of the POST bodies unless noted; PATCH/DELETE return the updated row / `{ ok: true }`.
+
+**URL convention** — a production owns everything under `/api/production/[pid]/…`; a timeline owns everything under `/api/timeline/[tlId]/…`. The two collections that mint those ids stay at the top level and scope by a query param. A handful of leaf collections still take a query param where a bare path segment wouldn't disambiguate:
+
+| Param | Scopes by | Used on |
+| --- | --- | --- |
+| `cid` | company id | `GET /production/list` (optional filter) |
+| `pid` | production id | `GET/POST /timelines`, `/storage` |
+| `sid` | source-set id | `GET/POST /production/[pid]/sources` |
 
 ### Auth & user
 
@@ -187,59 +207,63 @@ All paths are prefixed `/api`. "Access" is what the handler enforces beyond a va
 
 | Method + path | Access |
 | --- | --- |
-| `GET /company` · `GET /company/[slug]` | session (listing filtered by access) |
-| `POST /company` · `PATCH /company/[slug]` · `DELETE /company/[slug]` | global admin |
-| `POST /company/[cslug]/profile` | company profile/banner images |
-| `GET /company/[cslug]/members` | session |
-| `POST /company/[cslug]/members` · `DELETE /company/[cslug]/members/[id]` | global admin |
+| `GET /companies` · `GET /companies/[slug]` | session (detail returns `canManage`) |
+| `POST /companies` | global admin |
+| `PATCH /companies/[slug]` · `DELETE /companies/[slug]` | company owner/admin (or global admin) |
+| `POST /companies/[slug]/profile` | company owner/admin — profile/banner images |
+| `GET /companies/[slug]/members` | company owner/admin |
+| `POST /companies/[slug]/members` · `DELETE /companies/[slug]/members/[id]` | global admin |
 
 ### Productions
 
 | Method + path | Access |
 | --- | --- |
-| `GET /production` · `POST /production` | session (list is access-filtered) |
-| `GET /company/[cslug]/production/[pslug]` | production access |
-| `PATCH` / `DELETE` same path | `ADMINISTRATOR` |
-| `GET …/dashboard` · `GET …/storage-stats` | production access |
-| `GET …/files` | `VIEW` |
-| `POST …/profile` | production profile/banner images |
+| `GET /production/list?cid=…` · `POST /production/list` | session (list is access-filtered; `cid` optional) |
+| `GET /production/find?cslug=…&pslug=…` | production access — slug → production lookup for initial page loads; returns `{ company, production, access }` |
+| `GET /production/[pid]` | production access — same payload as `find`, keyed by id |
+| `PATCH /production/[pid]` · `DELETE /production/[pid]` | `ADMINISTRATOR` |
+| `GET /production/[pid]/dashboard` · `GET /production/[pid]/storage-stats` | production access |
+| `GET /production/[pid]/files?type=…` | `VIEW` |
+| `POST /production/[pid]/profile` | production profile/banner images |
 
 ### Production members & roles
 
 | Method + path | Access |
 | --- | --- |
-| `GET …/members` | production access |
-| `POST …/members` · `PATCH/DELETE …/members/[memberId]` | `MANAGE_MEMBERS` |
-| `GET …/roles` | production access |
-| `POST …/roles` · `PATCH/DELETE …/roles/[roleId]` | `MANAGE_ROLES` — `permissions` travels as a **string** bigint |
+| `GET /production/[pid]/members` | production access |
+| `POST /production/[pid]/members` · `PATCH/DELETE /production/[pid]/members/[memberId]` | `MANAGE_MEMBERS` |
+| `GET /production/[pid]/roles` | production access |
+| `POST /production/[pid]/roles` · `PATCH/DELETE /production/[pid]/roles/[roleId]` | `MANAGE_ROLES` — `permissions` travels as a **string** bigint |
 
 ### Source sets & sources (both under `MANAGE_TRACK_TYPES` for writes)
 
 | Method + path | Body highlights |
 | --- | --- |
-| `GET/POST …/source-sets` | `{ name ≤128 }` |
-| `PATCH/DELETE …/source-sets/[setId]` | rename / delete |
-| `GET/POST …/source-sets/[setId]/sources` | `{ name ≤128, shortName ≤16, hue 0–360, data? }` — POST verifies the set belongs to the production |
-| `PATCH/DELETE …/source-sets/[setId]/sources/[sourceId]` | WHERE includes set + production id |
+| `GET/POST /production/[pid]/source-sets` | `{ name ≤128 }` |
+| `PATCH/DELETE /production/[pid]/source-sets/[setId]` | rename / delete |
+| `GET/POST /production/[pid]/sources?sid=…` | `{ name ≤128, shortName ≤16, hue 0–360, data? }` — `sid` resolves the set (404 if missing/foreign) |
+| `PATCH/DELETE /production/[pid]/sources/[sourceId]` | scoped by production id |
 
 ### Track types
 
 | Method + path | Body highlights |
 | --- | --- |
-| `GET/POST …/track-types` | `{ name ≤64, color?, trackMode: 'event'\|'clip' (default clip), sourceSetId?, sortOrder }` — writes need `MANAGE_TRACK_TYPES` |
-| `PATCH/DELETE …/track-types/[typeId]` | PATCH throws `422 Nothing to update` on empty body |
+| `GET/POST /production/[pid]/track-types` | `{ name ≤64, color?, trackMode: 'event'\|'clip' (default clip), sourceSetId?, sortOrder }` — writes need `MANAGE_TRACK_TYPES` |
+| `PATCH/DELETE /production/[pid]/track-types/[typeId]` | PATCH throws `422 Nothing to update` on empty body |
 
 ### Timelines, tracks, clips
 
+Timelines are the one production resource kept at the top level (create/list by `?pid=`); a specific timeline and everything it owns live under `/api/timeline/[tlId]/…`.
+
 | Method + path | Access | Body highlights |
 | --- | --- | --- |
-| `GET/POST …/timelines` | POST: `MANAGE_TIMELINES` | `{ name ≤128, frameRate (db enum: 23.976…60, from frameRateEnum), startFrame, endFrame > startFrame, ltcOffsetFrames }` |
-| `GET …/timelines/[tlId]` | access | **The editor bootstrap**: `{ timeline, tracks: [{ …track, typeName, typeColor, sourceName/ShortName/Hue, clips: [{ …clip, fileType }] }], trackTypes, sources }` |
-| `PATCH/DELETE …/timelines/[tlId]` | `MANAGE_TIMELINES` | PATCH bumps `updatedAt` |
-| `POST …/timelines/[tlId]/tracks` | `EDIT_TIMELINE` | create track (typeId, sourceId?, name, mode, sortOrder…) |
-| `PATCH/DELETE …/tracks/[trackId]` | `EDIT_TIMELINE` | e.g. `{ isMuted }`, `{ isLocked }` |
-| `POST …/tracks/[trackId]/clips` | `EDIT_TIMELINE` | `{ label='', position ≥0, fileId?, mediaStart?, end? (must be > mediaStart when both set), sourceId?, color?, data? }` — verifies timeline→production and track→timeline chains |
-| `PATCH/DELETE …/clips/[clipId]` | `EDIT_TIMELINE` | move (`position`), crop (`mediaStart`/`end`), relabel, recolor |
+| `GET/POST /timelines?pid=…` | POST: `MANAGE_TIMELINES` | `{ name ≤128, frameRate (db enum: 23.976…60, from frameRateEnum), startFrame, endFrame > startFrame, ltcOffsetFrames }` |
+| `GET /timeline/[tlId]` | access | **The editor bootstrap**: `{ timeline, tracks: [{ …track, typeName, typeColor, sourceName/ShortName/Hue, clips: [{ …clip, fileType }] }], trackTypes, sources }` |
+| `PATCH/DELETE /timeline/[tlId]` | `MANAGE_TIMELINES` | PATCH bumps `updatedAt` |
+| `GET/POST /timeline/[tlId]/tracks` | `EDIT_TIMELINE` (GET: access) | create track (typeId, sourceId?, name, mode, sortOrder…) — typeId verified same-production |
+| `PATCH/DELETE /timeline/[tlId]/tracks/[trackId]` | `EDIT_TIMELINE` | e.g. `{ isMuted }`, `{ isLocked }` — scoped by timeline id |
+| `POST /timeline/[tlId]/clips` | `EDIT_TIMELINE` | `{ trackId, label='', position ≥0, fileId?, mediaStart?, end? (must be > mediaStart when both set), sourceId?, color?, data? }` — `trackId` verified to belong to the timeline |
+| `PATCH/DELETE /timeline/[tlId]/clips/[clipId]` | `EDIT_TIMELINE` | move (`position`), crop (`mediaStart`/`end`), relabel, recolor — clip verified via track→timeline |
 
 ### Storage (production-scoped via `{ productionId }` ref; see §7)
 
@@ -342,10 +366,10 @@ Design: **REST is the source of truth for persistent data.** The socket layer on
 
 **Adding a REST endpoint under a production**
 
-1. Create `src/routes/company/[cslug]/production/[pslug]/<resource>/index.post.ts` (path = URL, suffix = method).
-2. Preamble: `const { production, params } = await requireProductionRoute(event, { permission: Permission.X, params: [...] })`.
+1. Create the file under the owning prefix: `src/routes/production/[pid]/<resource>/index.post.ts` for a production resource, or `src/routes/timeline/[tlId]/<resource>/…` for a timeline resource (path = URL, suffix = method).
+2. Preamble: `requireProductionParam(event, { permission })` for `/production/[pid]/…`, `requireTimelineParam(event, { permission })` for `/timeline/[tlId]/…` (gives you `timeline` too), or `requireProductionQuery(event, …)` for a top-level `?pid=` collection.
 3. Validate with `readValidatedBody(event, zodSchema)`; for PATCH build the update with `pickDefined(...)` and reject empty (`422 Nothing to update`).
-4. Scope every query with `eq(table.productionId, production.id)` (and parent-chain ids for nested resources) so foreign ids 404 rather than leak.
+4. Scope every query by the resolved parent id — `eq(table.productionId, production.id)` or `eq(table.timelineId, timeline.id)` (plus the item's own id on `[param]` routes) — so foreign ids `404` rather than leak.
 5. Return the row (`.returning()`); throw `createError` for all failures.
 6. If the resource is shown live in the editor, have the client broadcast the persisted result over the matching socket relay.
 
@@ -360,6 +384,6 @@ Design: **REST is the source of truth for persistent data.** The socket layer on
 
 - The `sessions` cleanup interval, session read cache, rate limiters, and chat history are per-process state — multi-instance deployment would need sticky sessions for Socket.IO and shared stores for history/presence/limits.
 - Deploying the web app on a different origin than the API requires listing it in `CORS_ORIGINS` (comma-separated full origins) or requests will be rejected with 403.
-- `requireProductionRoute` returns `params` values as non-empty strings but TypeScript can't see which keys exist — the codebase uses `params.tlId!` after requesting `params: ['tlId']`.
+- `requireTimelineParam` returns the full `timeline` row alongside the `ProductionContext`, so timeline-scoped handlers don't re-fetch it; `requireProductionParam` reads `[pid]`, `requireProductionQuery` reads `?pid=`.
 - Handlers that stream (`serve.get.ts`) end the response themselves; the dispatcher detects `res.writableEnded` and skips the JSON envelope.
 - The route scanner picks up **every** `*.{method}.ts` file under `src/routes` — don't park helper modules there.

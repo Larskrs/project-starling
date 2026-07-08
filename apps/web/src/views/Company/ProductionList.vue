@@ -30,7 +30,7 @@ const dialogOpen  = ref(false)
 async function load() {
   loading.value = true
   error.value   = ''
-  const { ok, data } = await $fetch(`/api/production?cid=${props.company.id}`, { silent: true })
+  const { ok, data } = await $fetch(`/api/production/list?cid=${props.company.id}`, { silent: true })
   loading.value = false
   if (!ok) { error.value = t('production.couldNotLoad'); return }
   productions.value = data

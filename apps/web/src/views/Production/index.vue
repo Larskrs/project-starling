@@ -29,7 +29,7 @@ async function load(cslug, pslug) {
   loading.value = !data.value
   error.value   = ''
   const { ok, data: resData, status } = await $fetch(
-    `/api/company/${cslug}/production/${pslug}`,
+    `/api/production/find?cslug=${encodeURIComponent(cslug)}&pslug=${encodeURIComponent(pslug)}`,
     { silent: true },
   )
   loading.value = false

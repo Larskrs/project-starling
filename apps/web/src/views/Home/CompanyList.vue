@@ -22,7 +22,7 @@ const dialogOpen = ref(false)
 async function load() {
   loading.value = true
   error.value   = ''
-  const { ok, data } = await $fetch('/api/company', { silent: true })
+  const { ok, data } = await $fetch('/api/companies', { silent: true })
   loading.value = false
   if (!ok) { error.value = 'company.failedToLoad'; return }
   companies.value = data.companyList

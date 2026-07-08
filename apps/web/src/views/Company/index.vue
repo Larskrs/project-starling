@@ -25,7 +25,7 @@ async function load(slug) {
   loading.value = true
   error.value   = ''
   company.value = null
-  const { ok, data, status } = await $fetch(`/api/company/${slug}`, { silent: true })
+  const { ok, data, status } = await $fetch(`/api/companies/${slug}`, { silent: true })
   loading.value = false
   if (status === 404) { error.value = `${t('company.couldNotLoad')}: "${slug}"`; return }
   if (!ok) { error.value = t('company.couldNotLoad'); return }

@@ -1,6 +1,5 @@
 <script setup>
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, inject, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { Badge, IconButton } from '@starling/ui'
@@ -13,9 +12,10 @@ const props = defineProps({
 
 const emit = defineEmits(['updated', 'deleted'])
 
-const route      = useRoute()
 const { t }      = useI18n()
 const { $fetch } = useApi()
+const data       = inject('production-data')
+const rolesBase  = computed(() => `/api/production/${data.value?.production?.id}/roles`)
 
 // i18n keys are the camelCase form of the permission name (MANAGE_ROLES → manageRoles)
 const PERMISSIONS = PERMISSION_NAMES.map(name => ({
@@ -44,7 +44,7 @@ function badgeStyle(hue) {
 async function saveRole() {
   const e = editing.value
   const { ok, data } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles/${e.id}`,
+    `${rolesBase.value}/${e.id}`,
     { method: 'PATCH', json: { name: e.name, hue: e.hue, permissions: e.permissions.toString() } },
   )
   if (!ok) return
@@ -55,7 +55,7 @@ async function saveRole() {
 async function deleteRole() {
   if (!confirm(t('roles.confirmDelete', { name: props.role.name }))) return
   const { ok } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles/${props.role.id}`,
+    `${rolesBase.value}/${props.role.id}`,
     { method: 'DELETE' },
   )
   if (ok) emit('deleted', props.role.id)

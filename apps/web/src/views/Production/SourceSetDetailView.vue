@@ -23,13 +23,13 @@ const {
   items: sources, loading, error, load: loadSources,
   createOpen, editTarget, deleteTarget, deleting,
   onCreated, onUpdated, confirmDelete,
-} = useProductionCrud(() => `source-sets/${setId.value}/sources`, {
+} = useProductionCrud(() => `sources?sid=${setId.value}`, {
   loadError: () => t('sources.couldNotLoad'),
 })
 
 onMounted(() => {
   loadSources()
-  $fetch(`/api/company/${route.params.cslug}/production/${route.params.pslug}/source-sets`, { silent: true })
+  $fetch(`/api/production/${data.value?.production?.id}/source-sets`, { silent: true })
     .then(({ ok, data: res }) => {
       if (ok) setName.value = res?.find(s => s.id === setId.value)?.name ?? ''
       else error.value = t('sources.couldNotLoad')

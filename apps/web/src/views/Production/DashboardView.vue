@@ -1,6 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRoute }       from 'vue-router'
+import { ref, inject, onMounted } from 'vue'
 import { useI18n }        from 'vue-i18n'
 import { Icon }           from '@iconify/vue'
 import { useApi }         from '../../composables/useApi.js'
@@ -12,8 +11,8 @@ import ListHeader         from '@starling/ui/ListHeader'
 import ListItem           from '@starling/ui/ListItem'
 import { Skeleton }       from '@starling/ui'
 
-const route      = useRoute()
 const { t }      = useI18n()
+const production = inject('production-data')
 const { $fetch } = useApi()
 
 const stats   = ref(null)
@@ -52,7 +51,7 @@ function uploaderName(uploader) {
 async function load() {
   loading.value = true
   error.value   = ''
-  const base = `/api/company/${route.params.cslug}/production/${route.params.pslug}`
+  const base = `/api/production/${production.value?.production?.id}`
   const [statsRes, recentRes] = await Promise.all([
     $fetch(`${base}/storage-stats`, { silent: true }),
     $fetch(`${base}/dashboard`,     { silent: true }),

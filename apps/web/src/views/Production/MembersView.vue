@@ -1,7 +1,6 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, inject, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { Input } from '@starling/ui'
 import { useApi }  from '../../composables/useApi.js'
@@ -12,17 +11,18 @@ import ListCard    from '@starling/ui/ListCard'
 import ListHeader  from '@starling/ui/ListHeader'
 import { Skeleton } from '@starling/ui'
 
-const route      = useRoute()
 const { t }      = useI18n()
 const { $fetch } = useApi()
 const { user }   = useAuth()
+const production = inject('production-data')
+const pid        = computed(() => production.value?.production?.id)
 
 // ── Roles ─────────────────────────────────────────────────────────────────────
 const roles = ref([])
 
 async function loadRoles() {
   const { ok, data } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
+    `/api/production/${pid.value}/roles`,
     { silent: true },
   )
   if (ok) roles.value = data.map(r => ({ ...r, permissions: BigInt(r.permissions) }))
@@ -48,7 +48,7 @@ async function loadMembers() {
   loading.value = true
   error.value   = ''
   const { ok, data } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/members`,
+    `/api/production/${pid.value}/members`,
     { silent: true },
   )
   loading.value = false
@@ -71,7 +71,7 @@ async function addMember() {
   const body = { email: addEmail.value.trim() }
   if (addRoleId.value) body.roleId = addRoleId.value
   const { ok, error: fetchError } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/members`,
+    `/api/production/${pid.value}/members`,
     { method: 'POST', json: body, silent: true },
   )
   addSaving.value = false
@@ -83,7 +83,7 @@ async function addMember() {
 
 async function changeMemberRole(member, roleId) {
   const { ok } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/members/${member.id}`,
+    `/api/production/${pid.value}/members/${member.id}`,
     { method: 'PATCH', json: { roleId: roleId || null } },
   )
   if (ok) await loadMembers()
@@ -93,7 +93,7 @@ async function removeMember(member) {
   const name = member.user.firstName || member.user.name
   if (!confirm(t('members.confirmRemove', { name }))) return
   const { ok } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/members/${member.id}`,
+    `/api/production/${pid.value}/members/${member.id}`,
     { method: 'DELETE' },
   )
   if (ok) members.value = members.value.filter(m => m.id !== member.id)

@@ -10,7 +10,8 @@ import { useApi } from './useApi.js'
  *   open:          () => boolean,          dialog open prop
  *   entity:        () => object|null,      entity being edited; null → create mode
  *   emit:          Function,               component emit ('update:open' | 'created' | 'updated')
- *   url:           () => string,           collection endpoint
+ *   url:           () => string,           collection endpoint (POST target)
+ *   itemUrl?:      (entity) => string,     PATCH target in edit mode; defaults to `url()` (query stripped) + `/{id}`
  *   fill:          (entity: object) => void,  populate form fields from the entity
  *   reset:         () => void,             reset form fields to defaults
  *   payload:       () => object,           request body built from form fields
@@ -18,7 +19,7 @@ import { useApi } from './useApi.js'
  *   failedMessage: () => string,           fallback error message
  * }} options
  */
-export function useEntityDialog({ open, entity, emit, url, fill, reset, payload, validate, failedMessage }) {
+export function useEntityDialog({ open, entity, emit, url, itemUrl, fill, reset, payload, validate, failedMessage }) {
   const { $fetch } = useApi()
 
   const loading = ref(false)
@@ -39,7 +40,12 @@ export function useEntityDialog({ open, entity, emit, url, fill, reset, payload,
     if (validate && !validate()) return
     loading.value = true
     error.value   = ''
-    const target = isEdit.value ? `${url()}/${entity().id}` : url()
+    // Collection URLs may carry a scope query (`…/sources?sid=…`); item
+    // mutations address the entity by id alone. Resources whose item route
+    // differs from the collection (timelines) pass an explicit `itemUrl`.
+    const target = isEdit.value
+      ? (itemUrl ? itemUrl(entity()) : `${url().split('?')[0]}/${entity().id}`)
+      : url()
     const { ok, data, error: err } = await $fetch(target, {
       method: isEdit.value ? 'PATCH' : 'POST',
       json:   payload(),

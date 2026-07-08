@@ -47,7 +47,7 @@ watch(() => props.open, (open) => {
 async function handleSubmit() {
   error.value   = ''
   loading.value = true
-  const { ok, data, error: fetchErr } = await $fetch('/api/production', {
+  const { ok, data, error: fetchErr } = await $fetch('/api/production/list', {
     method: 'POST',
     json:   { company_id: props.company.id, name: name.value, slug: slug.value },
     silent: true,

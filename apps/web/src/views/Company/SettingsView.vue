@@ -29,7 +29,7 @@ usePageTitle(computed(() => company.value ? `${company.value.name} — Settings`
 
 async function load() {
   loading.value = true
-  const { ok, data, status } = await $fetch(`/api/company/${route.params.slug}`, { silent: true })
+  const { ok, data, status } = await $fetch(`/api/companies/${route.params.slug}`, { silent: true })
   loading.value = false
   if (status === 404) { notFound.value = true; return }
   if (!ok || !data.canManage) { router.replace(`/c/${route.params.slug}`); return }
@@ -55,7 +55,7 @@ async function uploadImage(slot, file) {
   fd.append('file', file)
 
   const { ok, data, error } = await $fetch(
-    `/api/company/${route.params.slug}/profile`,
+    `/api/companies/${route.params.slug}/profile`,
     { method: 'POST', body: fd, silent: true },
   )
 
@@ -116,7 +116,7 @@ async function submitRenameName() {
   renameNameLoading.value = true
   renameNameError.value   = ''
   const { ok, data, error } = await $fetch(
-    `/api/company/${route.params.slug}`,
+    `/api/companies/${route.params.slug}`,
     { method: 'PATCH', json: { name: newName.value.trim() }, silent: true },
   )
   renameNameLoading.value = false
@@ -143,7 +143,7 @@ async function submitRenameSlug() {
   renameSlugLoading.value = true
   renameSlugError.value   = ''
   const { ok, data, error } = await $fetch(
-    `/api/company/${route.params.slug}`,
+    `/api/companies/${route.params.slug}`,
     { method: 'PATCH', json: { slug: newSlug.value.trim() }, silent: true },
   )
   renameSlugLoading.value = false
@@ -160,7 +160,7 @@ const membersError   = ref('')
 async function loadMembers() {
   membersLoading.value = true
   membersError.value   = ''
-  const { ok, data, error } = await $fetch(`/api/company/${route.params.slug}/members`, { silent: true })
+  const { ok, data, error } = await $fetch(`/api/companies/${route.params.slug}/members`, { silent: true })
   membersLoading.value = false
   if (!ok) { membersError.value = error ?? 'Failed to load members'; return }
   members.value = data.members
@@ -175,7 +175,7 @@ async function addMember() {
   addLoading.value = true
   addError.value   = ''
   const { ok, data, error } = await $fetch(
-    `/api/company/${route.params.slug}/members`,
+    `/api/companies/${route.params.slug}/members`,
     { method: 'POST', json: { email: addEmail.value.trim(), role: addRole.value }, silent: true },
   )
   addLoading.value = false
@@ -191,7 +191,7 @@ const removingId = ref(null)
 async function removeMember(member) {
   removingId.value = member.id
   const { ok, error } = await $fetch(
-    `/api/company/${route.params.slug}/members/${member.id}`,
+    `/api/companies/${route.params.slug}/members/${member.id}`,
     { method: 'DELETE', silent: true },
   )
   removingId.value = null

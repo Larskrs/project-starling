@@ -1,6 +1,5 @@
 <script setup>
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FormDialog, FormField, Input } from '@starling/ui'
 import HuePicker from './HuePicker.vue'
@@ -15,8 +14,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:open', 'created', 'updated'])
 
-const route = useRoute()
 const { t } = useI18n()
+const data = inject('production-data')
 
 const name      = ref('')
 const shortName = ref('')
@@ -26,7 +25,7 @@ const { isEdit, loading, error, submit } = useEntityDialog({
   open:   () => props.open,
   entity: () => props.source,
   emit,
-  url: () => `/api/company/${route.params.cslug}/production/${route.params.pslug}/source-sets/${props.setId}/sources`,
+  url: () => `/api/production/${data.value?.production?.id}/sources?sid=${props.setId}`,
   fill: (s) => {
     name.value      = s.name
     shortName.value = s.shortName

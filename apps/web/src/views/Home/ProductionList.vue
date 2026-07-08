@@ -19,7 +19,7 @@ const error       = ref('')
 async function load() {
   loading.value = true
   error.value   = ''
-  const { ok, data } = await $fetch('/api/production', { silent: true })
+  const { ok, data } = await $fetch('/api/production/list', { silent: true })
   loading.value = false
   if (!ok) { error.value = t('production.failedToLoad'); return }
   productions.value = data

@@ -2,12 +2,10 @@
 import { inject, ref, onMounted } from 'vue'
 import { Skeleton } from '@starling/ui'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
 import { useApi } from '../../composables/useApi.js'
 import CreateRoleForm from './components/CreateRoleForm.vue'
 import RoleCard from './components/RoleCard.vue'
 
-const route = useRoute()
 const data  = inject('production-data')
 const { t } = useI18n()
 const { $fetch } = useApi()
@@ -20,7 +18,7 @@ async function loadRoles() {
   loading.value = true
   error.value   = ''
   const { ok, data: resData } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
+    `/api/production/${data.value?.production?.id}/roles`,
     { silent: true },
   )
   loading.value = false

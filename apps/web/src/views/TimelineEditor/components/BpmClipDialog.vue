@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { FormDialog, FormField, Input } from '@starling/ui'
 import { useApi } from '../../../composables/useApi.js'
@@ -16,7 +15,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:open', 'saved'])
 
-const route      = useRoute()
 const { t }      = useI18n()
 const { $fetch } = useApi()
 
@@ -43,11 +41,12 @@ async function submit() {
   if (!valid.value || !props.track) return
   loading.value = true
   error.value   = ''
-  const base = `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}/tracks/${props.track.id}/clips`
-  const url  = isEdit.value ? `${base}/${props.clip.id}` : base
+  const tlId = props.track.timelineId
+  const url  = isEdit.value ? `/api/timeline/${tlId}/clips/${props.clip.id}` : `/api/timeline/${tlId}/clips`
   const { ok, data, error: err } = await $fetch(url, {
     method: isEdit.value ? 'PATCH' : 'POST',
     json: {
+      ...(isEdit.value ? {} : { trackId: props.track.id }),
       position: Math.round(position.value),
       label:    `${Math.round(bpm.value)} BPM`,
       data:     { bpm: Math.round(bpm.value), beatsPerBar: Math.round(beatsPerBar.value) || 4 },

@@ -1,6 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { FormDialog, FormField, Input, SelectMenu, SwitchTab } from '@starling/ui'
@@ -15,7 +14,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:open', 'created', 'updated'])
 
-const route = useRoute()
+const data = inject('production-data')
 const { t } = useI18n()
 
 const name        = ref('')
@@ -57,7 +56,7 @@ const { isEdit, loading, error, submit } = useEntityDialog({
   open:   () => props.open,
   entity: () => props.trackType,
   emit,
-  url: () => `/api/company/${route.params.cslug}/production/${route.params.pslug}/track-types`,
+  url: () => `/api/production/${data.value?.production?.id}/track-types`,
   fill: (tt) => {
     name.value        = tt.name
     hue.value         = tt.hue ?? 250

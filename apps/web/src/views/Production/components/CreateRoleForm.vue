@@ -1,13 +1,12 @@
 <script setup>
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { useApi } from '../../../composables/useApi.js'
 
 const emit = defineEmits(['created'])
 
-const route      = useRoute()
+const data       = inject('production-data')
 const { t }      = useI18n()
 const { $fetch } = useApi()
 
@@ -20,13 +19,13 @@ async function createRole() {
   if (!newName.value.trim()) return
   creating.value  = true
   createErr.value = ''
-  const { ok, data, error } = await $fetch(
-    `/api/company/${route.params.cslug}/production/${route.params.pslug}/roles`,
+  const { ok, data: role, error } = await $fetch(
+    `/api/production/${data.value?.production?.id}/roles`,
     { method: 'POST', json: { name: newName.value.trim(), hue: newHue.value, permissions: '0' }, silent: true },
   )
   creating.value = false
   if (!ok) { createErr.value = error ?? t('roles.failedToCreate'); return }
-  emit('created', { ...data, permissions: BigInt(data.permissions) })
+  emit('created', { ...role, permissions: BigInt(role.permissions) })
   newName.value = ''
   newHue.value  = 200
 }

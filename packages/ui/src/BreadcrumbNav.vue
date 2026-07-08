@@ -27,7 +27,7 @@ const resolvedNames = ref<Record<string, string>>({})
 async function resolveCompany(slug: string) {
   const key = `company:${slug}`
   if (resolvedNames.value[key]) return
-  const res = await fetch(`/api/company/${slug}`, { credentials: 'include' }).catch(() => null)
+  const res = await fetch(`/api/companies/${slug}`, { credentials: 'include' }).catch(() => null)
   if (res?.ok) {
     const data = await res.json().catch(() => null)
     if (data?.name) resolvedNames.value = { ...resolvedNames.value, [key]: data.name }

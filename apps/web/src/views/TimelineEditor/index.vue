@@ -36,10 +36,9 @@ const sources    = ref([])
 const loading    = ref(true)
 const error      = ref('')
 
-const timelineUrl = computed(() =>
-  `/api/company/${route.params.cslug}/production/${route.params.pslug}/timelines/${route.params.tlId}`,
-)
+const timelineUrl = computed(() => `/api/timeline/${route.params.tlId}`)
 const trackUrl = (trackId) => `${timelineUrl.value}/tracks/${trackId}`
+const clipUrl  = (clipId)  => `${timelineUrl.value}/clips/${clipId}`
 
 async function load() {
   loading.value = true
@@ -293,9 +292,9 @@ function selectTrack(track) {
 async function addSourceClip(source) {
   const track = selectedTrack.value
   if (!track) return
-  const { ok, data } = await $fetch(`${trackUrl(track.id)}/clips`, {
+  const { ok, data } = await $fetch(`${timelineUrl.value}/clips`, {
     method: 'POST',
-    json:   { position: Math.max(0, Math.round(playheadFrame.value)), sourceId: source.id },
+    json:   { trackId: track.id, position: Math.max(0, Math.round(playheadFrame.value)), sourceId: source.id },
     silent: true,
   })
   if (!ok) return
@@ -428,7 +427,7 @@ function onClipSaved(savedClip) {
 }
 
 async function patchClip(track, clip, json) {
-  const { ok, data } = await $fetch(`${trackUrl(track.id)}/clips/${clip.id}`, {
+  const { ok, data } = await $fetch(clipUrl(clip.id), {
     method: 'PATCH', json, silent: true,
   })
   if (!ok) return
@@ -440,7 +439,7 @@ const moveClip = (track, clip, position) => patchClip(track, clip, { position })
 const cropClip = (track, clip, fields)   => patchClip(track, clip, fields)
 
 async function deleteClip(track, clip) {
-  const { ok } = await $fetch(`${trackUrl(track.id)}/clips/${clip.id}`, {
+  const { ok } = await $fetch(clipUrl(clip.id), {
     method: 'DELETE', silent: true,
   })
   if (!ok) return

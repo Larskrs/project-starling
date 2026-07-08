@@ -1,6 +1,5 @@
 <script setup>
 import { inject, ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { Badge, Button, ConfirmDialog, IconButton, ListItem, ListSection, Skeleton } from '@starling/ui'
@@ -9,7 +8,6 @@ import { useProductionCrud } from '../../composables/useProductionCrud.js'
 import ManagePageHeader from './components/ManagePageHeader.vue'
 import TrackTypeDialog  from './components/TrackTypeDialog.vue'
 
-const route      = useRoute()
 const { t }      = useI18n()
 const data       = inject('production-data')
 const { $fetch } = useApi()
@@ -24,7 +22,7 @@ const sourceSets = ref([])
 
 onMounted(() => {
   loadTrackTypes()
-  $fetch(`/api/company/${route.params.cslug}/production/${route.params.pslug}/source-sets`, { silent: true })
+  $fetch(`/api/production/${data.value?.production?.id}/source-sets`, { silent: true })
     .then(({ ok, data: res }) => { if (ok) sourceSets.value = res ?? [] })
 })
 

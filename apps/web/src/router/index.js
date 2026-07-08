@@ -59,7 +59,7 @@ router.beforeEach(async (to) => {
 
   if (to.meta.requiresCompanyAdmin) {
     const slug        = to.params.slug
-    const companyRes  = await fetch(`/api/company/${slug}`, { credentials: 'include' }).catch(() => null)
+    const companyRes  = await fetch(`/api/companies/${slug}`, { credentials: 'include' }).catch(() => null)
     const company     = companyRes?.ok ? await companyRes.json() : null
     if (!company?.canManage) return `/c/${slug}`
   }

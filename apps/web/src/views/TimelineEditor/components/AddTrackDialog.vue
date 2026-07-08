@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Dialog        from '@starling/ui/Dialog'
 import DialogContent from '@starling/ui/DialogContent'
@@ -18,7 +17,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:open', 'created'])
 
-const route      = useRoute()
 const { t }      = useI18n()
 const { $fetch } = useApi()
 
@@ -45,9 +43,8 @@ async function submit() {
   if (!name.value.trim() || !typeId.value) return
   loading.value = true
   error.value   = ''
-  const { cslug, pslug } = route.params
   const { ok, data, error: err } = await $fetch(
-    `/api/company/${cslug}/production/${pslug}/timelines/${props.timelineId}/tracks`,
+    `/api/timeline/${props.timelineId}/tracks`,
     {
       method: 'POST',
       json: { typeId: typeId.value, name: name.value.trim() },

@@ -1,24 +1,31 @@
-import { ref, computed, unref } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, inject, unref } from 'vue'
 import { useApi } from './useApi.js'
 
 /**
- * List + CRUD state for a production-scoped resource
- * (/api/company/{cslug}/production/{pslug}/{resourcePath}).
+ * List + CRUD state for a production-scoped resource on the path-scoped API.
  *
- * Covers the whole manage-view lifecycle: load, create/edit dialog targets,
- * delete confirmation, and keeping `items` in sync after mutations.
+ * `resourcePath` names the resource under the current production:
+ *   'track-types'            → GET/POST  /api/production/{pid}/track-types
+ *                              DELETE     /api/production/{pid}/track-types/{id}
+ *   () => `sources?sid=${x}`  → GET/POST  /api/production/{pid}/sources?sid=x
+ *                              DELETE     /api/production/{pid}/sources/{id}
+ * A path starting with `/` is used verbatim as the collection URL (for the odd
+ * resources like timelines that live outside the production prefix); pair it
+ * with `itemBase` so deletes hit the right item route.
  *
- * @param {string|import('vue').Ref|() => string} resourcePath  path after the production segment, e.g. 'timelines'
- * @param {{ loadError?: () => string }} options                translated message shown when loading fails
+ * Relies on the `production-data` provide from the Production layout view.
+ *
+ * @param {string|import('vue').Ref|() => string} resourcePath
+ * @param {{ loadError?: () => string, itemBase?: string }} options
  */
-export function useProductionCrud(resourcePath, { loadError } = {}) {
-  const route      = useRoute()
-  const { $fetch } = useApi()
+export function useProductionCrud(resourcePath, { loadError, itemBase } = {}) {
+  const productionData = inject('production-data')
+  const { $fetch }     = useApi()
+  const pid = computed(() => productionData?.value?.production?.id)
 
   const base = computed(() => {
     const path = typeof resourcePath === 'function' ? resourcePath() : unref(resourcePath)
-    return `/api/company/${route.params.cslug}/production/${route.params.pslug}/${path}`
+    return path.startsWith('/') ? path : `/api/production/${pid.value}/${path}`
   })
 
   const items   = ref([])
@@ -50,7 +57,8 @@ export function useProductionCrud(resourcePath, { loadError } = {}) {
 
   async function confirmDelete() {
     deleting.value = true
-    const { ok } = await $fetch(`${base.value}/${deleteTarget.value.id}`, { method: 'DELETE' })
+    const collection = itemBase ?? base.value.split('?')[0]
+    const { ok } = await $fetch(`${collection}/${deleteTarget.value.id}`, { method: 'DELETE' })
     deleting.value = false
     if (ok) {
       items.value = items.value.filter(x => x.id !== deleteTarget.value.id)

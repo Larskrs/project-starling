@@ -1,5 +1,7 @@
 import { eq, and, or, inArray } from 'drizzle-orm';
-import { db, companies, productions, companyMembers, productionMembers, productionRoles } from '@starling/db';
+import {
+  db, companies, productions, companyMembers, productionMembers, productionRoles, timelines,
+} from '@starling/db';
 import { type ApiEvent, createError, requireAuth, getRouterParam } from './handler.js';
 import { can } from './permissions.js';
 import { type PermissionName, Permission, PERMISSION_MESSAGES } from '@starling/auth/permissions';
@@ -162,25 +164,64 @@ export async function requirePermission(
   }
 }
 
-/**
- * One-call preamble for /company/[cslug]/production/[pslug]/… routes:
- * extracts cslug/pslug plus any extra router params (400 if missing),
- * resolves production access, and optionally asserts a permission.
- * Extra params are returned by name in `params`.
- */
-export async function requireProductionRoute(
+// ── Flat-route scoping ────────────────────────────────────────────────────────
+// Resources hang off an id-scoped path prefix — /api/production/[pid]/… and
+// /api/timeline/[tlId]/… — while top-level collections scope by query param
+// (/api/timelines?pid=…). All preambles resolve the owning production, run the
+// access check, and optionally assert a permission.
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Access preamble for /api/production/[pid]/… routes. */
+export async function requireProductionParam(
   event: ApiEvent,
-  opts: { permission?: bigint; params?: string[] } = {},
-): Promise<ProductionContext & { params: Record<string, string> }> {
-  const params: Record<string, string> = {};
-  for (const name of ['cslug', 'pslug', ...(opts.params ?? [])]) {
-    const value = getRouterParam(event, name);
-    if (!value) throw createError({ statusCode: 400, message: 'Missing params' });
-    params[name] = value;
+  opts: { permission?: bigint } = {},
+): Promise<ProductionContext> {
+  const pid = getRouterParam(event, 'pid');
+  if (!pid || !UUID_RE.test(pid))
+    throw createError({ statusCode: 404, message: 'Production not found', errorKey: 'errors.production.notFound' });
+
+  const ctx = await requireProductionAccess(event, { productionId: pid });
+  if (opts.permission !== undefined) await requirePermission(ctx, opts.permission);
+  return ctx;
+}
+
+/**
+ * Access preamble for /api/timeline/[tlId]/… routes: resolves the timeline,
+ * then checks access on its owning production. The full timeline row rides
+ * along so handlers don't re-fetch it.
+ */
+export async function requireTimelineParam(
+  event: ApiEvent,
+  opts: { permission?: bigint } = {},
+): Promise<ProductionContext & { timeline: typeof timelines.$inferSelect }> {
+  const tlId = getRouterParam(event, 'tlId');
+  if (!tlId || !UUID_RE.test(tlId))
+    throw createError({ statusCode: 404, message: 'Timeline not found' });
+
+  const [timeline] = await db.select().from(timelines).where(eq(timelines.id, tlId)).limit(1);
+  if (!timeline) throw createError({ statusCode: 404, message: 'Timeline not found' });
+
+  const ctx = await requireProductionAccess(event, { productionId: timeline.productionId });
+  if (opts.permission !== undefined) await requirePermission(ctx, opts.permission);
+  return { ...ctx, timeline };
+}
+
+/** Access preamble for top-level collections scoped by ?pid=… (/api/timelines). */
+export async function requireProductionQuery(
+  event: ApiEvent,
+  opts: { permission?: bigint } = {},
+): Promise<ProductionContext> {
+  const pid = event.url.searchParams.get('pid');
+  if (!pid || !UUID_RE.test(pid)) {
+    throw createError({
+      statusCode: 422,
+      message:    'Missing or invalid "pid" query parameter',
+      errorKey:   'errors.generic.validationFailed',
+    });
   }
 
-  const ctx = await requireProductionAccess(event, { cslug: params.cslug!, pslug: params.pslug! });
+  const ctx = await requireProductionAccess(event, { productionId: pid });
   if (opts.permission !== undefined) await requirePermission(ctx, opts.permission);
-
-  return { ...ctx, params };
+  return ctx;
 }
