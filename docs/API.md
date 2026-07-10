@@ -141,6 +141,7 @@ Lower-level pieces they compose: `requireProductionAccess(event, ref)` (accepts 
 ## 4. Authentication — sessions (`lib/session.ts`)
 
 - Cookie: **`syncsw_sid`**, `HttpOnly; SameSite=Lax; Path=/` (+ `Secure` when `NODE_ENV=production`), `Max-Age` = **24h**. Value is a 64-hex-char random id. Cookie strings are built only by `sessionCookieHeader()` / `clearSessionCookieHeader()` — never assembled inline.
+- In production the cookie also carries `Domain` so the session is valid across the whole site — `cino.no`, `app.cino.no`, `api.cino.no`. Defaults to `Domain=cino.no`; override with the `COOKIE_DOMAIN` env var for other deployments. Dev (localhost) stays host-only. Requests from `app.cino.no` to the API are cross-origin but **same-site**, so `SameSite=Lax` does not block them — clients just need `credentials: 'include'` (the web app's `useApi` and direct fetches already do).
 - Sessions live in the `sessions` table (`id, userId, expiresAt`); `getSession` joins `users` to return `{ userId, role }` and deletes expired rows on read. Reads go through a **30s in-memory `TtlCache`** (invalidated immediately by `destroySession`), so steady-state requests skip the session query. A 5-minute interval sweeps expired sessions.
 - The same cookie authenticates **both REST and sockets** (socket middleware reads `handshake.headers.cookie`).
 

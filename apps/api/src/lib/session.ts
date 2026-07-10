@@ -19,8 +19,17 @@ const sessionCache = new TtlCache<string, SessionData>(30_000, 5000);
 
 // ── Cookie builders (single source of truth for attributes) ──────────────────
 
+// In production the session is shared across the Plesk split — cino.no apex,
+// app.cino.no, api.cino.no — so the cookie is scoped to the registrable domain
+// (Domain=cino.no covers the apex and every subdomain). COOKIE_DOMAIN overrides
+// for other deployments; dev (localhost) stays host-only, which browsers require.
+const cookieDomain = process.env.COOKIE_DOMAIN
+  ?? (process.env.NODE_ENV === 'production' ? 'cino.no' : '');
+
 const cookieAttrs = () =>
-  `HttpOnly; SameSite=Lax; Path=/${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
+  'HttpOnly; SameSite=Lax; Path=/'
+  + (process.env.NODE_ENV === 'production' ? '; Secure' : '')
+  + (cookieDomain ? `; Domain=${cookieDomain}` : '');
 
 export function sessionCookieHeader(sessionId: string): string {
   return `${SESSION_COOKIE}=${sessionId}; Max-Age=${SESSION_TTL_SEC}; ${cookieAttrs()}`;
