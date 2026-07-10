@@ -144,7 +144,7 @@ async function serveSpa(
   const contentType  = MIME[isAsset ? ext : '.html'] ?? 'application/octet-stream';
   const cacheControl = rel.startsWith('/assets/')
     ? 'public, max-age=31536000, immutable'   // content-hashed filenames
-    : 'no-cache';                             // revalidates via ETag → 304
+    : 'no-store';                             // no-store — never cache the shell
 
   const served = await serveStatic(req, res, root, filePath, contentType, cacheControl);
   if (!served) {
