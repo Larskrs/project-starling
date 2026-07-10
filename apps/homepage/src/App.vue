@@ -35,7 +35,15 @@ onMounted(async () => {
 const firstName = computed(() => user.value?.first_name || user.value?.name || '')
 const initial   = computed(() => (firstName.value[0] ?? '?').toUpperCase())
 
-const debugRoutes = ['/', '/app', '/app/login']
+// The web app lives on its own origin: Plesk serves apps/web/dist on the
+// app. subdomain in prod, the Vite dev server locally.
+const { hostname, protocol } = window.location
+const appUrl = hostname === 'localhost' || hostname === '127.0.0.1'
+  ? 'http://localhost:5173'
+  : `${protocol}//app.${hostname.replace(/^www\./, '')}`
+const appLoginUrl = `${appUrl}/login`
+
+const debugRoutes = ['/', appUrl, appLoginUrl]
 
 const features: { icon: string; key: string }[] = [
   { icon: '🎬', key: 'timelines' },
@@ -62,11 +70,11 @@ const features: { icon: string; key: string }[] = [
               :alt="user.name"
               class="h-9 w-9 rounded-full"
             >{{ initial }}</Avatar>
-            <Button as="a" href="/app">{{ t('nav.openApp') }}</Button>
+            <Button as="a" :href="appUrl">{{ t('nav.openApp') }}</Button>
           </template>
           <template v-else>
-            <Button as="a" variant="ghost" href="/app/login">{{ t('nav.signIn') }}</Button>
-            <Button as="a" href="/app">{{ t('nav.getStarted') }}</Button>
+            <Button as="a" variant="ghost" :href="appLoginUrl">{{ t('nav.signIn') }}</Button>
+            <Button as="a" :href="appUrl">{{ t('nav.getStarted') }}</Button>
           </template>
         </nav>
       </header>
@@ -101,7 +109,7 @@ const features: { icon: string; key: string }[] = [
               <p class="truncate font-semibold">{{ user.name }}</p>
               <p class="truncate text-sm text-muted-foreground">{{ user.email }}</p>
             </div>
-            <Button as="a" size="lg" href="/app" class="shrink-0">{{ t('welcome.launch') }} →</Button>
+            <Button as="a" size="lg" :href="appUrl" class="shrink-0">{{ t('welcome.launch') }} →</Button>
           </div>
         </section>
 
@@ -112,8 +120,8 @@ const features: { icon: string; key: string }[] = [
           </h1>
           <p class="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground sm:text-xl">{{ t('hero.lede') }}</p>
           <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button as="a" size="lg" href="/app">{{ t('nav.getStarted') }}</Button>
-            <Button as="a" size="lg" variant="outline" href="/app/login">{{ t('nav.signIn') }}</Button>
+            <Button as="a" size="lg" :href="appUrl">{{ t('nav.getStarted') }}</Button>
+            <Button as="a" size="lg" variant="outline" :href="appLoginUrl">{{ t('nav.signIn') }}</Button>
           </div>
         </section>
 
@@ -140,7 +148,7 @@ const features: { icon: string; key: string }[] = [
       <footer class="border-t">
         <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-8 text-sm text-muted-foreground">
           <p>© {{ new Date().getFullYear() }} Cino</p>
-          <a href="/app/login" class="hover:text-foreground transition-colors">{{ t('nav.signIn') }}</a>
+          <a :href="appLoginUrl" class="hover:text-foreground transition-colors">{{ t('nav.signIn') }}</a>
         </div>
       </footer>
     </div>

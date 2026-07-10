@@ -10,7 +10,6 @@ import { applyCors, applySecurityHeaders } from './lib/security.js';
 
 const here         = dirname(fileURLToPath(import.meta.url));
 const apiDir       = join(here, 'routes');
-const webDist      = join(here, '../../web/dist');
 const homepageDist = join(here, '../../homepage/dist');
 const PORT         = Number(process.env.PORT ?? 3000);
 
@@ -175,11 +174,6 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok' });
-    return;
-  }
-
-  if (url.pathname === '/app' || url.pathname.startsWith('/app/')) {
-    await serveSpa(req, res, webDist, url.pathname.slice('/app'.length) || '/', 'web');
     return;
   }
 
