@@ -7,6 +7,7 @@ import { useApi } from '../../composables/useApi.js'
 import { useProductionCrud } from '../../composables/useProductionCrud.js'
 import ManagePageHeader from './components/ManagePageHeader.vue'
 import TrackTypeDialog  from './components/TrackTypeDialog.vue'
+import TrackTypePresetDialog from './components/TrackTypePresetDialog.vue'
 
 const { t }      = useI18n()
 const data       = inject('production-data')
@@ -19,11 +20,15 @@ const {
 } = useProductionCrud('track-types', { loadError: () => t('trackTypes.couldNotLoad') })
 
 const sourceSets = ref([])
+const presets    = ref([])
+const presetOpen = ref(false)
 
 onMounted(() => {
   loadTrackTypes()
   $fetch(`/api/production/${data.value?.production?.id}/source-sets`, { silent: true })
     .then(({ ok, data: res }) => { if (ok) sourceSets.value = res ?? [] })
+  $fetch(`/api/production/${data.value?.production?.id}/track-type-presets`, { silent: true })
+    .then(({ ok, data: res }) => { if (ok) presets.value = res ?? [] })
 })
 
 function setName(id) {
@@ -40,10 +45,16 @@ function setName(id) {
         {{ $t('trackTypes.description', { production: data?.production?.name }) }}
       </template>
       <template #action>
-        <Button size="sm" @click="createOpen = true">
-          <Icon icon="mdi:plus" class="text-base" />
-          {{ $t('trackTypes.addType') }}
-        </Button>
+        <div class="flex items-center gap-2">
+          <Button v-if="presets.length" size="sm" variant="outline" @click="presetOpen = true">
+            <Icon icon="mdi:shape-plus-outline" class="text-base" />
+            {{ $t('trackTypes.presets.fromPreset') }}
+          </Button>
+          <Button size="sm" @click="createOpen = true">
+            <Icon icon="mdi:plus" class="text-base" />
+            {{ $t('trackTypes.addType') }}
+          </Button>
+        </div>
       </template>
     </ManagePageHeader>
 
@@ -92,6 +103,15 @@ function setName(id) {
       :source-sets="sourceSets"
       @update:open="createOpen = $event"
       @created="onCreated"
+    />
+
+    <!-- Create-from-preset dialog -->
+    <TrackTypePresetDialog
+      :open="presetOpen"
+      :presets="presets"
+      @update:open="presetOpen = $event"
+      @created="onCreated"
+      @set-created="sourceSets.push($event)"
     />
 
     <!-- Edit dialog -->

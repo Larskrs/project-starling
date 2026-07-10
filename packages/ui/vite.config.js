@@ -9,7 +9,7 @@ const srcDir = resolve(dir, 'src')
 
 const entries = Object.fromEntries(
   readdirSync(srcDir)
-    .filter(f => /\.(vue|js)$/.test(f))
+    .filter(f => /\.(vue|js|ts)$/.test(f))
     .map(f => [basename(f, extname(f)), resolve(srcDir, f)])
 )
 

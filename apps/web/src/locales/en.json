@@ -331,6 +331,16 @@
     "delete": "Delete",
     "confirmDeleteTitle": "Delete track type?",
     "confirmDelete": "Delete \"{name}\"? This cannot be undone.",
+    "presets": {
+      "fromPreset": "From preset",
+      "dialogTitle": "Add Track Type from Preset",
+      "preset": "Preset",
+      "createCameraSet": "Also create a camera set",
+      "cameraSetName": "Camera set name",
+      "cameraSetNameDefault": "Cameras",
+      "cameraCount": "Number of cameras",
+      "failedToCreate": "Failed to create track type from preset"
+    },
     "settings": {
       "title": "Editor behaviors",
       "trackDisplay": "Track display",

@@ -6,11 +6,11 @@ How `apps/api` works, end to end: the HTTP server, the file-based router, the re
 - Data: PostgreSQL via Drizzle ORM (`@starling/db` re-exports `db` + the whole schema)
 - Validation: Zod (v4 — note `z.uuid()` / `z.json()` top-level helpers are available)
 - Realtime: Socket.IO attached to the same HTTP server
-- Static: serves the built web app under `/app`; uploaded files live on local disk under `storage/`
+- Static: serves the built web app under `/app` and the public homepage (`apps/homepage`) for every unmatched path; uploaded files live on local disk under `storage/`
 
 ```
 apps/api/src/
-├─ index.ts            server entry: CORS, /health, /app static, /api dispatch, error envelope
+├─ index.ts            server entry: CORS, /health, /app + homepage static, /api dispatch, error envelope
 ├─ router.ts           file-convention router: load, score, match
 ├─ lib/
 │  ├─ handler.ts       ApiEvent, ApiError, auth guards, body/query/multipart readers
@@ -33,9 +33,9 @@ One `createServer` callback handles everything, in this order:
 
 1. **Origin policy + security headers** (`lib/security.ts`) — every response gets `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `Vary: Origin`. Cross-site requests are checked against an allowlist: no `Origin` header (same-origin pages, CLI clients, and reverse proxies that strip it), **same-site origins — exact host or subdomain in either direction** (`app.cino.no` ↔ `cino.no`, the Plesk "app on a subdomain, API on the apex" layout works with zero config), localhost, or an entry in the `CORS_ORIGINS` env var (comma-separated full origins). The request's own host honours `X-Forwarded-Host` (`requestHost()`), so proxy Host rewriting doesn't break the comparison. Allowed origins get credentialed CORS headers; **disallowed origins are refused with `403` before any handler runs**. `OPTIONS` preflights short-circuit with `204`.
 2. **`/health`** → `{ "status": "ok" }`.
-3. **`/app` and `/app/*`** — static hosting of the built web app (`apps/web/dist`) through an in-memory cache: files are read from disk once (revalidated by mtime), **pre-gzipped** when compressible (html/js/css/svg/json over 1 KB), and served with `ETag`/`304` conditional handling. `/assets/*` (content-hashed filenames) get `Cache-Control: public, max-age=31536000, immutable`; everything else falls back to `index.html` (SPA routing) with `no-cache` + ETag revalidation. A resolved-path containment check makes traversal structurally impossible. If the web app isn't built, non-asset requests return `503` with a hint.
+3. **`/app` and `/app/*`** — static hosting of the built web app (`apps/web/dist`) through an in-memory cache: files are read from disk once (revalidated by mtime), **pre-gzipped** when compressible (html/js/css/svg/json over 1 KB), and served with `ETag`/`304` conditional handling. Paths under `assets/` (content-hashed filenames) get `Cache-Control: public, max-age=31536000, immutable`; everything else falls back to `index.html` (SPA routing) with `no-cache` + ETag revalidation. A resolved-path containment check makes traversal structurally impossible. If the web app isn't built, non-asset requests return `503` with a hint. The web app is built with vite `base: '/app/'` (production builds only — the dev server stays at `/`), so its assets live under `/app/assets/*`.
 4. **`/api/*`** — matched against the route table (below). No match → `404 { error, path }`.
-5. Anything else → `404`.
+5. **Anything else** — `GET`/`HEAD` requests serve the public **homepage** (`apps/homepage/dist`, a separate Vue/Vite app) through the same static cache and SPA-fallback rules, with its assets at `/assets/*`. Socket.IO owns `/socket` and intercepts those requests (both namespaces) before this handler ever sees them. Non-`GET` methods on unknown paths still get a JSON `404`.
 
 Socket.IO is attached to the same server via `setupSockets(server)` (see §8), and the port comes from `PORT` (default 3000). At boot the server prints a route tree of all loaded endpoints.
 
@@ -250,6 +250,8 @@ All paths are prefixed `/api`. "Access" is what the handler enforces beyond a va
 | --- | --- |
 | `GET/POST /production/[pid]/track-types` | `{ name ≤64, color?, trackMode: 'event'\|'clip' (default clip), sourceSetId?, sortOrder }` — writes need `MANAGE_TRACK_TYPES` |
 | `PATCH/DELETE /production/[pid]/track-types/[typeId]` | PATCH throws `422 Nothing to update` on empty body |
+| `GET /production/[pid]/track-type-presets` | file-based preset catalogue (`apps/api/src/lib/trackTypePresets.ts`): `{ id, name, description, supportsCameraSet?, settings }` |
+| `POST /production/[pid]/track-types/from-preset` | `MANAGE_TRACK_TYPES` — `{ presetId, name?, sortOrder?, cameraSet?: { name ≤128, count 1–64 } }`. Creates a track type from the preset's settings; `cameraSet` (camera presets only, else 400) also creates a source set with `count` cameras (`Camera N`/`CN`), hues spread evenly from the preset hue. Returns `{ trackType, sourceSet, sources }` |
 
 ### Timelines, tracks, clips
 

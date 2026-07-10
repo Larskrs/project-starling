@@ -1,27 +1,39 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { provideDebugMenu } from './useDebugProvider'
-import { useColorMode } from '../composables/useColorMode.js'
-import { useLocale } from '../composables/useLocale.js'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { provideDebugMenu } from './useDebugMenu'
+import { useColorMode } from './useColorMode'
 
-const props = withDefaults(defineProps<{ triggerKey?: string }>(), {
-  triggerKey: 'd',
+const props = withDefaults(defineProps<{
+  /** Navigable paths shown in the menu. Empty hides the routes section. */
+  routes?: string[]
+  /** Current path; falls back to location.pathname for router-less apps. */
+  current?: string | null
+  /** How to go to a path; defaults to a full page load. */
+  navigate?: ((path: string) => void) | null
+  /** Wired to the "l" key; omit when the app has a single locale. */
+  toggleLocale?: (() => void) | null
+  /** Menu shortcut to a debug-settings page, when the app has one. */
+  settingsPath?: string | null
+  triggerKey?: string
+}>(), {
+  routes:       () => [],
+  current:      null,
+  navigate:     null,
+  toggleLocale: null,
+  settingsPath: null,
+  triggerKey:   'd',
 })
 
 const { visible, toggle } = provideDebugMenu()
 const { toggle: toggleColorMode } = useColorMode()
-const { toggleLocale } = useLocale()
-const router = useRouter()
-const route = useRoute()
 
-const allRoutes = router.getRoutes().filter(r => !r.redirect && r.path !== '/:pathMatch(.*)*')
+const currentPath   = computed(() => props.current ?? window.location.pathname)
 const selectedIndex = ref(-1)
-const listRef = ref<HTMLElement | null>(null)
+const listRef       = ref<HTMLElement | null>(null)
 
 watch(visible, (v) => {
   if (!v) {
-    selectedIndex.value = route.path ? allRoutes.findIndex(r => r.path === route.path) : -1
+    selectedIndex.value = props.routes.indexOf(currentPath.value)
   }
 })
 
@@ -41,22 +53,22 @@ function onKeydown(e: KeyboardEvent) {
   if (visible.value) {
     if (e.key === 'Escape') { e.preventDefault(); toggle(); return }
 
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        selectedIndex.value = (selectedIndex.value + 1) % allRoutes.length
-        nextTick(scrollToSelected)
-        return
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        selectedIndex.value = (selectedIndex.value - 1 + allRoutes.length) % allRoutes.length
-        nextTick(scrollToSelected)
-        return
-      }
-      if (e.key === 'Enter' && selectedIndex.value >= 0) {
-        e.preventDefault()
-        navigate(allRoutes[selectedIndex.value].path)
-        return
+    if (e.key === 'ArrowDown' && props.routes.length) {
+      e.preventDefault()
+      selectedIndex.value = (selectedIndex.value + 1) % props.routes.length
+      nextTick(scrollToSelected)
+      return
+    }
+    if (e.key === 'ArrowUp' && props.routes.length) {
+      e.preventDefault()
+      selectedIndex.value = (selectedIndex.value - 1 + props.routes.length) % props.routes.length
+      nextTick(scrollToSelected)
+      return
+    }
+    if (e.key === 'Enter' && selectedIndex.value >= 0) {
+      e.preventDefault()
+      go(props.routes[selectedIndex.value])
+      return
     }
   }
 
@@ -69,9 +81,9 @@ function onKeydown(e: KeyboardEvent) {
     return
   }
 
-  if (e.key === 'l') {
+  if (e.key === 'l' && props.toggleLocale) {
     e.preventDefault()
-    toggleLocale()
+    props.toggleLocale()
     return
   }
 
@@ -87,8 +99,9 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-function navigate(path: string) {
-  router.push(path)
+function go(path: string) {
+  if (props.navigate) props.navigate(path)
+  else window.location.href = path
   toggle()
 }
 
@@ -112,40 +125,40 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
         <!-- Current route -->
         <div class="px-3 py-2 border-b border-border text-xs text-muted-foreground">
-          <span class="font-mono text-foreground">{{ route.path }}</span>
+          <span class="font-mono text-foreground">{{ currentPath }}</span>
         </div>
 
         <!-- Routes section -->
-        <div>
+        <div v-if="routes.length">
           <button
             class="flex items-center justify-between w-full px-3 py-2 hover:bg-muted/40 text-left text-sm"
           >
             <span>Routes</span>
-            </button>
+          </button>
           <div class="border-t border-border max-h-56 overflow-y-auto" ref="listRef">
             <button
-              v-for="(r, i) in allRoutes"
-              :key="r.path"
-              @click="navigate(r.path)"
+              v-for="(path, i) in routes"
+              :key="path"
+              @click="go(path)"
               :class="[
                 'flex w-full px-4 py-1.5 text-xs text-left font-mono transition-colors',
                 i === selectedIndex
                   ? 'bg-primary text-primary-foreground'
-                  : r.path === route.path
+                  : path === currentPath
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
               ]"
             >
-              {{ r.path }}
+              {{ path }}
             </button>
           </div>
         </div>
 
         <!-- Debug settings shortcut -->
-        <div class="border-t border-border">
+        <div v-if="settingsPath" class="border-t border-border">
           <button
             class="flex items-center justify-between w-full px-3 py-2 hover:bg-muted/40 text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
-            @click="navigate('/debug')"
+            @click="go(settingsPath)"
           >
             <span>Debug settings</span>
             <span class="opacity-50">→</span>

@@ -1,15 +1,15 @@
-import { ref, watch } from 'vue'
+import { ref, watch, type Ref } from 'vue'
 
 const STORAGE_KEY = 'starling-color-mode'
 
 // Module-level so all callers share the same reactive state
 const isDark = ref(false)
 
-function apply(dark) {
+function apply(dark: boolean): void {
   document.documentElement.classList.toggle('dark', dark)
 }
 
-function init() {
+function init(): void {
   const stored = localStorage.getItem(STORAGE_KEY)
   if (stored) {
     isDark.value = stored === 'dark'
@@ -26,8 +26,14 @@ watch(isDark, (val) => {
   localStorage.setItem(STORAGE_KEY, val ? 'dark' : 'light')
 })
 
-export function useColorMode() {
+export interface ColorModeContext {
+  isDark: Ref<boolean>
+  toggle: () => void
+  setDark: (val: boolean) => void
+}
+
+export function useColorMode(): ColorModeContext {
   function toggle() { isDark.value = !isDark.value }
-  function setDark(val) { isDark.value = val }
+  function setDark(val: boolean) { isDark.value = val }
   return { isDark, toggle, setDark }
 }

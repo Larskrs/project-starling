@@ -8,10 +8,11 @@ import { ApiError, type ApiEvent, sendJson, appendVary, acceptsGzip } from './li
 import { setupSockets } from './lib/sockets.js';
 import { applyCors, applySecurityHeaders } from './lib/security.js';
 
-const here    = dirname(fileURLToPath(import.meta.url));
-const apiDir  = join(here, 'routes');
-const webDist = join(here, '../../web/dist');
-const PORT    = Number(process.env.PORT ?? 3000);
+const here         = dirname(fileURLToPath(import.meta.url));
+const apiDir       = join(here, 'routes');
+const webDist      = join(here, '../../web/dist');
+const homepageDist = join(here, '../../homepage/dist');
+const PORT         = Number(process.env.PORT ?? 3000);
 
 const MIME: Record<string, string> = {
   '.html':  'text/html; charset=utf-8',
@@ -77,13 +78,14 @@ const staticCache = new Map<string, StaticEntry>();
 async function serveStatic(
   req: IncomingMessage,
   res: ServerResponse,
+  root: string,
   filePath: string,
   contentType: string,
   cacheControl: string,
 ): Promise<boolean> {
   // Containment guard — the URL parser already normalises dot segments, this
   // makes traversal structurally impossible even if that ever changes.
-  if (!resolve(filePath).startsWith(resolve(webDist))) return false;
+  if (!resolve(filePath).startsWith(resolve(root))) return false;
 
   let st;
   try { st = await stat(filePath); } catch { return false; }
@@ -125,6 +127,38 @@ async function serveStatic(
   return true;
 }
 
+/**
+ * Serves a Vite SPA build from `root`: paths with an extension are assets
+ * (404 when missing), everything else falls back to `index.html`.
+ */
+async function serveSpa(
+  req: IncomingMessage,
+  res: ServerResponse,
+  root: string,
+  rel: string,
+  appName: string,
+): Promise<void> {
+  const ext     = extname(rel);
+  const isAsset = ext.length > 0;
+
+  const filePath     = isAsset ? join(root, rel) : join(root, 'index.html');
+  const contentType  = MIME[isAsset ? ext : '.html'] ?? 'application/octet-stream';
+  const cacheControl = rel.startsWith('/assets/')
+    ? 'public, max-age=31536000, immutable'   // content-hashed filenames
+    : 'no-cache';                             // revalidates via ETag → 304
+
+  const served = await serveStatic(req, res, root, filePath, contentType, cacheControl);
+  if (!served) {
+    if (isAsset) {
+      sendJson(res, 404, { error: 'Not found' });
+    } else {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.statusCode = 503;
+      res.end(`${appName} app not built — run: npm run build -w ${appName}`);
+    }
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
@@ -145,26 +179,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname === '/app' || url.pathname.startsWith('/app/')) {
-    const rel     = url.pathname.slice('/app'.length) || '/';
-    const ext     = extname(rel);
-    const isAsset = ext.length > 0;
-
-    const filePath     = isAsset ? join(webDist, rel) : join(webDist, 'index.html');
-    const contentType  = MIME[isAsset ? ext : '.html'] ?? 'application/octet-stream';
-    const cacheControl = rel.startsWith('/assets/')
-      ? 'public, max-age=31536000, immutable'   // content-hashed filenames
-      : 'no-cache';                             // revalidates via ETag → 304
-
-    const served = await serveStatic(req, res, filePath, contentType, cacheControl);
-    if (!served) {
-      if (isAsset) {
-        sendJson(res, 404, { error: 'Not found' });
-      } else {
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.statusCode = 503;
-        res.end('Web app not built — run: npm run build -w web');
-      }
-    }
+    await serveSpa(req, res, webDist, url.pathname.slice('/app'.length) || '/', 'web');
     return;
   }
 
@@ -190,6 +205,14 @@ const server = createServer(async (req, res) => {
       console.error('[server] unhandled error:', err);
       sendJson(res, 500, { error: 'Internal Server Error', errorKey: 'errors.generic.systemError' });
     }
+    return;
+  }
+
+  // Anything else falls through to the public homepage. Socket.IO owns
+  // `/socket` (root + `/timeline` namespaces) and intercepts those requests
+  // before this handler runs.
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    await serveSpa(req, res, homepageDist, url.pathname, 'homepage');
     return;
   }
 

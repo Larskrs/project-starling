@@ -16,8 +16,10 @@ logger.error = (msg, options) => {
   baseError(msg, options)
 }
 
-export default defineConfig({
-  // base: '/app/',
+export default defineConfig(({ command }) => ({
+  // Production builds are served by the API under /app; dev stays at / so the
+  // vite dev server + proxy workflow is unchanged.
+  base: command === 'build' ? '/app/' : '/',
   customLogger: logger,
   plugins: [vue()],
   css: {
@@ -31,4 +33,4 @@ export default defineConfig({
       '/socket': { target: 'http://localhost:3000', ws: true },
     },
   },
-})
+}))

@@ -331,6 +331,16 @@
     "delete": "Slett",
     "confirmDeleteTitle": "Slett sportype?",
     "confirmDelete": "Slett \"{name}\"? Dette kan ikke angres.",
+    "presets": {
+      "fromPreset": "Fra forhåndsvalg",
+      "dialogTitle": "Legg til sportype fra forhåndsvalg",
+      "preset": "Forhåndsvalg",
+      "createCameraSet": "Opprett også et kamerasett",
+      "cameraSetName": "Navn på kamerasett",
+      "cameraSetNameDefault": "Kameraer",
+      "cameraCount": "Antall kameraer",
+      "failedToCreate": "Klarte ikke å opprette sportype fra forhåndsvalg"
+    },
     "settings": {
       "title": "Editoroppførsel",
       "trackDisplay": "Sporvisning",

@@ -6,6 +6,8 @@ const props = defineProps({
   variant: { type: String, default: 'default' },
   size:    { type: String, default: 'default' },
   class:   { type: String, default: '' },
+  // Render as another element, e.g. as="a" for link-styled buttons.
+  as:      { type: String, default: 'button' },
 })
 
 const base = 'inline-flex gap-1.5 items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ring-offset-background'
@@ -29,7 +31,7 @@ const cls = computed(() => cn(base, variants[props.variant] ?? variants.default,
 </script>
 
 <template>
-  <button :class="cls" v-bind="$attrs">
+  <component :is="as" :class="cls" v-bind="$attrs">
     <slot />
-  </button>
+  </component>
 </template>

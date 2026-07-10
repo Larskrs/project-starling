@@ -2,7 +2,7 @@
 import { ref, computed, inject, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
-import { useColorMode }        from '../../composables/useColorMode.js'
+import { useColorMode }        from '@starling/ui/useColorMode'
 import { useApi }              from '../../composables/useApi.js'
 import DropdownMenuContent     from '@starling/ui/DropdownMenuContent'
 import DropdownMenuItem        from '@starling/ui/DropdownMenuItem'

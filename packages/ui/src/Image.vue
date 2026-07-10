@@ -36,7 +36,7 @@ function onLoad() {
     />
     <img
       :src="src"
-      :alt="alt"r
+      :alt="alt"
       class="w-full h-full object-cover block"
       :class="!loaded ? 'opacity-0' : 'opacity-100'"
       @load="onLoad"

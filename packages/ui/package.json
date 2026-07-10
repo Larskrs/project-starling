@@ -8,8 +8,10 @@
     "dev":   "vite build --watch"
   },
   "exports": {
-    ".":   "./dist/index.js",
-    "./*": "./dist/*.js"
+    ".":                 "./dist/index.js",
+    "./theme.css":       "./src/theme.css",
+    "./tailwind-preset": "./tailwind-preset.js",
+    "./*":               "./dist/*.js"
   },
   "dependencies": {
     "clsx": "^2.1.1",
