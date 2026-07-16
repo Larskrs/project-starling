@@ -1,19 +1,20 @@
 <script setup>
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
-import { Avatar } from '@starling/ui'
+import { Avatar, Button } from '@starling/ui'
 import { framesToTC } from '../useEditorUtils.js'
 
 const props = defineProps({
   timeline:      { type: Object,  required: true },
-  pxPerFrame:    { type: Number,  required: true },
+  /** Current zoom as a display string (100% = the 5-minute-tick default). */
+  zoomLabel:     { type: String,  default: '' },
   playheadFrame: { type: Number,  required: true },
   isPlaying:     { type: Boolean, default: false },
   peers:         { type: Array,   default: () => [] },
   syncConnected: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['go-back', 'zoom-in', 'zoom-out', 'add-track', 'toggle-play', 'seek-start', 'seek-end'])
+const emit = defineEmits(['go-back', 'zoom-in', 'zoom-out', 'zoom-fit', 'zoom-reset', 'add-track', 'toggle-play', 'seek-start', 'seek-end'])
 
 const tc = computed(() => framesToTC(props.playheadFrame, props.timeline.frameRate))
 
@@ -82,34 +83,36 @@ function initials(name) {
     <!-- Playback controls -->
     <div class="flex items-center gap-1 shrink-0">
       <!-- Rewind to start -->
-      <button
-        class="size-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-        title="Go to start (Home)"
+      <Button
+        class="w-10 h-7 flex p-0 items-center justify-center rounded-md"
+        title="Go to start (Start)"
+        variant="flat"
         @click="$emit('seek-start')"
       >
         <Icon icon="mdi:skip-backward" class="size-4" />
-      </button>
+      </Button>
 
       <!-- Play / Pause -->
-      <button
-        class="size-8 flex items-center justify-center rounded-md transition-colors"
+      <Button
+        class="w-10 h-7 flex p-0 items-center justify-center rounded-md transition-colors"
         :class="isPlaying
           ? 'bg-primary text-primary-foreground hover:bg-primary/90'
           : 'text-muted-foreground hover:text-foreground hover:bg-accent'"
         title="Play / Pause (Space)"
         @click="$emit('toggle-play')"
       >
-        <Icon :icon="isPlaying ? 'mdi:pause' : 'mdi:play'" class="size-4" />
-      </button>
+         <Icon :icon="isPlaying ? 'mdi:pause' : 'mdi:play'" class="text-white w-6 h-6" />
+      </Button>
 
       <!-- Jump to end -->
-      <button
-        class="size-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+      <Button
+        class="w-10 h-7 flex p-0 items-center justify-center rounded-md"
         title="Go to end (End)"
+        variant="flat"
         @click="$emit('seek-end')"
       >
         <Icon icon="mdi:skip-forward" class="size-4" />
-      </button>
+      </Button>
     </div>
 
     <!-- Timecode display -->

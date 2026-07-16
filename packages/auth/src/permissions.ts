@@ -12,6 +12,7 @@ export const Permission = {
   ADMINISTRATOR:       1n << 5n,
   MANAGE_TRACK_TYPES:  1n << 6n,  // create / edit / delete track types and source sets
   MANAGE_TIMELINES:    1n << 7n,  // create / edit / delete timelines
+  RENAME_CLIPS:        1n << 8n,  // relabel clips (label-only edits) without full EDIT_TIMELINE
 } as const satisfies Record<string, bigint>;
 
 export type PermissionName = keyof typeof Permission;
@@ -28,6 +29,7 @@ export const PERMISSION_MESSAGES: Record<PermissionName, string> = {
   ADMINISTRATOR:       'perform administrator actions',
   MANAGE_TRACK_TYPES:  'manage track types and source sets',
   MANAGE_TIMELINES:    'manage timelines',
+  RENAME_CLIPS:        'rename clips',
 };
 
 export function encode(names: PermissionName[]): bigint {

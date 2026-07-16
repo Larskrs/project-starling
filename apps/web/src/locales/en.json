@@ -134,7 +134,8 @@
       "manageRoles": "Manage roles",
       "administrator": "Administrator",
       "manageTrackTypes": "Manage track types",
-      "manageTimelines": "Manage timelines"
+      "manageTimelines": "Manage timelines",
+      "renameClips": "Rename clips"
     }
   },
   "dashboard": {
@@ -257,6 +258,8 @@
     "deleteTrack": "Delete track",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
+    "zoomFit": "Fit whole timeline",
+    "zoomReset": "Reset zoom (5-minute ticks)",
     "liveSync": "Live sync active — playback and edits follow everyone in this editor",
     "syncOffline": "Live sync offline",
     "sourceBar": {
@@ -351,6 +354,7 @@
       "nameStretch": "Stretch",
       "nameEmphasize": "Emphasize",
       "metronome": "Metronome — clips set the BPM",
+      "metronomeOverridesDisplay": "Metronome is on — tracks of this type always use the BPM strip (beat & bar lines)",
       "tts": "Read clip text aloud during playback",
       "clipDisplay": "Clip display",
       "clipNormal": "Normal",

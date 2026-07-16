@@ -151,9 +151,11 @@ export async function requirePermission(
   if (ctx.privileged) return;
 
   // Role permissions were joined in during the access check — no extra query.
+  // `required` may be a mask of alternatives (any bit passes); the message
+  // names the first (primary) permission in the mask.
   if (!can(ctx.auth.role, ctx.rolePermissions, required)) {
     const name = (Object.entries(Permission) as [PermissionName, bigint][])
-      .find(([, bit]) => bit === required)?.[0];
+      .find(([, bit]) => (bit & required) !== 0n)?.[0];
     const description = name ? PERMISSION_MESSAGES[name] : 'perform this action';
     throw createError({
       statusCode: 403,

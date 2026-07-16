@@ -132,7 +132,10 @@ const { isEdit, loading, error, submit } = useEntityDialog({
       </p>
 
       <FormField :label="$t('trackTypes.settings.trackDisplay')">
-        <SwitchTab v-model="trackDisplay" :options="trackDisplayOptions" />
+        <SwitchTab v-if="!metronome" v-model="trackDisplay" :options="trackDisplayOptions" />
+        <p v-else class="text-xs text-muted-foreground py-1.5">
+          {{ $t('trackTypes.settings.metronomeOverridesDisplay') }}
+        </p>
       </FormField>
 
       <FormField :label="$t('trackTypes.settings.nameDisplay')">

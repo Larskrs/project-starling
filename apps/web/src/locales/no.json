@@ -121,7 +121,8 @@
       "manageRoles": "Administrer roller",
       "administrator": "Administrator",
       "manageTrackTypes": "Administrer sportyper",
-      "manageTimelines": "Administrer tidslinjer"
+      "manageTimelines": "Administrer tidslinjer",
+      "renameClips": "Endre klippnavn"
     }
   },
   "settings": {
@@ -257,6 +258,8 @@
     "deleteTrack": "Slett spor",
     "zoomIn": "Zoom inn",
     "zoomOut": "Zoom ut",
+    "zoomFit": "Vis hele tidslinjen",
+    "zoomReset": "Tilbakestill zoom (5-minutters merker)",
     "liveSync": "Direktesynk aktiv — avspilling og endringer følger alle i denne editoren",
     "syncOffline": "Direktesynk frakoblet",
     "sourceBar": {
@@ -351,6 +354,7 @@
       "nameStretch": "Strekk",
       "nameEmphasize": "Fremhev",
       "metronome": "Metronom — klipp setter BPM",
+      "metronomeOverridesDisplay": "Metronom er på — spor av denne typen bruker alltid BPM-stripen (slag- og taktlinjer)",
       "tts": "Les klipptekst høyt under avspilling",
       "clipDisplay": "Klippvisning",
       "clipNormal": "Normal",

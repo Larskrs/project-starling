@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { framesToTC, rulerInterval } from '../useEditorUtils.js'
 
 const props = defineProps({
@@ -10,12 +10,19 @@ const props = defineProps({
 
 const emit = defineEmits(['scrub'])
 
+const viewport = inject('editor-viewport', ref({ scrollLeft: 0, width: 0 }))
+
+// Ticks culled to the visible viewport — at deep zoom a long timeline would
+// otherwise materialise tens of thousands of marks.
 const marks = computed(() => {
-  const { startFrame, endFrame } = props.timeline
-  const interval = rulerInterval(props.pxPerFrame)
-  const first    = Math.ceil(startFrame / interval) * interval
+  const { startFrame, endFrame, frameRate } = props.timeline
+  const interval = rulerInterval(props.pxPerFrame, parseFloat(frameRate) || 25)
+  const vw       = viewport.value
+  const from     = Math.max(startFrame, startFrame + (vw.scrollLeft - 100) / props.pxPerFrame)
+  const to       = Math.min(endFrame, startFrame + (vw.scrollLeft + (vw.width || 1600) + 100) / props.pxPerFrame)
+  const first    = Math.ceil(from / interval) * interval
   const result   = []
-  for (let f = first; f <= endFrame; f += interval) {
+  for (let f = first; f <= to; f += interval) {
     result.push({ frame: f, x: (f - startFrame) * props.pxPerFrame })
   }
   return result

@@ -57,9 +57,13 @@ const faintBody = computed(() => props.clipDisplay === 'border' || props.clipDis
 
 // Label text + stretch-mode SVG geometry: viewBox sized to the text's natural
 // proportions, preserveAspectRatio="none" then distorts it to fill the clip.
-const labelText = computed(() =>
-  isEventTrack.value && source.value ? source.value.shortName : (props.clip.label || props.track.name),
-)
+// A clip with both a source and a custom label combines them ("K1 - Total shot").
+const labelText = computed(() => {
+  const short = source.value?.shortName
+  if (short && props.clip.label) return `${short} - ${props.clip.label}`
+  if (isEventTrack.value && source.value) return short
+  return props.clip.label || props.track.name
+})
 const stretchViewBox = computed(() =>
   `0 0 ${Math.max(24, labelText.value.length * 11)} 40`,
 )
@@ -180,19 +184,29 @@ const isAudioClip = computed(() =>
 // Scroll position + width of the editor canvas, shared from index.vue.
 const viewport = inject('editor-viewport', ref({ scrollLeft: 0, width: 0 }))
 
-// Visible slice of this clip in px, relative to its left edge, expanded by a
-// margin so scrolling doesn't reveal an undrawn edge. Null when fully off-screen,
-// so a clip costs the same to draw whether 2 seconds or 2 hours of it exist.
-const PREFETCH_PX = 240
+// Visible slice of this clip in px, relative to its left edge, snapped to
+// CHUNK_PX tiles. Only chunks actually inside the viewport (± one chunk of
+// margin) exist on the canvas, and because the window is quantized — and the
+// same object is returned while it's unchanged — scrolling within a chunk
+// triggers no redraw at all; a repaint happens only when a new chunk enters.
+// Null when fully off-screen.
+const CHUNK_PX = 256
+let _prevWin = null
 const visibleWindow = computed(() => {
   const clipL = displayedLeft.value
-  const clipR = clipL + displayedWidth.value
-  const viewL = viewport.value.scrollLeft - PREFETCH_PX
-  const viewR = viewport.value.scrollLeft + viewport.value.width + PREFETCH_PX
+  const clipW = displayedWidth.value
+  const viewL = viewport.value.scrollLeft - CHUNK_PX
+  const viewR = viewport.value.scrollLeft + viewport.value.width + CHUNK_PX
   const start = Math.max(clipL, viewL)
-  const end   = Math.min(clipR, viewR)
-  if (end <= start) return null
-  return { offset: Math.floor(start - clipL), width: Math.ceil(end - start) }
+  const end   = Math.min(clipL + clipW, viewR)
+  if (end <= start) { _prevWin = null; return null }
+
+  const offset = Math.max(0, Math.floor((start - clipL) / CHUNK_PX) * CHUNK_PX)
+  const width  = Math.min(clipW, Math.ceil((end - clipL) / CHUNK_PX) * CHUNK_PX) - offset
+  if (!_prevWin || _prevWin.offset !== offset || _prevWin.width !== width) {
+    _prevWin = { offset, width: Math.ceil(width) }
+  }
+  return _prevWin
 })
 
 function drawWaveform() {

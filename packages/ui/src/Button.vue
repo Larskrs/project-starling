@@ -14,6 +14,7 @@ const base = 'inline-flex gap-1.5 items-center justify-center rounded-md text-sm
 
 const variants = {
   default:     'bg-primary text-primary-foreground hover:bg-primary/90',
+  flat:        'bg-hover hover:bg-muted text-muted-foreground hover:text-accent-foreground',
   outline:     'border border-input bg-background hover:bg-hover hover:border-hover hover:text-accent-foreground',
   ghost:       'hover:bg-accent hover:text-accent-foreground',
   destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',

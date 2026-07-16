@@ -12,12 +12,22 @@ export function framesToTC(frame, frameRate) {
   return `${sign}${pad(hh)}:${pad(mm)}:${pad(ss)}:${pad(ff)}`
 }
 
-// Nice ruler interval in frames given a target pixel density.
-const NICE = [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]
+// Nice ruler interval in frames for a target pixel density. Sub-second ticks
+// use frame counts; anything longer snaps to time-nice steps (1s … 2h) so the
+// timecode labels land on round times.
+const NICE_FRAMES  = [1, 2, 5, 10]
+const NICE_SECONDS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200]
 
-export function rulerInterval(pxPerFrame, targetPx = 80) {
+/** Target px between ruler ticks — also anchors the editor's default zoom
+ *  (pxPerFrame is chosen so one tick ≈ 5 minutes). */
+export const RULER_TICK_TARGET_PX = 80
+
+export function rulerInterval(pxPerFrame, fps = 25, targetPx = RULER_TICK_TARGET_PX) {
   const framesPerTarget = targetPx / pxPerFrame
-  return NICE.find(n => n >= framesPerTarget) ?? NICE[NICE.length - 1]
+  const frameStep = NICE_FRAMES.find(n => n >= framesPerTarget)
+  if (frameStep && frameStep < fps) return frameStep
+  const secStep = NICE_SECONDS.find(s => s * fps >= framesPerTarget) ?? NICE_SECONDS[NICE_SECONDS.length - 1]
+  return Math.max(1, Math.round(secStep * fps))
 }
 
 // Clamp a value between min and max.

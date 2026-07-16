@@ -22,11 +22,12 @@ export interface ClipChange {
   clipId?: string;                   // remove
 }
 
-/** Track create/update/delete relayed to other editors. */
+/** Track create/update/delete/reorder relayed to other editors. */
 export interface TrackChange {
-  type:     'upsert' | 'remove';
+  type:     'upsert' | 'remove' | 'reorder';
   track?:   Record<string, unknown>;
   trackId?: string;
+  order?:   string[];   // reorder: track ids in the new order (index = sortOrder)
 }
 
 /** Transport state broadcast so every client shows the same current time. */
@@ -59,6 +60,9 @@ interface TimelineSocketData extends SocketData {
   // Whether the joined member holds EDIT_TIMELINE for the current timeline.
   // Resolved once at join time and gates the clip/track mutation relays.
   canEdit?: boolean;
+  // RENAME_CLIPS holders may relay clip changes too (their label-only PATCHes
+  // must reach other editors), but not track changes.
+  canRename?: boolean;
 }
 
 type TimelineSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, TimelineSocketData>;
@@ -168,6 +172,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       if (!timelineId) return;
       socket.data.timelineId = undefined;
       socket.data.canEdit = undefined;
+      socket.data.canRename = undefined;
       void socket.leave(roomName(timelineId));
 
       const room = rooms.get(timelineId);
@@ -200,9 +205,10 @@ export function setupTimelineSockets(io: SocketIOServer): void {
 
       leavePresence(); // a socket follows one timeline at a time
       socket.data.timelineId = timelineId;
-      // Cache the edit capability for this timeline so the mutation relays
+      // Cache the edit capabilities for this timeline so the mutation relays
       // below don't hit the DB on every clip/track event.
-      socket.data.canEdit = accessGrants(access, user, Permission.EDIT_TIMELINE);
+      socket.data.canEdit   = accessGrants(access, user, Permission.EDIT_TIMELINE);
+      socket.data.canRename = accessGrants(access, user, Permission.RENAME_CLIPS);
       await socket.join(roomName(timelineId));
       joinPresence(timelineId);
       socket.emit('timeline:presence', presenceList(timelineId));
@@ -220,7 +226,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
 
     socket.on('clip:change', (change) => {
       const timelineId = socket.data.timelineId;
-      if (!timelineId || !socket.data.canEdit) return;
+      if (!timelineId || (!socket.data.canEdit && !socket.data.canRename)) return;
       if (!change || typeof change.trackId !== 'string') return;
       if (change.type !== 'upsert' && change.type !== 'remove') return;
       if (relayTooLarge(change)) return;
@@ -231,7 +237,8 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       const timelineId = socket.data.timelineId;
       if (!timelineId || !socket.data.canEdit) return;
       if (!change) return;
-      if (change.type !== 'upsert' && change.type !== 'remove') return;
+      if (change.type !== 'upsert' && change.type !== 'remove' && change.type !== 'reorder') return;
+      if (change.type === 'reorder' && !Array.isArray(change.order)) return;
       if (relayTooLarge(change)) return;
       socket.to(roomName(timelineId)).emit('track:change', change);
     });

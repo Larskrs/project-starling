@@ -1,12 +1,11 @@
 /**
  * Multi-resolution waveform peaks for the timeline editor.
  *
- * A decoded file is reduced once into a mip-pyramid of min/max peak pairs:
- * level 0 is the finest (BASE_BIN samples per point), each subsequent level
- * halves the resolution. Rendering picks the level that matches the current
- * zoom (samples-per-pixel), so we sample the waveform at a quality appropriate
- * to how much the user can actually see — coarse when zoomed out, detailed when
- * zoomed in — without ever re-scanning the raw samples.
+ * A decoded file is reduced once into exactly three levels of min/max peak
+ * pairs: 128, 1 024 and 8 192 samples per bin. Rendering picks whichever of the
+ * three matches the current zoom (samples-per-pixel), so the sample size only
+ * changes at two zoom thresholds instead of micro-adjusting on every zoom step
+ * — the drawn waveform stays stable while zooming, and levels stay cacheable.
  *
  * The pyramid is built lazily per file and cached (the "buffer"), and callers
  * read only the bin range covering the visible viewport, so long clips cost the
@@ -15,8 +14,9 @@
 
 import { getAudioBuffer } from './useAudioEngine.js'
 
-const BASE_BIN = 128    // samples per point at the finest level
-const MIN_BINS = 512    // stop coarsening once a level is this small
+const BASE_BIN     = 128   // samples per bin at the finest level
+const LEVEL_FACTOR = 8     // each coarser level merges 8 bins
+const NUM_LEVELS   = 3     // exactly three sample sizes: 128 / 1024 / 8192
 
 const _pyramids = new Map()   // fileId → Promise<Pyramid>
 
@@ -76,25 +76,25 @@ function buildPyramid(buffer) {
 
   const levels = [{ min: min0, max: max0, samplesPerBin: BASE_BIN }]
 
-  // Coarser levels: merge each pair of bins (min-of-mins, max-of-maxes).
+  // Coarser levels: merge LEVEL_FACTOR bins (min-of-mins, max-of-maxes).
   let prev = levels[0]
-  while (prev.min.length > MIN_BINS) {
-    const count = Math.ceil(prev.min.length / 2)
+  for (let l = 1; l < NUM_LEVELS && prev.min.length > 1; l++) {
+    const count = Math.ceil(prev.min.length / LEVEL_FACTOR)
     const min = new Float32Array(count)
     const max = new Float32Array(count)
     for (let i = 0; i < count; i++) {
-      const a = i * 2
-      const b = a + 1
+      const a   = i * LEVEL_FACTOR
+      const end = Math.min(a + LEVEL_FACTOR, prev.min.length)
       let lo = prev.min[a]
       let hi = prev.max[a]
-      if (b < prev.min.length) {
-        if (prev.min[b] < lo) lo = prev.min[b]
-        if (prev.max[b] > hi) hi = prev.max[b]
+      for (let j = a + 1; j < end; j++) {
+        if (prev.min[j] < lo) lo = prev.min[j]
+        if (prev.max[j] > hi) hi = prev.max[j]
       }
       min[i] = lo
       max[i] = hi
     }
-    const level = { min, max, samplesPerBin: prev.samplesPerBin * 2 }
+    const level = { min, max, samplesPerBin: prev.samplesPerBin * LEVEL_FACTOR }
     levels.push(level)
     prev = level
   }
@@ -105,8 +105,8 @@ function buildPyramid(buffer) {
 /**
  * Picks the level whose bins are just fine enough for the given zoom.
  * `samplesPerPixel` = sampleRate / (pxPerFrame * fps). We choose the coarsest
- * level that still keeps roughly ≤1 bin per pixel, so we draw the least data
- * that looks crisp at this zoom.
+ * of the three levels that still keeps roughly ≤1 bin per pixel, so the sample
+ * size flips only at two zoom thresholds.
  */
 export function pickLevel(pyramid, samplesPerPixel) {
   const { levels } = pyramid

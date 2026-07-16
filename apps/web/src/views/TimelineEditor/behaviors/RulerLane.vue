@@ -1,12 +1,12 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { clipLeft } from '../useEditorUtils.js'
 
 // Slim strip lane for track types with trackDisplay: 'ruler'.
-// Each clip renders as a compact chip at its position (metronome types show
-// the clip's data.bpm); the value applies until the next chip. Chips can be
-// dragged horizontally to move the clip.
+// Each clip renders as a compact chip at its position; the value applies until
+// the next chip. Chips can be dragged horizontally to move the clip.
+// (Metronome tracks use BpmLane instead — metronome overrides trackDisplay.)
 const props = defineProps({
   track:      { type: Object,  required: true },
   timeline:   { type: Object,  required: true },
@@ -14,7 +14,6 @@ const props = defineProps({
   height:     { type: Number,  default: 28 },
   selected:   { type: Boolean, default: false },
   muted:      { type: Boolean, default: false },
-  metronome:  { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['select', 'edit-clip', 'delete-clip', 'move-clip'])
@@ -23,15 +22,20 @@ const hoveredId  = ref(null)
 const dragId     = ref(null)
 const dragOffset = ref(0)
 
-const chips = computed(() =>
-  props.track.clips.map(clip => ({
-    clip,
-    x:    clipLeft(clip, props.timeline.startFrame, props.pxPerFrame),
-    text: props.metronome
-      ? `♩ ${Number(clip.data?.bpm) || '—'}`
-      : (clip.label || '—'),
-  })),
-)
+const viewport = inject('editor-viewport', ref({ scrollLeft: 0, width: 0 }))
+
+// Only chips near the viewport render (160px covers the widest chip label).
+const chips = computed(() => {
+  const viewL = viewport.value.scrollLeft - 160
+  const viewR = viewport.value.scrollLeft + (viewport.value.width || 1600) + 32
+  const out = []
+  for (const clip of props.track.clips) {
+    const x = clipLeft(clip, props.timeline.startFrame, props.pxPerFrame)
+    if (x < viewL || x > viewR) continue
+    out.push({ clip, x, text: clip.label || '—' })
+  }
+  return out
+})
 
 // ── Drag to move ──────────────────────────────────────────────────────────────
 let _startX  = 0

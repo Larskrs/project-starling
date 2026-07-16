@@ -176,8 +176,9 @@ Permission bits (`@starling/auth/permissions` — bit positions are frozen forev
 | `1n << 5n` | `ADMINISTRATOR` | production-level superuser (passes any check; also guards production PATCH/DELETE) |
 | `1n << 6n` | `MANAGE_TRACK_TYPES` | track types **and source sets/sources** CRUD |
 | `1n << 7n` | `MANAGE_TIMELINES` | timelines CRUD |
+| `1n << 8n` | `RENAME_CLIPS` | relabel clips (label-only clip PATCH) without full `EDIT_TIMELINE` |
 
-`can(globalRole, rolePermissions, required)` implements: global admin → yes; `ADMINISTRATOR` bit → yes; else `(perms & required) !== 0n`. A denied check throws `403` with a human message from `PERMISSION_MESSAGES` and `data: { missingPermission: 'MANAGE_ROLES', role }` (`errorKey: errors.permission.missing`).
+`can(globalRole, rolePermissions, required)` implements: global admin → yes; `ADMINISTRATOR` bit → yes; else `(perms & required) !== 0n` — so `required` may be a **mask of alternatives** (any bit passes; a denial names the first permission in the mask). A denied check throws `403` with a human message from `PERMISSION_MESSAGES` and `data: { missingPermission: 'MANAGE_ROLES', role }` (`errorKey: errors.permission.missing`).
 
 **Query cost** — an access-checked request is 2–3 queries total: one joined company⋈production resolve, then (non-admins) the company-membership check and the production-membership⋈role join **in parallel**. The member's `rolePermissions` ride along in `ProductionContext`, so `requirePermission` is pure bit math with no DB access.
 
@@ -262,10 +263,11 @@ Timelines are the one production resource kept at the top level (create/list by 
 | `GET/POST /timelines?pid=…` | POST: `MANAGE_TIMELINES` | `{ name ≤128, frameRate (db enum: 23.976…60, from frameRateEnum), startFrame, endFrame > startFrame, ltcOffsetFrames }` |
 | `GET /timeline/[tlId]` | access | **The editor bootstrap**: `{ timeline, tracks: [{ …track, typeName, typeColor, sourceName/ShortName/Hue, clips: [{ …clip, fileType }] }], trackTypes, sources }` |
 | `PATCH/DELETE /timeline/[tlId]` | `MANAGE_TIMELINES` | PATCH bumps `updatedAt` |
-| `GET/POST /timeline/[tlId]/tracks` | `EDIT_TIMELINE` (GET: access) | create track (typeId, sourceId?, name, mode, sortOrder…) — typeId verified same-production |
-| `PATCH/DELETE /timeline/[tlId]/tracks/[trackId]` | `EDIT_TIMELINE` | e.g. `{ isMuted }`, `{ isLocked }` — scoped by timeline id |
+| `GET/POST /timeline/[tlId]/tracks` | `EDIT_TIMELINE` (GET: access) | create track (typeId, sourceId?, name, mode, sortOrder…) — typeId verified same-production; `sortOrder` defaults to **max+1** (append). Track listings (here and in the editor bootstrap) are ordered by `sortOrder, createdAt` |
+| `PATCH/DELETE /timeline/[tlId]/tracks/[trackId]` | `EDIT_TIMELINE` | e.g. `{ isMuted }`, `{ isLocked }`, `{ sortOrder }` — scoped by timeline id |
+| `POST /timeline/[tlId]/tracks/reorder` | `EDIT_TIMELINE` | `{ order: [trackId…] }` — rewrites `sortOrder` to the array index. Lenient: ids outside the timeline are ignored, unlisted tracks keep their old value (concurrent add/delete safe). Returns `{ order }` (the applied ids) |
 | `POST /timeline/[tlId]/clips` | `EDIT_TIMELINE` | `{ trackId, label='', position ≥0, fileId?, mediaStart?, end? (must be > mediaStart when both set), sourceId?, color?, data? }` — `trackId` verified to belong to the timeline |
-| `PATCH/DELETE /timeline/[tlId]/clips/[clipId]` | `EDIT_TIMELINE` | move (`position`), crop (`mediaStart`/`end`), relabel, recolor — clip verified via track→timeline |
+| `PATCH/DELETE /timeline/[tlId]/clips/[clipId]` | `EDIT_TIMELINE` (PATCH: label-only body passes with `RENAME_CLIPS` **or** `EDIT_TIMELINE`) | move (`position`), crop (`mediaStart`/`end`), relabel, recolor — clip verified via track→timeline |
 
 ### Storage (production-scoped via `{ productionId }` ref; see §7)
 
@@ -345,8 +347,8 @@ Design: **REST is the source of truth for persistent data.** The socket layer on
 | C→S | `timeline:join` `{ timelineId }` + ack | `resolveTimelineAccess` check: timeline→production→company; allowed if global admin, company owner/admin, or production member (mirrors §5 layers 1–2 + membership). The member's role permission bits are resolved in the same pass and the resulting `EDIT_TIMELINE` capability is cached on the socket to gate the mutation relays below. Ack `{ ok }` or `{ error: 'Access denied' … }`. On success: join room, add to presence, emit presence to the room. |
 | C→S | `timeline:leave` | leave room + presence (also on `disconnect`) |
 | S→C | `timeline:presence` | `PresenceUser[]` — `{ id, name, avatarImageId, createdAt }`, deduped per user across tabs; sent to the whole room on every join/leave |
-| C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — relayed verbatim to the room **except the sender** (`socket.to(room)`). **Requires `EDIT_TIMELINE`** (the cached join-time capability) — sockets without it are silently dropped, matching the REST mutation routes. `clip` is the full REST response row. Payloads over **32 KB** are dropped (relay amplification guard). |
-| C→S / S→C | `track:change` | `{ type: 'upsert'\|'remove', track?, trackId? }` — same relay semantics, **`EDIT_TIMELINE` gate**, and size cap |
+| C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — relayed verbatim to the room **except the sender** (`socket.to(room)`). **Requires `EDIT_TIMELINE` or `RENAME_CLIPS`** (cached join-time capabilities) — rename-only members must be able to relay their label PATCHes; sockets with neither are silently dropped. `clip` is the full REST response row. Payloads over **32 KB** are dropped (relay amplification guard). |
+| C→S / S→C | `track:change` | `{ type: 'upsert'\|'remove'\|'reorder', track?, trackId?, order? }` — same relay semantics, **`EDIT_TIMELINE` gate**, and size cap. `reorder` carries `order: [trackId…]` (the ids the REST reorder applied; index = sortOrder) and requires `order` to be an array |
 | C→S | `playhead:update` | `{ frame: number, isPlaying: boolean }` — validated finite; VIEW-level (any joined member drives the shared transport); **rate-limited server-side to one relay per 80ms per socket** (excess silently dropped) |
 | S→C | `playhead:sync` | `{ frame, isPlaying, userId }` — the relay of the above, to everyone else in the room |
 

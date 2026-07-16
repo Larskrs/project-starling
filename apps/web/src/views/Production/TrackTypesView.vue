@@ -84,7 +84,7 @@ function setName(id) {
         />
         <span class="flex-1 text-sm font-medium text-foreground truncate">{{ tt.name }}</span>
         <Badge>{{ tt.trackMode === 'event' ? $t('trackTypes.modeEvent') : $t('trackTypes.modeClip') }}</Badge>
-        <Badge v-if="tt.trackDisplay === 'ruler'">{{ $t('trackTypes.settings.displayRuler') }}</Badge>
+        <Badge v-if="tt.trackDisplay === 'ruler' && !tt.metronome">{{ $t('trackTypes.settings.displayRuler') }}</Badge>
         <Badge v-if="tt.nameDisplay && tt.nameDisplay !== 'normal'">
           {{ tt.nameDisplay === 'stretch' ? $t('trackTypes.settings.nameStretch') : $t('trackTypes.settings.nameEmphasize') }}
         </Badge>

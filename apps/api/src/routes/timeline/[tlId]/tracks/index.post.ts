@@ -1,5 +1,5 @@
 import z from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { db, tracks, trackTypes } from '@starling/db';
 import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/handler.js';
 import { requireTimelineParam } from '../../../../lib/production.js';
@@ -22,13 +22,21 @@ export default defineEventHandler(async (event) => {
     .limit(1);
   if (!trackType) throw createError({ statusCode: 404, message: 'Track type not found' });
 
+  // New tracks append to the end of the timeline's order unless told otherwise.
+  let sortOrder = body.sortOrder;
+  if (sortOrder == null) {
+    const [row] = await db.select({ max: sql<number>`coalesce(max(${tracks.sortOrder}), -1)` })
+      .from(tracks).where(eq(tracks.timelineId, timeline.id));
+    sortOrder = Number(row?.max ?? -1) + 1;
+  }
+
   const [track] = await db.insert(tracks).values({
     timelineId: timeline.id,
     typeId:     body.typeId,
     name:       body.name,
     mode:       trackType.trackMode,
     sourceId:   body.sourceId ?? null,
-    sortOrder:  body.sortOrder ?? 0,
+    sortOrder,
   }).returning();
 
   return track!;

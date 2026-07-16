@@ -15,20 +15,23 @@ const props = defineProps({
   muted:     { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select', 'toggle-mute', 'toggle-lock', 'add-clip', 'delete', 'resize-start'])
+// reorder-start fires on any row pointerdown; the parent only enters reorder
+// mode after a ≥5px vertical drag, so plain clicks still select as before.
+const emit = defineEmits(['select', 'toggle-mute', 'toggle-lock', 'add-clip', 'delete', 'resize-start', 'reorder-start'])
 
 const hovered = ref(false)
 </script>
 
 <template>
   <div
-    class="relative flex items-center gap-1.5 px-2 border-b border-border group cursor-pointer transition-colors"
+    class="relative flex items-center gap-1.5 px-2 border-b border-border group cursor-pointer transition-colors select-none touch-none"
     :class="[
       muted ? 'opacity-50' : '',
       selected ? 'bg-accent/70 border-l-2 border-l-primary' : 'hover:bg-accent/30',
     ]"
     :style="{ height: height + 'px' }"
     @click="$emit('select')"
+    @pointerdown="$emit('reorder-start', $event)"
     @mouseenter="hovered = true"
     @mouseleave="hovered = false"
   >
