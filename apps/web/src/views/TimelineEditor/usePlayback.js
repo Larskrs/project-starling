@@ -5,7 +5,11 @@ import { resolveTrackSettings } from './behaviors/trackSettings.js'
 import { createMetronome } from './behaviors/metronome.js'
 import { createCueSpeaker } from './behaviors/tts.js'
 
-const PLAYING_SYNC_INTERVAL_MS = 500
+// The SERVER owns the transport clock: clients send commands (play/pause/seek)
+// and continuously converge on the server's anchor — position now =
+// anchorFrame + (localNow − anchorLocalMs)/1000 × fps. Convergence is checked
+// on an interval while playing.
+const ANCHOR_CHECK_MS = 500
 
 // Two-tier drift correction: the visual playhead corrects on ANY measurable
 // drift so every client shows the same frame as closely as possible, but audio
@@ -30,10 +34,10 @@ const DRIFT_DEADBAND_FRAMES = 0.25
  *   mutedTracks:  import('vue').Ref<Record<string, boolean>>,  // client-local mute (cookie)
  *   pxPerFrame:   import('vue').Ref<number>,
  *   canvasRef:    import('vue').Ref<HTMLElement|null>,
- *   sendPlayhead: (frame: number, isPlaying: boolean, opts?: object) => void,
+ *   sendTransport: (action: 'play'|'pause'|'seek', frame?: number) => void,
  * }} deps
  */
-export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPerFrame, canvasRef, sendPlayhead }) {
+export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPerFrame, canvasRef, sendTransport }) {
   // Stored as float for smooth animation; TC display rounds it.
   const playheadFrame = ref(0)
   const isPlaying     = ref(false)
@@ -46,7 +50,12 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
 
   let _rafId       = null
   let _lastTs      = null
-  let _lastSyncMs  = 0
+
+  // The server's authoritative anchor while the shared transport plays:
+  // { frame, localMs, fps } — null while stopped, and cleared on local
+  // optimistic actions (play/seek) until the server echoes the new anchor.
+  let _serverAnchor    = null
+  let _lastAnchorCheck = 0
 
   // Mute is client-local (cookie), not the server's isMuted flag.
   const isMuted = (track) => !!mutedTracks?.value?.[track.id]
@@ -182,10 +191,12 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     if (!timeline.value) return
     playheadFrame.value = clamp(frame, timeline.value.startFrame, timeline.value.endFrame)
     // Seeking a STOPPED timeline is private — everyone browses their own
-    // position. Only an active (playing) transport is shared, so only then
-    // does a seek broadcast and re-anchor the running audio.
+    // position. Only an active (playing) transport is shared: the seek goes to
+    // the server as a command (the server re-anchors its clock and echoes the
+    // authoritative state back), while local audio follows optimistically.
     if (broadcast && isPlaying.value) {
-      sendPlayhead(playheadFrame.value, true)
+      _serverAnchor = null   // stale until the server echoes the new anchor
+      sendTransport('seek', playheadFrame.value)
       scheduleResync()
     }
   }
@@ -207,16 +218,17 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     if (playheadFrame.value >= timeline.value.endFrame) {
       playheadFrame.value = timeline.value.startFrame
     }
-    isPlaying.value = true
-    _lastTs         = null
-    _lastSyncMs     = Date.now()
-    _rafId          = requestAnimationFrame(_tick)
+    isPlaying.value  = true
+    _lastTs          = null
+    _serverAnchor    = null   // set by the server's echo of our play command
+    _lastAnchorCheck = 0
+    _rafId           = requestAnimationFrame(_tick)
 
     const fps = parseFloat(timeline.value.frameRate)
     startAudioPlayback(currentClips(), playheadFrame.value, fps)
     _startBehaviors(fps)
 
-    if (broadcast) sendPlayhead(playheadFrame.value, true, { immediate: true })
+    if (broadcast) sendTransport('play', playheadFrame.value)
   }
 
   function stopPlayback(broadcast = true) {
@@ -226,11 +238,13 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     scheduleResync.cancel()
     scheduleClipSync.cancel()
     scheduleBehaviors.cancel()
-    _lastTs = null
+    _lastTs       = null
+    _serverAnchor = null
     stopAudioPlayback()
     _stopBehaviors()
 
-    if (broadcast && wasPlaying) sendPlayhead(playheadFrame.value, false, { immediate: true })
+    // The server computes the authoritative stop frame from ITS clock.
+    if (broadcast && wasPlaying) sendTransport('pause')
   }
 
   function togglePlayback() {
@@ -280,49 +294,64 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
       }
     }
 
-    // Periodic re-sync so followers correct drift.
+    // Converge on the server's clock: where the anchor says the transport is
+    // NOW vs where we are. resyncAudioFull applies the two-tier correction
+    // (sub-deadband ignored, small drift nudges the audio anchor inaudibly,
+    // ≥ AUDIO_RESYNC_FRAMES re-anchors audio for real).
     const now = Date.now()
-    if (now - _lastSyncMs >= PLAYING_SYNC_INTERVAL_MS) {
-      _lastSyncMs = now
-      sendPlayhead(playheadFrame.value, true)
+    if (_serverAnchor && now - _lastAnchorCheck >= ANCHOR_CHECK_MS) {
+      _lastAnchorCheck = now
+      const serverFrame = _serverAnchor.frame + ((now - _serverAnchor.localMs) / 1000) * _serverAnchor.fps
+      if (Math.abs(serverFrame - playheadFrame.value) > DRIFT_DEADBAND_FRAMES) {
+        setPlayhead(serverFrame, { broadcast: false })
+        resyncAudioFull()
+      }
     }
 
     _rafId = requestAnimationFrame(_tick)
   }
 
   /**
-   * Apply a peer's transport state without echoing it back.
+   * Apply the server's authoritative transport state (every command — ours
+   * included — echoes back as one of these).
    *
-   * The shared transport is the PLAYING state: while a peer plays, everyone
-   * displays the active timeline. `ageMs` (from useTimelineSync) is how old
-   * the state is by the time it gets here — while playing, the target is
-   * frame + age, i.e. where the playhead is SUPPOSED to be now, not where it
-   * was when the message left, so a behind follower catches up on every sync.
-   * A stopped timeline is browsed privately: a remote stop ends the shared run
-   * at its stop position, but is ignored when we're already stopped — it must
-   * never yank a privately-seeking user's playhead.
+   * While playing, the state is a clock anchor: `frame` at server time `at`,
+   * mapped to our clock as `anchorLocalMs`. The current position is PREDICTED
+   * as frame + elapsed-since-anchor × fps — however delayed the message was,
+   * every client lands on the same wall-clock-aligned frame. The anchor is
+   * kept and `_tick` keeps converging on it, so the server decides how fast
+   * frames go from then on. A stopped timeline is browsed privately: a stop
+   * ends the shared run at the server-computed frame but is ignored when
+   * we're already stopped — it must never yank a privately-seeking user.
    */
-  function applyRemotePlayhead({ frame, isPlaying: remotePlaying, ageMs = 0 }) {
+  function applyTransportState({ playing, frame, frameRate, anchorLocalMs }) {
     if (!timeline.value) return
-    const fps    = parseFloat(timeline.value.frameRate)
-    const target = remotePlaying ? frame + (ageMs / 1000) * fps : frame
+    const fps = frameRate || parseFloat(timeline.value.frameRate)
 
-    if (remotePlaying) {
-      if (!isPlaying.value) {
-        setPlayhead(target, { broadcast: false })
-        startPlayback(false)
-      } else if (Math.abs(playheadFrame.value - target) > DRIFT_DEADBAND_FRAMES) {
-        // Correct ANY measurable drift so every client tracks the same frame.
-        // resyncAudioFull decides how: small corrections nudge the audio
-        // anchor (voices play on, no jitter); only ≥ AUDIO_RESYNC_FRAMES
-        // actually re-anchors the audio.
-        setPlayhead(target, { broadcast: false })
-        resyncAudioFull()
+    if (playing) {
+      const predicted = frame + ((Date.now() - anchorLocalMs) / 1000) * fps
+
+      // A run that outlived the timeline (driver vanished mid-play, nobody
+      // paused) — treat as ended rather than chasing an impossible position.
+      if (predicted >= timeline.value.endFrame) {
+        _serverAnchor = null
+        if (isPlaying.value) stopPlayback(false)
+        return
       }
+
+      if (!isPlaying.value) {
+        setPlayhead(predicted, { broadcast: false })
+        startPlayback(false)
+      }
+      // Adopt the anchor AFTER a possible startPlayback (which clears it);
+      // the next tick converges us onto it via the two-tier correction.
+      _serverAnchor    = { frame, localMs: anchorLocalMs, fps }
+      _lastAnchorCheck = 0
     } else {
+      _serverAnchor = null
       if (!isPlaying.value) return
       stopPlayback(false)
-      setPlayhead(target, { broadcast: false })
+      setPlayhead(frame, { broadcast: false })
     }
   }
 
@@ -330,6 +359,6 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     playheadFrame, playheadX, isPlaying,
     setPlayhead, seekStart, seekEnd,
     startPlayback, stopPlayback, togglePlayback,
-    applyRemotePlayhead,
+    applyTransportState,
   }
 }

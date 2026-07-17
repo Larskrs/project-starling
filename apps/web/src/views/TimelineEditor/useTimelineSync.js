@@ -6,19 +6,22 @@ import { io } from 'socket.io-client'
  *
  * - Relays clip/track changes the local user persisted over REST to everyone
  *   else in the same timeline room, and applies theirs via the callbacks.
- * - Broadcasts the local transport (playhead frame + play state) so all
- *   clients follow the same current time.
+ * - Transport: the SERVER owns the clock. Clients send commands only
+ *   (`sendTransport('play'|'pause'|'seek', frame?)`) and receive the room's
+ *   authoritative anchor via `onTransport`.
  * - Tracks who else is in the editor (`peers`).
  *
- * Callbacks receive exactly the payloads the peer sent:
+ * Callbacks:
  *   onClipChange({ type: 'upsert'|'remove', trackId, clip?, clipId? })
  *   onTrackChange({ type: 'upsert'|'remove'|'reorder', track?, trackId?, order? })
- *   onPlayhead({ frame, isPlaying, userId, ageMs })
- *     ageMs = how old the state is by the time the callback runs — derived
- *     from the server's relay stamp and the measured clock offset, so it
- *     reflects when the state was produced, not when the message arrived.
+ *   onTransport({ playing, frame, frameRate, userId, at, anchorLocalMs })
+ *     `frame` is the anchor position at server time `at`; `anchorLocalMs` is
+ *     that same instant on OUR clock (server stamp mapped through the measured
+ *     clock offset) — `frame + (Date.now() − anchorLocalMs)/1000 × frameRate`
+ *     is where the transport is right now, with the command's network delay
+ *     cancelled out.
  */
-export function useTimelineSync({ onClipChange, onTrackChange, onPlayhead } = {}) {
+export function useTimelineSync({ onClipChange, onTrackChange, onTransport } = {}) {
   const connected = ref(false)
   const peers     = ref([])   // everyone in the room, including self
 
@@ -27,9 +30,9 @@ export function useTimelineSync({ onClipChange, onTrackChange, onPlayhead } = {}
 
   // ── Clock sync ──────────────────────────────────────────────────────────────
   // NTP-style: a short burst of pings estimates the offset between the server
-  // clock and ours (offset = serverNow − localNow). playhead:sync relays carry
-  // a server stamp; with the offset we can age them precisely regardless of
-  // either machine's wall clock or the network delay of this one message.
+  // clock and ours (offset = serverNow − localNow). Transport anchors carry a
+  // server stamp; with the offset we can place them precisely on our clock
+  // regardless of either machine's wall time or one message's network delay.
   const CLOCK_SAMPLES = 5
   let _clockOffset = null   // ms; null until the first burst completes
 
@@ -60,10 +63,10 @@ export function useTimelineSync({ onClipChange, onTrackChange, onPlayhead } = {}
     ping()
   }
 
-  /** Age of a server-stamped message in local ms (0 when not measurable). */
-  function messageAge(at) {
-    if (typeof at !== 'number' || _clockOffset === null) return 0
-    return Math.min(10_000, Math.max(0, Date.now() - (at - _clockOffset)))
+  /** Server-stamp → local clock ms; falls back to "now" until the offset is measured. */
+  function anchorLocalMs(at) {
+    if (typeof at !== 'number' || _clockOffset === null) return Date.now()
+    return at - _clockOffset
   }
 
   function join(id) {
@@ -86,8 +89,8 @@ export function useTimelineSync({ onClipChange, onTrackChange, onPlayhead } = {}
       socket.on('timeline:presence', (users) => { peers.value = users })
       if (onClipChange)  socket.on('clip:change', onClipChange)
       if (onTrackChange) socket.on('track:change', onTrackChange)
-      if (onPlayhead)    socket.on('playhead:sync', (state) => {
-        onPlayhead({ ...state, ageMs: messageAge(state.at) })
+      if (onTransport)   socket.on('transport:state', (state) => {
+        onTransport({ ...state, anchorLocalMs: anchorLocalMs(state.at) })
       })
 
       socket.on('connect_error', (err) => {
@@ -115,30 +118,39 @@ export function useTimelineSync({ onClipChange, onTrackChange, onPlayhead } = {}
     if (socket?.connected) socket.emit('track:change', change)
   }
 
-  // Playhead updates are throttled (trailing-edge) so scrubbing doesn't flood
-  // the socket; play/pause transitions bypass the throttle via `immediate`.
-  const PLAYHEAD_THROTTLE_MS = 120
-  let _lastSent = 0
-  let _pending  = null
+  // Transport commands. play/pause send immediately (and drop any queued
+  // seek — the newer intent wins); seeks are throttled leading+trailing so a
+  // scrub doesn't flood the server, with the trailing send carrying the
+  // LATEST frame of the burst.
+  const SEEK_THROTTLE_MS = 120
+  let _lastSeekSent  = 0
+  let _pendingSeek   = null
+  let _pendingFrame  = null
 
-  function sendPlayhead(frame, isPlaying, { immediate = false } = {}) {
+  function sendTransport(action, frame = null) {
     if (!socket?.connected) return
-    const now = Date.now()
 
-    if (immediate || now - _lastSent >= PLAYHEAD_THROTTLE_MS) {
-      if (_pending) { clearTimeout(_pending); _pending = null }
-      _lastSent = now
-      socket.emit('playhead:update', { frame, isPlaying })
+    if (action !== 'seek') {
+      if (_pendingSeek) { clearTimeout(_pendingSeek); _pendingSeek = null }
+      socket.emit('transport:command', frame != null ? { action, frame } : { action })
       return
     }
 
-    if (_pending) clearTimeout(_pending)
-    _pending = setTimeout(() => {
-      _pending  = null
-      _lastSent = Date.now()
-      if (socket?.connected) socket.emit('playhead:update', { frame, isPlaying })
-    }, PLAYHEAD_THROTTLE_MS - (now - _lastSent))
+    const now = Date.now()
+    _pendingFrame = frame
+    if (now - _lastSeekSent >= SEEK_THROTTLE_MS) {
+      if (_pendingSeek) { clearTimeout(_pendingSeek); _pendingSeek = null }
+      _lastSeekSent = now
+      socket.emit('transport:command', { action: 'seek', frame })
+      return
+    }
+    if (_pendingSeek) return   // trailing send already queued; frame updated above
+    _pendingSeek = setTimeout(() => {
+      _pendingSeek  = null
+      _lastSeekSent = Date.now()
+      if (socket?.connected) socket.emit('transport:command', { action: 'seek', frame: _pendingFrame })
+    }, SEEK_THROTTLE_MS - (now - _lastSeekSent))
   }
 
-  return { connected, peers, join, leave, sendClipChange, sendTrackChange, sendPlayhead }
+  return { connected, peers, join, leave, sendClipChange, sendTrackChange, sendTransport }
 }

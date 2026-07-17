@@ -29,5 +29,8 @@ export default defineConfig({
       '/api':    { target: 'http://localhost:3000' },
       '/socket': { target: 'http://localhost:3000', ws: true },
     },
+    allowedHosts: [
+      "8223-195-18-2-113.ngrok-free.app"
+    ]
   },
 })

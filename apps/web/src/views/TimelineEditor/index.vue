@@ -116,8 +116,8 @@ const sync = useTimelineSync({
     if (change.type === 'remove' && change.trackId) removeTrackLocal(change.trackId)
     if (change.type === 'reorder' && Array.isArray(change.order)) applyTrackOrder(change.order)
   },
-  onPlayhead(state) {
-    playback.applyRemotePlayhead(state)
+  onTransport(state) {
+    playback.applyTransportState(state)
   },
 })
 
@@ -369,7 +369,7 @@ function toggleMute(track) {
 // ── Playback ──────────────────────────────────────────────────────────────────
 const playback = usePlayback({
   timeline, trackList, trackTypes, mutedTracks, pxPerFrame, canvasRef,
-  sendPlayhead: (...args) => sync.sendPlayhead(...args),
+  sendTransport: (...args) => sync.sendTransport(...args),
 })
 const {
   playheadFrame, playheadX, isPlaying,

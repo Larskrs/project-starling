@@ -31,20 +31,34 @@ export interface TrackChange {
   order?:   string[];   // reorder: track ids in the new order (index = sortOrder)
 }
 
-/** Transport state broadcast so every client shows the same current time. */
-export interface PlayheadState {
-  frame:     number;
-  isPlaying: boolean;
+/**
+ * The room's authoritative transport state — the SERVER decides how fast
+ * frames go. `frame` is the anchor position at server time `at`; while
+ * playing, the position at any server time t is
+ * `frame + (t − at)/1000 × frameRate`. Clients never stream positions: they
+ * send commands (play/pause/seek) and derive the current frame from this
+ * anchor plus their measured clock offset, so a command's network delay
+ * cancels out and every client lands on the same frame.
+ */
+export interface TransportState {
+  playing:   boolean;
+  frame:     number;   // anchor frame at server time `at`
+  frameRate: number;   // fps the server advances the clock with (from the DB)
+  userId:    string;   // who issued the last command
+  at:        number;   // server epoch ms of the anchor
+}
+
+/** A client transport command. `frame` is required for play/seek. */
+export interface TransportCommand {
+  action: 'play' | 'pause' | 'seek';
+  frame?: number;
 }
 
 interface ServerToClientEvents {
   'timeline:presence': (users: PresenceUser[]) => void;
   'clip:change':       (change: ClipChange) => void;
   'track:change':      (change: TrackChange) => void;
-  // `at` = server epoch ms at relay time. Receivers age the state against
-  // their measured clock offset (see time:ping) so they land where the
-  // sender's playhead IS, not where it was when the message left.
-  'playhead:sync':     (state: PlayheadState & { userId: string; at: number }) => void;
+  'transport:state':   (state: TransportState) => void;
 }
 
 type AckResult = { ok: true } | { error: string };
@@ -55,15 +69,18 @@ interface ClientToServerEvents {
   'timeline:leave': () => void;
   'clip:change':    (change: ClipChange) => void;
   'track:change':   (change: TrackChange) => void;
-  'playhead:update': (state: PlayheadState) => void;
+  'transport:command': (cmd: TransportCommand) => void;
   // NTP-style clock probe: acks the server's epoch ms so clients can estimate
-  // their offset from the server clock (used to age playhead:sync stamps).
+  // their offset from the server clock (used to evaluate transport anchors).
   'time:ping':      (ack?: (serverNow: number) => void) => void;
 }
 
 interface TimelineSocketData extends SocketData {
   timelineId?: string;
-  lastPlayheadAt?: number;
+  lastSeekAt?: number;
+  // The joined timeline's frame rate — resolved from the DB at join so the
+  // transport clock can't be driven with a client-supplied fps.
+  frameRate?: number;
   // Whether the joined member holds EDIT_TIMELINE for the current timeline.
   // Resolved once at join time and gates the clip/track mutation relays.
   canEdit?: boolean;
@@ -79,18 +96,15 @@ type TimelineSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<
 // timelineId → userId → { user, socketIds }
 const rooms = new Map<string, Map<string, { user: PresenceUser; sockets: Set<string> }>>();
 
-// timelineId → the room's shared transport state (one JSON object per socket
-// room): whether the timeline is playing, at which frame, who drives it, and
-// the server stamp. While the timeline is ACTIVE (playing) this is what late
-// joiners are caught up with; a stopped timeline is browsed privately by each
-// member, so a stopped state is stored (it ends the run for joiners) but never
-// replayed. Cleared when the room empties.
-const roomTransport = new Map<string, PlayheadState & { userId: string; at: number }>();
+// timelineId → the room's authoritative transport (one JSON object per socket
+// room). An anchor never goes stale — playing position is derived from the
+// server clock — so late joiners simply receive it while playing; a stopped
+// timeline is browsed privately, nothing to replay. Cleared when the room
+// empties. (Clients clamp a run that outlived the timeline's end.)
+const roomTransport = new Map<string, TransportState>();
 
-// A stored "playing" state is only replayed while fresh — the driver streams
-// one every 500ms, so anything older means playback stopped ungracefully
-// (e.g. the driver disconnected mid-play).
-const PLAYING_REPLAY_MAX_AGE_MS = 5000;
+// Seek commands can arrive as a scrub burst — bound them per socket.
+const SEEK_MIN_INTERVAL_MS = 80;
 
 function roomName(timelineId: string): string {
   return `tl:${timelineId}`;
@@ -105,16 +119,22 @@ function presenceList(timelineId: string): PresenceUser[] {
 // membership resolution REST uses (resolveAccessLevel in production.ts), so the
 // two layers can never drift.
 
-async function resolveTimelineAccess(user: SocketUser, timelineId: string): Promise<AccessLevel | null> {
+async function resolveTimelineAccess(
+  user: SocketUser,
+  timelineId: string,
+): Promise<{ level: AccessLevel; frameRate: number } | null> {
   const [tl] = await db
-    .select({ productionId: timelines.productionId, companyId: productions.companyId })
+    .select({ productionId: timelines.productionId, companyId: productions.companyId, frameRate: timelines.frameRate })
     .from(timelines)
     .innerJoin(productions, eq(timelines.productionId, productions.id))
     .where(eq(timelines.id, timelineId))
     .limit(1);
   if (!tl) return null;
 
-  return resolveAccessLevel({ id: user.id, role: user.role }, tl.companyId, tl.productionId);
+  const level = await resolveAccessLevel({ id: user.id, role: user.role }, tl.companyId, tl.productionId);
+  if (!level) return null;
+
+  return { level, frameRate: parseFloat(tl.frameRate) || 25 };
 }
 
 /** Whether the resolved access grants a specific production permission. */
@@ -125,7 +145,6 @@ function accessGrants(access: AccessLevel, user: SocketUser, required: bigint): 
 
 // ── Namespace setup ───────────────────────────────────────────────────────────
 
-const PLAYHEAD_MIN_INTERVAL_MS = 80;        // server-side guard against event floods
 const MAX_RELAY_BYTES          = 32 * 1024; // cap relayed clip/track payloads
 
 // Relays fan a sender's payload out to everyone in the room — bound the size so
@@ -164,6 +183,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       socket.data.timelineId = undefined;
       socket.data.canEdit = undefined;
       socket.data.canRename = undefined;
+      socket.data.frameRate = undefined;
       void socket.leave(roomName(timelineId));
 
       const room = rooms.get(timelineId);
@@ -185,20 +205,22 @@ export function setupTimelineSockets(io: SocketIOServer): void {
         return;
       }
 
-      let access: AccessLevel | null;
+      let resolved: { level: AccessLevel; frameRate: number } | null;
       try {
-        access = await resolveTimelineAccess(user, timelineId);
+        resolved = await resolveTimelineAccess(user, timelineId);
       } catch {
         ack?.({ error: 'Access check failed' });
         return;
       }
-      if (!access) {
+      if (!resolved) {
         ack?.({ error: 'Access denied' });
         return;
       }
+      const access = resolved.level;
 
       leavePresence(); // a socket follows one timeline at a time
       socket.data.timelineId = timelineId;
+      socket.data.frameRate  = resolved.frameRate;
       // Cache the edit capabilities for this timeline so the mutation relays
       // below don't hit the DB on every clip/track event.
       socket.data.canEdit   = accessGrants(access, user, Permission.EDIT_TIMELINE);
@@ -207,13 +229,11 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       joinPresence(timelineId);
       socket.emit('timeline:presence', presenceList(timelineId));
 
-      // An ACTIVE timeline is shared: the joiner immediately follows the
-      // playing transport (aged from the stamp, landing where the playhead is
-      // NOW). A stopped timeline is browsed privately — nothing to replay.
+      // An ACTIVE timeline is shared: the joiner receives the authoritative
+      // anchor and derives the current frame from it — anchors never go stale.
+      // A stopped timeline is browsed privately — nothing to replay.
       const state = roomTransport.get(timelineId);
-      if (state?.isPlaying && Date.now() - state.at < PLAYING_REPLAY_MAX_AGE_MS) {
-        socket.emit('playhead:sync', state);
-      }
+      if (state?.playing) socket.emit('transport:state', state);
 
       ack?.({ ok: true });
     });
@@ -249,24 +269,52 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       socket.to(roomName(timelineId)).emit('track:change', change);
     });
 
-    // Playhead sync is a shared-viewing feature, so it stays at join (VIEW)
-    // level — any member in the room can drive the synced transport.
-    socket.on('playhead:update', (state) => {
+    // Transport commands — the server OWNS the clock. A command updates the
+    // room's anchor and the resulting authoritative state goes to the whole
+    // room INCLUDING the sender, so every client (initiator too) derives its
+    // position from the same server anchor. Stays at join (VIEW) level — any
+    // member can drive the shared transport.
+    socket.on('transport:command', (cmd) => {
       const timelineId = socket.data.timelineId;
-      if (!timelineId || !state || typeof state.frame !== 'number' || !Number.isFinite(state.frame)) return;
+      if (!timelineId || !cmd) return;
+      if (cmd.action !== 'play' && cmd.action !== 'pause' && cmd.action !== 'seek') return;
 
-      const now = Date.now();
-      if (socket.data.lastPlayheadAt && now - socket.data.lastPlayheadAt < PLAYHEAD_MIN_INTERVAL_MS) return;
-      socket.data.lastPlayheadAt = now;
+      const now  = Date.now();
+      const prev = roomTransport.get(timelineId);
 
-      const stamped = {
-        frame:     state.frame,
-        isPlaying: state.isPlaying === true,
-        userId:    user.id,
-        at:        Date.now(),
-      };
-      roomTransport.set(timelineId, stamped);
-      socket.to(roomName(timelineId)).emit('playhead:sync', stamped);
+      let next: TransportState;
+      if (cmd.action === 'play') {
+        if (typeof cmd.frame !== 'number' || !Number.isFinite(cmd.frame)) return;
+        next = {
+          playing:   true,
+          frame:     cmd.frame,
+          frameRate: socket.data.frameRate ?? 25,
+          userId:    user.id,
+          at:        now,
+        };
+      } else if (cmd.action === 'seek') {
+        if (typeof cmd.frame !== 'number' || !Number.isFinite(cmd.frame)) return;
+        // Stopped timelines are browsed privately — shared seeks exist only
+        // while the transport is running. Scrub bursts are rate-bounded.
+        if (!prev?.playing) return;
+        if (socket.data.lastSeekAt && now - socket.data.lastSeekAt < SEEK_MIN_INTERVAL_MS) return;
+        socket.data.lastSeekAt = now;
+        next = { ...prev, frame: cmd.frame, userId: user.id, at: now };
+      } else {
+        // pause: idempotent — the frame is computed from the SERVER clock, not
+        // taken from the client, so everyone stops at the authoritative spot.
+        if (!prev?.playing) return;
+        next = {
+          playing:   false,
+          frame:     prev.frame + ((now - prev.at) / 1000) * prev.frameRate,
+          frameRate: prev.frameRate,
+          userId:    user.id,
+          at:        now,
+        };
+      }
+
+      roomTransport.set(timelineId, next);
+      nsp.to(roomName(timelineId)).emit('transport:state', next);
     });
 
     socket.on('time:ping', (ack) => {
