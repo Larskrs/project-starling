@@ -1,6 +1,8 @@
 <script setup>
 import { ref, shallowRef, computed, inject, watch } from 'vue'
 import { clipLeft, clipWidth } from '../useEditorUtils.js'
+import { createDrag } from '../usePointerDrag.js'
+import { useViewportRange } from '../useViewportRange.js'
 import { getPeakPyramid, pickLevel } from '../useWaveform.js'
 import { ContextMenuRoot, ContextMenuTrigger } from 'radix-vue'
 import ContextMenuContent   from '@starling/ui/ContextMenuContent'
@@ -69,38 +71,22 @@ const stretchViewBox = computed(() =>
 )
 
 // ── Drag to move ──────────────────────────────────────────────────────────────
-const moveAdj  = ref(0)   // pixel offset applied during drag
-let _moveStartX = 0
-let _didMove    = false   // true once movement threshold is exceeded
+const moveAdj = ref(0)   // pixel offset applied during drag
+let _didMove  = false    // true once movement threshold is exceeded
 
-function startMove(e) {
-  if (e.button !== 0) return
-  _moveStartX = e.clientX
-  _didMove    = false
-  document.addEventListener('mousemove', onMoveMove)
-  document.addEventListener('mouseup', onMoveEnd, { once: true })
-}
-
-function onMoveMove(e) {
-  const dx = e.clientX - _moveStartX
-  if (!_didMove && Math.abs(dx) > 3) {
-    _didMove       = true
-    dragging.value = true
-  }
-  if (_didMove) moveAdj.value = dx
-}
-
-function onMoveEnd(e) {
-  document.removeEventListener('mousemove', onMoveMove)
-  if (_didMove) {
-    const dx          = e.clientX - _moveStartX
-    const deltaFrames = Math.round(dx / props.pxPerFrame)
-    const newPosition = Math.max(props.timeline.startFrame, props.clip.position + deltaFrames)
-    if (deltaFrames !== 0) emit('move', newPosition)
-  }
-  moveAdj.value  = 0
-  dragging.value = false
-}
+const startMove = createDrag({
+  onStart: () => { _didMove = false },
+  onMove:  ({ dx }) => { _didMove = true; dragging.value = true; moveAdj.value = dx },
+  onEnd:   ({ dx, moved }) => {
+    if (moved) {
+      const deltaFrames = Math.round(dx / props.pxPerFrame)
+      const newPosition = Math.max(props.timeline.startFrame, props.clip.position + deltaFrames)
+      if (deltaFrames !== 0) emit('move', newPosition)
+    }
+    moveAdj.value  = 0
+    dragging.value = false
+  },
+})
 
 // Double-click opens the clip settings dialog (single click is reserved for
 // selecting / dragging); the context menu's "Edit" item does the same. Guard
@@ -112,45 +98,38 @@ function onClipDblClick() {
 
 // ── Crop drag ─────────────────────────────────────────────────────────────────
 const cropAdj = ref({ left: 0, width: 0 })
-let _cropSide   = null
-let _cropStartX = 0
+let _cropSide = null
+
+const cropDrag = createDrag({
+  threshold: 0,
+  onStart: () => { dragging.value = true },
+  onMove: ({ dx }) => {
+    cropAdj.value = _cropSide === 'left'
+      ? { left: dx, width: -dx }
+      : { left: 0,  width: dx }
+  },
+  onEnd: ({ dx }) => {
+    const deltaFrames = Math.round(dx / props.pxPerFrame)
+    const ms = props.clip.mediaStart ?? 0
+    const me = props.clip.end ?? (ms + 1)
+
+    if (_cropSide === 'left') {
+      const newMs = Math.max(0, Math.min(ms + deltaFrames, me - 1))
+      if (newMs !== ms) emit('crop', { mediaStart: newMs })
+    } else {
+      const newMe = Math.max(ms + 1, me + deltaFrames)
+      if (newMe !== me) emit('crop', { end: newMe })
+    }
+
+    cropAdj.value  = { left: 0, width: 0 }
+    dragging.value = false
+    _cropSide      = null
+  },
+})
 
 function startCrop(side, e) {
-  e.stopPropagation()
-  _cropSide      = side
-  _cropStartX    = e.clientX
-  dragging.value = true
-  document.addEventListener('mousemove', onCropMove)
-  document.addEventListener('mouseup', onCropEnd, { once: true })
-}
-
-function onCropMove(e) {
-  const dx = e.clientX - _cropStartX
-  cropAdj.value = _cropSide === 'left'
-    ? { left: dx, width: -dx }
-    : { left: 0,  width: dx }
-}
-
-function onCropEnd(e) {
-  document.removeEventListener('mousemove', onCropMove)
-  const dx          = e.clientX - _cropStartX
-  const deltaFrames = Math.round(dx / props.pxPerFrame)
-
-  if (_cropSide === 'left') {
-    const ms    = props.clip.mediaStart ?? 0
-    const me    = props.clip.end ?? (ms + 1)
-    const newMs = Math.max(0, Math.min(ms + deltaFrames, me - 1))
-    if (newMs !== ms) emit('crop', { mediaStart: newMs })
-  } else {
-    const ms    = props.clip.mediaStart ?? 0
-    const me    = props.clip.end ?? (ms + 1)
-    const newMe = Math.max(ms + 1, me + deltaFrames)
-    if (newMe !== me) emit('crop', { end: newMe })
-  }
-
-  cropAdj.value  = { left: 0, width: 0 }
-  dragging.value = false
-  _cropSide      = null
+  _cropSide = side
+  cropDrag(e)
 }
 
 // ── Displayed geometry (includes any in-progress drag / crop offsets) ──────────
@@ -181,22 +160,19 @@ const isAudioClip = computed(() =>
   !!props.clip.fileId && props.clip.fileType === 'audio' && !isPoint.value && !isEventTrack.value,
 )
 
-// Scroll position + width of the editor canvas, shared from index.vue.
-const viewport = inject('editor-viewport', ref({ scrollLeft: 0, width: 0 }))
-
 // Visible slice of this clip in px, relative to its left edge, snapped to
 // CHUNK_PX tiles. Only chunks actually inside the viewport (± one chunk of
 // margin) exist on the canvas, and because the window is quantized — and the
 // same object is returned while it's unchanged — scrolling within a chunk
 // triggers no redraw at all; a repaint happens only when a new chunk enters.
 // Null when fully off-screen.
-const CHUNK_PX = 256
+const CHUNK_PX  = 256
+const viewRange = useViewportRange(CHUNK_PX)
 let _prevWin = null
 const visibleWindow = computed(() => {
   const clipL = displayedLeft.value
   const clipW = displayedWidth.value
-  const viewL = viewport.value.scrollLeft - CHUNK_PX
-  const viewR = viewport.value.scrollLeft + viewport.value.width + CHUNK_PX
+  const { left: viewL, right: viewR } = viewRange.value
   const start = Math.max(clipL, viewL)
   const end   = Math.min(clipL + clipW, viewR)
   if (end <= start) { _prevWin = null; return null }
@@ -301,19 +277,19 @@ watch(
     <ContextMenuTrigger as-child>
       <div
         v-if="isPoint"
-        class="absolute top-1 bottom-1 rounded-sm flex items-start justify-center select-none tl-clip-normal"
+        class="absolute top-1 bottom-1 rounded-sm flex items-start justify-center select-none touch-none tl-clip-normal"
         :style="bgStyle"
-        @mousedown="startMove"
+        @pointerdown="startMove"
         @click.stop
         @dblclick.stop="onClipDblClick"
       />
 
       <div
         v-else
-        class="absolute top-1 bottom-1 rounded flex items-center overflow-hidden select-none"
+        class="absolute top-1 bottom-1 rounded flex items-center overflow-hidden select-none touch-none"
         :class="clipBodyClass"
         :style="bgStyle"
-        @mousedown="startMove"
+        @pointerdown="startMove"
         @click.stop
         @dblclick.stop="onClipDblClick"
       >
@@ -321,7 +297,7 @@ watch(
         <div
           v-if="!isEventTrack"
           class="absolute left-0 top-0 bottom-0 w-1.5 z-20 cursor-col-resize bg-black/20 hover:bg-white/30 transition-colors rounded-l"
-          @mousedown.stop="startCrop('left', $event)"
+          @pointerdown.stop="startCrop('left', $event)"
         />
 
         <!-- Image background (image clips) -->
@@ -377,15 +353,15 @@ watch(
         <div
           v-if="!isEventTrack"
           class="absolute right-0 top-0 bottom-0 w-1.5 z-20 cursor-col-resize bg-black/20 hover:bg-white/30 transition-colors rounded-r"
-          @mousedown.stop="startCrop('right', $event)"
+          @pointerdown.stop="startCrop('right', $event)"
         />
       </div>
     </ContextMenuTrigger>
 
     <ContextMenuContent>
-      <ContextMenuItem icon="mdi:pencil-outline" @click="$emit('edit')">Edit</ContextMenuItem>
+      <ContextMenuItem icon="mdi:pencil-outline" @click="$emit('edit')">{{ $t('editor.clipMenu.edit') }}</ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem icon="mdi:delete-outline" destructive @click="$emit('delete')">Delete</ContextMenuItem>
+      <ContextMenuItem icon="mdi:delete-outline" destructive @click="$emit('delete')">{{ $t('editor.clipMenu.delete') }}</ContextMenuItem>
     </ContextMenuContent>
   </ContextMenuRoot>
 </template>

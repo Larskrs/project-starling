@@ -1,6 +1,7 @@
 <script setup>
-import { computed, inject, ref } from 'vue'
+import { computed } from 'vue'
 import { clipWidth } from '../useEditorUtils.js'
+import { useViewportRange } from '../useViewportRange.js'
 import EditorClip from './EditorClip.vue'
 
 const props = defineProps({
@@ -16,21 +17,18 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'edit-clip', 'delete-clip', 'crop-clip', 'move-clip'])
 
-const viewport = inject('editor-viewport', ref({ scrollLeft: 0, width: 0 }))
-
 // Only clips whose effective span intersects the viewport (+margin) mount —
 // a long timeline can hold hundreds of clips but only the on-screen ones cost
 // DOM. Width mirrors EditorClip's geometry: event clips run until the next
 // clip, source-backed clip-mode clips are point markers, the rest use clipWidth.
-const CULL_MARGIN_PX = 300
+const range = useViewportRange(300)
 
 const visibleClips = computed(() => {
   const px      = props.pxPerFrame
   const start   = props.timeline.startFrame
   const isEvent = props.track.mode === 'event'
   const clips   = props.track.clips
-  const viewL   = viewport.value.scrollLeft - CULL_MARGIN_PX
-  const viewR   = viewport.value.scrollLeft + (viewport.value.width || 1600) + CULL_MARGIN_PX
+  const { left: viewL, right: viewR } = range.value
 
   const out = []
   for (let i = 0; i < clips.length; i++) {

@@ -8,8 +8,10 @@ const        SESSION_TTL_MS  = 24 * 60 * 60 * 1000;
 export const SESSION_TTL_SEC = SESSION_TTL_MS / 1000;
 
 export interface SessionData {
-  userId: string;
-  role:   'admin' | 'user';
+  userId:    string;
+  role:      'admin' | 'user';
+  /** Current DB expiry — drives the sliding renewal decision. */
+  expiresAt: Date;
 }
 
 // Short-lived read cache: every REST request and socket handshake resolves the
@@ -78,9 +80,28 @@ export async function getSession(id: string): Promise<SessionData | null> {
     return null;
   }
 
-  const data: SessionData = { userId: row.userId, role: row.role };
+  const data: SessionData = { userId: row.userId, role: row.role, expiresAt: row.expiresAt };
   sessionCache.set(id, data);
   return data;
+}
+
+// ── Sliding renewal ───────────────────────────────────────────────────────────
+// Renew once a session is past half its TTL, so active users never hit the
+// fixed 24h cliff mid-work while idle sessions still expire on schedule.
+const RENEW_WHEN_LEFT_MS = SESSION_TTL_MS / 2;
+
+/**
+ * Extends a session that is due for renewal and returns a refreshed cookie
+ * header for the response; null when nothing needs to happen. Safe to call on
+ * every request — it's pure clock math until a renewal is actually due.
+ */
+export async function renewSessionIfDue(id: string, data: SessionData): Promise<string | null> {
+  if (data.expiresAt.getTime() - Date.now() > RENEW_WHEN_LEFT_MS) return null;
+
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  await db.update(sessions).set({ expiresAt }).where(eq(sessions.id, id));
+  sessionCache.set(id, { ...data, expiresAt });
+  return sessionCookieHeader(id);
 }
 
 export async function destroySession(id: string): Promise<void> {

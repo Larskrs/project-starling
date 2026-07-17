@@ -30,6 +30,9 @@ const FADE_S = 0.008   // declick ramp at each clip's edges
 const STOP_S = 0.03    // fade-out ramp applied to a whole run when it stops
 const VOICE_STOP_S = 0.03  // fade-out for a single voice retired during a resync
 
+const START_LEAD_S = 0.03  // anchor lead on a fresh run (first tick isn't late)
+const SEEK_LEAD_S  = 0.02  // anchor lead when re-anchoring a live run (seek)
+
 // Scheduling signature of a clip: the fields that decide WHAT plays and WHEN.
 // A resync only reschedules clips whose signature changed; clips whose signature
 // is unchanged keep their currently-playing voice untouched (no gap).
@@ -103,18 +106,21 @@ export function getAudioBuffer(fileId) {
  * @param {number} playheadFrame  — current playhead (float)
  * @param {number} frameRate      — timeline fps (number)
  */
-export function startAudioPlayback(clips, playheadFrame, frameRate) {
-  stopAudioPlayback()
-  const ctx = getContext()
-  if (ctx.state === 'suspended') ctx.resume()
-
-  const schedulable = clips.filter(clip => {
+// Clips that can sound at/after the given playhead (valid file + window not passed).
+function _schedulableFrom(clips, playheadFrame) {
+  return clips.filter(clip => {
     if (!clip.fileId) return false
     const ms = clip.mediaStart ?? 0
     const me = clip.end
     if (me == null || me <= ms) return false
     return playheadFrame < clip.position + (me - ms)  // not already finished
   })
+}
+
+export function startAudioPlayback(clips, playheadFrame, frameRate) {
+  stopAudioPlayback()
+  const ctx = getContext()
+  if (ctx.state === 'suspended') ctx.resume()
 
   const gain = ctx.createGain()
   gain.connect(_master)
@@ -122,17 +128,47 @@ export function startAudioPlayback(clips, playheadFrame, frameRate) {
   _run = {
     gain,
     frameRate,
-    startCtxTime: ctx.currentTime + 0.08,  // small lead so the first tick isn't already late
+    startCtxTime: ctx.currentTime + START_LEAD_S,
     startFrame:   playheadFrame,
-    clips:        schedulable,
+    clips:        _schedulableFrom(clips, playheadFrame),
     scheduled:    new Set(),
     sigs:         new Map(),   // clipId → _clipSig at schedule time (for resync diffing)
     voices:       [],
     timer:        null,
+    skew:         0,           // frames the sounding voices are off after anchor nudges
   }
 
   _scheduleDue()
   _run.timer = setInterval(_scheduleDue, TICK_MS)
+}
+
+/**
+ * Audio-clock playhead of the live run, in frames — the authoritative playback
+ * time base. usePlayback drives the visual playhead from this while it's
+ * available, so sound and visuals cannot drift apart (rAF stalls, tab
+ * throttling, long-run clock skew). Null when it can't serve as a time base:
+ * no run, or the context isn't running (e.g. autoplay-blocked).
+ */
+export function getPlaybackFrame() {
+  if (!_run || !_ctx || _ctx.state !== 'running') return null
+  return _run.startFrame + Math.max(0, _ctx.currentTime - _run.startCtxTime) * _run.frameRate
+}
+
+/**
+ * Shift a live run's time mapping by deltaFrames WITHOUT touching its voices:
+ * getPlaybackFrame() — and every clip scheduled from here on — moves; audio
+ * that is already sounding plays on untouched. This is the micro-correction
+ * primitive: small sync drift is absorbed here instead of restarting audio,
+ * which is what keeps playback jitter-free while clients converge on the same
+ * frame. Returns the accumulated |skew| (how far the sounding voices are off
+ * the reported clock) so callers can force a real re-anchor once it grows past
+ * their tolerance; a start/seek resets it.
+ */
+export function nudgePlaybackAnchor(deltaFrames) {
+  if (!_run) return 0
+  _run.startFrame += deltaFrames
+  _run.skew       += deltaFrames
+  return Math.abs(_run.skew)
 }
 
 /** Walk the look-ahead window: warm decodes, and schedule clips that are due. */
@@ -205,23 +241,57 @@ function _scheduleClip(clip, run) {
   }).catch(() => {})
 }
 
+/** Fade out and stop one voice (short declick ramp), then disconnect it. */
+function _retireVoice(voice, t) {
+  try {
+    const stopAt = t + VOICE_STOP_S
+    voice.gain.gain.cancelScheduledValues(t)
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), t)
+    voice.gain.gain.linearRampToValueAtTime(0, stopAt)
+    voice.src.onended = null  // we manage removal here; don't double-splice
+    voice.src.stop(stopAt)
+    setTimeout(() => { try { voice.src.disconnect(); voice.gain.disconnect() } catch {} }, (VOICE_STOP_S + 0.05) * 1000)
+  } catch {}
+}
+
 /** Fade out and stop every live voice belonging to one clip, then drop them. */
 function _retireClipVoices(run, clipId) {
   if (!_ctx) return
-  const t      = _ctx.currentTime
-  const stopAt = t + VOICE_STOP_S
+  const t = _ctx.currentTime
   run.voices = run.voices.filter(voice => {
     if (voice.clipId !== clipId) return true
-    try {
-      voice.gain.gain.cancelScheduledValues(t)
-      voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), t)
-      voice.gain.gain.linearRampToValueAtTime(0, stopAt)
-      voice.src.onended = null  // we manage removal here; don't double-splice
-      voice.src.stop(stopAt)
-      setTimeout(() => { try { voice.src.disconnect(); voice.gain.disconnect() } catch {} }, (VOICE_STOP_S + 0.05) * 1000)
-    } catch {}
+    _retireVoice(voice, t)
     return false
   })
+}
+
+/**
+ * Re-anchor a LIVE run at a new playhead (a seek): every voice retires with a
+ * declick fade, the run's time reference moves, and due clips reschedule
+ * immediately. The run's gain subtree and scheduler timer survive — much
+ * lighter than a stop + start, and the decode cache makes re-attack instant
+ * for anything already heard.
+ */
+export function seekAudioPlayback(clips, playheadFrame, frameRate) {
+  const run = _run
+  if (!run || !_ctx || run.frameRate !== frameRate) {
+    startAudioPlayback(clips, playheadFrame, frameRate)
+    return
+  }
+  if (_ctx.state === 'suspended') _ctx.resume()
+
+  const t = _ctx.currentTime
+  for (const voice of run.voices) _retireVoice(voice, t)
+  run.voices = []
+  run.scheduled.clear()
+  run.sigs.clear()
+
+  run.clips        = _schedulableFrom(clips, playheadFrame)
+  run.startCtxTime = t + SEEK_LEAD_S
+  run.startFrame   = playheadFrame
+  run.skew         = 0
+
+  _scheduleDue()
 }
 
 /**

@@ -85,7 +85,7 @@ function initials(name) {
       <!-- Rewind to start -->
       <Button
         class="w-10 h-7 flex p-0 items-center justify-center rounded-md"
-        title="Go to start (Start)"
+        :title="$t('editor.goToStart')"
         variant="flat"
         @click="$emit('seek-start')"
       >
@@ -98,7 +98,7 @@ function initials(name) {
         :class="isPlaying
           ? 'bg-primary text-primary-foreground hover:bg-primary/90'
           : 'text-muted-foreground hover:text-foreground hover:bg-accent'"
-        title="Play / Pause (Space)"
+        :title="$t('editor.playPause')"
         @click="$emit('toggle-play')"
       >
          <Icon :icon="isPlaying ? 'mdi:pause' : 'mdi:play'" class="text-white w-6 h-6" />
@@ -107,7 +107,7 @@ function initials(name) {
       <!-- Jump to end -->
       <Button
         class="w-10 h-7 flex p-0 items-center justify-center rounded-md"
-        title="Go to end (End)"
+        :title="$t('editor.goToEnd')"
         variant="flat"
         @click="$emit('seek-end')"
       >
@@ -131,15 +131,26 @@ function initials(name) {
       >
         <Icon icon="mdi:magnify-minus-outline" class="size-4" />
       </button>
-      <span class="text-xs text-muted-foreground tabular-nums w-12 text-center">
-        {{ pxPerFrame }}×
-      </span>
+      <button
+        class="text-xs text-muted-foreground hover:text-foreground tabular-nums w-12 text-center rounded-md py-1 hover:bg-accent transition-colors"
+        :title="$t('editor.zoomReset')"
+        @click="$emit('zoom-reset')"
+      >
+        {{ zoomLabel }}
+      </button>
       <button
         class="size-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         :title="$t('editor.zoomIn')"
         @click="$emit('zoom-in')"
       >
         <Icon icon="mdi:magnify-plus-outline" class="size-4" />
+      </button>
+      <button
+        class="size-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        :title="$t('editor.zoomFit')"
+        @click="$emit('zoom-fit')"
+      >
+        <Icon icon="mdi:arrow-expand-horizontal" class="size-4" />
       </button>
     </div>
 

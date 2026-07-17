@@ -89,6 +89,18 @@ const online  = new Map<string, { user: OnlineUser; sockets: Set<string> }>(); /
 // Per-user chat flood guard: 8 messages per 10 seconds.
 const chatLimiter = createRateLimiter({ windowMs: 10_000, max: 8 });
 
+// Attachments must point at the GIF provider our proxy serves (see
+// /chat/gifs/*) — without this, any client could broadcast arbitrary
+// third-party URLs (tracking pixels, oversized media) to every connected user.
+function isAllowedAttachmentUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && (u.hostname === 'giphy.com' || u.hostname.endsWith('.giphy.com'));
+  } catch {
+    return false;
+  }
+}
+
 function onlineUsers(): OnlineUser[] {
   return [...online.values()].map(e => e.user);
 }
@@ -147,7 +159,7 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
       }
 
       const safeAttachments: Attachment[] = attachments
-        .filter(a => a.type === 'gif' && typeof a.url === 'string')
+        .filter(a => a.type === 'gif' && typeof a.url === 'string' && isAllowedAttachmentUrl(a.url))
         .slice(0, 10);
 
       const message: ChatMessage = {

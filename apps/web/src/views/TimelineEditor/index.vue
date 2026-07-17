@@ -1,13 +1,14 @@
 <script setup>
-import { ref, computed, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, provide, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Skeleton, ResizeHandle } from '@starling/ui'
+import { Skeleton, ResizeHandle, ConfirmDialog } from '@starling/ui'
 import { useApi } from '../../composables/useApi.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
 import { useCookie } from '../../composables/useCookie.js'
 import { useResizable } from '../../composables/useResizable.js'
 import { clamp, framesToTC, RULER_TICK_TARGET_PX } from './useEditorUtils.js'
+import { createDrag } from './usePointerDrag.js'
 import { useTimelineSync } from './useTimelineSync.js'
 import { usePlayback } from './usePlayback.js'
 import { destroyAudioEngine } from './useAudioEngine.js'
@@ -53,8 +54,15 @@ async function load() {
   sources.value    = data.sources
   sync.join(route.params.tlId)
   nextTick(() => {
-    pxPerFrame.value = defaultPxPerFrame()
-    updateViewport()
+    // Restore the saved view for this timeline; otherwise the 5-minute default.
+    const saved = savedViews.value[timeline.value.id]
+    pxPerFrame.value = saved?.z
+      ? clamp(saved.z, minPxPerFrame(), MAX_PX_PER_FRAME)
+      : defaultPxPerFrame()
+    nextTick(() => {
+      if (saved?.s && canvasRef.value) canvasRef.value.scrollLeft = saved.s
+      updateViewport()
+    })
   })
 }
 
@@ -114,14 +122,17 @@ const sync = useTimelineSync({
 })
 
 // ── Zoom ──────────────────────────────────────────────────────────────────────
-// Discrete ladder of at most ZOOM_STOPS geometric stops whose range depends on
-// the timeline's length: stop 0 fits the whole timeline in the viewport, the
-// last stop is MAX_PX_PER_FRAME. The default zoom puts ruler ticks at 5-minute
-// intervals; the readout is the position on the ladder (0–100%), so the visible
-// number stays small no matter how long the timeline is.
+// Two input styles over one range (fit-whole-timeline … MAX_PX_PER_FRAME, so
+// the range adapts to the timeline's length):
+//  - wheel / pinch: CONTINUOUS exponential scaling, normalized per device and
+//    coalesced to one zoom per frame — smooth on trackpads, sane per mouse notch
+//  - toolbar buttons / keyboard: a ladder of ZOOM_STOPS geometric stops
+// The default zoom puts ruler ticks at 5-minute intervals; the readout is the
+// position in the range (0–100%), so the visible number stays small no matter
+// how long the timeline is.
 const MAX_PX_PER_FRAME = 16
 const ZOOM_STOPS       = 50
-const WHEEL_STEP_DELTA = 15     // accumulated wheel/pinch delta per stop
+const WHEEL_ZOOM_RATE  = 0.003   // exp factor per normalized wheel px
 
 const pxPerFrame    = ref(1)      // set to the 5-minute-tick default once loaded
 const timelineWidth = computed(() =>
@@ -146,22 +157,28 @@ function setZoom(px, anchorClientX = null) {
   if (px === pxPerFrame.value) return
 
   const canvas = canvasRef.value
-  // Keep the frame under the anchor (cursor or viewport center) stationary.
-  const anchorX = canvas
-    ? (anchorClientX != null ? anchorClientX - canvas.getBoundingClientRect().left : canvas.clientWidth / 2)
-    : 0
-  const anchorFrame = canvas
-    ? timeline.value.startFrame + (canvas.scrollLeft + anchorX) / pxPerFrame.value
-    : 0
+  if (!canvas) { pxPerFrame.value = px; return }
+
+  // Keep the frame under the anchor stationary: the cursor when given; else
+  // the playhead while playing (auto-follow chases it anyway — centre-anchored
+  // zoom would yank it off screen); else the viewport centre.
+  let anchorX
+  if (anchorClientX != null) {
+    anchorX = anchorClientX - canvas.getBoundingClientRect().left
+  } else {
+    const playheadPx = (playheadFrame.value - timeline.value.startFrame) * pxPerFrame.value - canvas.scrollLeft
+    anchorX = (isPlaying.value && playheadPx >= 0 && playheadPx <= canvas.clientWidth)
+      ? playheadPx
+      : canvas.clientWidth / 2
+  }
+  const anchorFrame = timeline.value.startFrame + (canvas.scrollLeft + anchorX) / pxPerFrame.value
 
   pxPerFrame.value = px
 
-  if (canvas) {
-    nextTick(() => {
-      canvas.scrollLeft = (anchorFrame - timeline.value.startFrame) * px - anchorX
-      updateViewport()
-    })
-  }
+  nextTick(() => {
+    canvas.scrollLeft = (anchorFrame - timeline.value.startFrame) * px - anchorX
+    updateViewport()
+  })
 }
 
 // The stop ladder, rebuilt on demand (its floor moves with the canvas width).
@@ -205,21 +222,31 @@ const zoomLabel = computed(() => {
 })
 
 // Browser zoom is disabled on the editor page: Ctrl/⌘+wheel (incl. trackpad
-// pinch) steps the timeline zoom instead, anchored at the cursor when it's over
-// the canvas. Deltas accumulate into whole stops so pinches and wheel notches
-// both walk the same ladder. Safari's proprietary gesture events are swallowed
-// for the same reason.
-let _wheelAcc = 0
+// pinch) zooms the timeline instead, anchored at the cursor when it's over the
+// canvas. Continuous exponential scaling — deltas are normalized (line/page
+// deltaModes → px, so mouse notches and pinches feel equivalent) and coalesced
+// to one setZoom per animation frame, so a pinch burst costs one re-render.
+// Safari's proprietary gesture events are swallowed for the same reason.
+let _wheelFactor = 1
+let _wheelAnchor = null
+let _wheelRaf    = null
+
 function onGlobalWheel(e) {
   if (!e.ctrlKey && !e.metaKey) return
   e.preventDefault()
-  _wheelAcc += -e.deltaY
-  let steps = 0
-  while (_wheelAcc >= WHEEL_STEP_DELTA)  { steps++; _wheelAcc -= WHEEL_STEP_DELTA }
-  while (_wheelAcc <= -WHEEL_STEP_DELTA) { steps--; _wheelAcc += WHEEL_STEP_DELTA }
-  if (!steps) return
-  const anchor = canvasRef.value?.contains(e.target) ? e.clientX : null
-  stepZoom(steps, anchor)
+  const deltaPx = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1)
+  _wheelFactor *= Math.exp(-deltaPx * WHEEL_ZOOM_RATE)
+  if (canvasRef.value?.contains(e.target)) _wheelAnchor = e.clientX
+
+  if (_wheelRaf) return
+  _wheelRaf = requestAnimationFrame(() => {
+    _wheelRaf = null
+    const factor = _wheelFactor
+    const anchor = _wheelAnchor
+    _wheelFactor = 1
+    _wheelAnchor = null
+    setZoom(pxPerFrame.value * factor, anchor)
+  })
 }
 const preventGesture = (e) => e.preventDefault()
 
@@ -232,6 +259,7 @@ onUnmounted(() => {
   document.removeEventListener('wheel', onGlobalWheel)
   document.removeEventListener('gesturestart', preventGesture)
   document.removeEventListener('gesturechange', preventGesture)
+  if (_wheelRaf) { cancelAnimationFrame(_wheelRaf); _wheelRaf = null }
 })
 
 // ── Scroll sync + viewport ────────────────────────────────────────────────────
@@ -260,6 +288,29 @@ function onCanvasScroll() {
 
 onMounted(() => window.addEventListener('resize', updateViewport))
 onUnmounted(() => window.removeEventListener('resize', updateViewport))
+
+// ── Per-timeline view memory (zoom + scroll) ─────────────────────────────────
+// Reopening a timeline restores where you were instead of the 5-minute default.
+const savedViews = useCookie('editor-views', {})   // tlId → { z: pxPerFrame, s: scrollLeft }
+
+function saveView() {
+  if (!timeline.value) return
+  const entries = {
+    ...savedViews.value,
+    [timeline.value.id]: { z: pxPerFrame.value, s: Math.round(canvasRef.value?.scrollLeft ?? 0) },
+  }
+  // Keep the cookie small — drop the oldest entries beyond 20 timelines.
+  const keys = Object.keys(entries)
+  while (keys.length > 20) delete entries[keys.shift()]
+  savedViews.value = entries
+}
+
+let _viewSaveTimer = null
+watch([pxPerFrame, viewport], () => {
+  if (loading.value || !timeline.value) return
+  if (_viewSaveTimer) clearTimeout(_viewSaveTimer)
+  _viewSaveTimer = setTimeout(saveView, 800)
+})
 
 // ── Track behavior settings (from track types) ────────────────────────────────
 const settingsFor = (track) => resolveTrackSettings(track, trackTypes.value)
@@ -412,27 +463,24 @@ function reorderBoundaryFromPointer(clientY) {
 // Swallows the click that follows a reorder drag so the drop doesn't toggle selection.
 let _suppressSelect = false
 
-function startTrackReorder(track, e) {
-  if (e.button !== 0 || trackList.value.length < 2) return
-  const startY = e.clientY
-  let active = false
-
-  const onMove = (ev) => {
-    if (!active && Math.abs(ev.clientY - startY) < 5) return
-    active = true
-    reorderDrag.value = { trackId: track.id, index: reorderBoundaryFromPointer(ev.clientY) }
-  }
-  const onUp = () => {
-    window.removeEventListener('pointermove', onMove)
+const _reorderDrag = createDrag({
+  threshold: 5,
+  onMove: ({ event }, track) => {
+    reorderDrag.value = { trackId: track.id, index: reorderBoundaryFromPointer(event.clientY) }
+  },
+  onEnd: ({ moved }, track) => {
     const drag = reorderDrag.value
     reorderDrag.value = null
-    if (!active || !drag) return
+    if (!moved || !drag) return
     _suppressSelect = true
     setTimeout(() => { _suppressSelect = false })
     commitTrackReorder(track, drag.index)
-  }
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp, { once: true })
+  },
+})
+
+function startTrackReorder(track, e) {
+  if (trackList.value.length < 2) return
+  _reorderDrag(e, track)
 }
 
 function commitTrackReorder(track, boundary) {
@@ -488,6 +536,9 @@ function onKeydown(e) {
   }
   const tag = e.target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+  // Bare +/− step the zoom ladder too — no modifier needed outside inputs.
+  if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return }
+  if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
   if (e.code === 'Space')  { e.preventDefault(); togglePlayback() }
   if (e.code === 'Home')   { e.preventDefault(); seekStart() }
   if (e.code === 'End')    { e.preventDefault(); seekEnd() }
@@ -501,6 +552,8 @@ function onKeydown(e) {
 onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
+  if (_viewSaveTimer) clearTimeout(_viewSaveTimer)
+  saveView()   // flush the debounced view save so the last zoom/scroll sticks
   stopPlayback(false)
   destroyAudioEngine()
   clearWaveformCache()
@@ -551,8 +604,17 @@ async function patchTrack(track, json) {
 
 const toggleLock = (track) => patchTrack(track, { isLocked: !track.isLocked })
 
-async function deleteTrack(track) {
+// Deleting a track takes every clip with it — always confirm first.
+const deleteTrackTarget = ref(null)
+const deletingTrack     = ref(false)
+
+async function confirmDeleteTrack() {
+  const track = deleteTrackTarget.value
+  if (!track) return
+  deletingTrack.value = true
   const { ok } = await $fetch(trackUrl(track.id), { method: 'DELETE', silent: true })
+  deletingTrack.value     = false
+  deleteTrackTarget.value = null
   if (!ok) return
   removeTrackLocal(track.id)
   if (selectedTrackId.value === track.id) selectedTrackId.value = null
@@ -723,7 +785,7 @@ provide('editor-viewport',   viewport)
               @toggle-mute="toggleMute(track)"
               @toggle-lock="toggleLock(track)"
               @add-clip="openAddClip(track)"
-              @delete="deleteTrack(track)"
+              @delete="deleteTrackTarget = track"
             />
             <div v-if="trackList.length === 0" class="px-4 py-6 text-xs text-muted-foreground text-center">
               {{ $t('editor.noTracks') }}
@@ -858,6 +920,19 @@ provide('editor-viewport',   viewport)
       @update:open="bpmDialog = { ...bpmDialog, open: $event }"
       @saved="onBpmClipSaved"
     />
+
+    <ConfirmDialog
+      :open="deleteTrackTarget !== null"
+      :title="$t('editor.confirmDeleteTrackTitle')"
+      :confirm-label="$t('editor.deleteTrack')"
+      :cancel-label="$t('editor.cancel')"
+      :loading="deletingTrack"
+      destructive
+      @confirm="confirmDeleteTrack"
+      @cancel="deleteTrackTarget = null"
+    >
+      {{ $t('editor.confirmDeleteTrack', { name: deleteTrackTarget?.name }) }}
+    </ConfirmDialog>
 
   </div>
 </template>

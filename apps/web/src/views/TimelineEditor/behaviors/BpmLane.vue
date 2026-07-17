@@ -1,7 +1,8 @@
 <script setup>
-import { computed, inject, ref } from 'vue'
-import { Icon } from '@iconify/vue'
+import { computed } from 'vue'
 import { clipLeft } from '../useEditorUtils.js'
+import { useViewportRange } from '../useViewportRange.js'
+import LaneChip from './LaneChip.vue'
 
 // Dedicated strip for metronome tracks (metronome overrides trackDisplay).
 // Renders ruler-like beat/bar tick lines with bar numbers; each BPM clip shows
@@ -17,11 +18,8 @@ const props = defineProps({
 
 const emit = defineEmits(['seek', 'edit-clip', 'delete-clip', 'move-clip'])
 
-const viewport = inject('editor-viewport', ref({ scrollLeft: 0, width: 0 }))
-
-const hoveredId  = ref(null)
-const dragId     = ref(null)
-const dragOffset = ref(0)
+const marksRange = useViewportRange(64)
+const chipsRange = useViewportRange(160)
 
 const fps = computed(() => parseFloat(props.timeline.frameRate) || 25)
 
@@ -59,10 +57,8 @@ const MIN_BAR_PX  = 28   // thin bar lines/numbers to every 2nd/4th/… bar belo
 const marks = computed(() => {
   const px           = props.pxPerFrame
   const { startFrame, endFrame } = props.timeline
-  const vw           = viewport.value
-  const viewWidthPx  = vw.width || 1600
-  const viewFrom     = startFrame + (vw.scrollLeft - 64) / px
-  const viewTo       = startFrame + (vw.scrollLeft + viewWidthPx + 64) / px
+  const viewFrom     = startFrame + marksRange.value.left / px
+  const viewTo       = startFrame + marksRange.value.right / px
 
   const beats = []
   const bars  = []
@@ -99,50 +95,15 @@ const marks = computed(() => {
 // stay editable/deletable; only valid tempos contribute segments/lines above.
 // Chips are viewport-culled like the beat/bar marks (160px covers a chip).
 const chips = computed(() => {
-  const viewL = viewport.value.scrollLeft - 160
-  const viewR = viewport.value.scrollLeft + (viewport.value.width || 1600) + 32
+  const { left, right } = chipsRange.value
   const out = []
   for (const clip of props.track.clips) {
     const x = clipLeft(clip, props.timeline.startFrame, props.pxPerFrame)
-    if (x < viewL || x > viewR) continue
+    if (x < left || x > right) continue
     out.push({ clip, x, text: `♩ ${Number(clip.data?.bpm) || '—'}` })
   }
   return out
 })
-
-// ── Drag to move ──────────────────────────────────────────────────────────────
-let _startX  = 0
-let _didMove = false
-
-function startDrag(clip, e) {
-  if (e.button !== 0) return
-  _startX  = e.clientX
-  _didMove = false
-  dragId.value     = clip.id
-  dragOffset.value = 0
-  const onMove = (ev) => {
-    const dx = ev.clientX - _startX
-    if (!_didMove && Math.abs(dx) > 3) _didMove = true
-    if (_didMove) dragOffset.value = dx
-  }
-  const onUp = (ev) => {
-    window.removeEventListener('pointermove', onMove)
-    if (_didMove) {
-      const deltaFrames = Math.round((ev.clientX - _startX) / props.pxPerFrame)
-      const position    = Math.max(props.timeline.startFrame, clip.position + deltaFrames)
-      if (deltaFrames !== 0) emit('move-clip', { clip, position })
-    }
-    dragId.value     = null
-    dragOffset.value = 0
-  }
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp, { once: true })
-}
-
-function onChipClick(clip) {
-  if (_didMove) { _didMove = false; return }
-  emit('edit-clip', clip)
-}
 
 // Clicking empty lane space seeks the playhead to that position.
 function onBackgroundClick(e) {
@@ -189,34 +150,18 @@ function onBackgroundClick(e) {
     </div>
 
     <!-- BPM chips -->
-    <div
+    <LaneChip
       v-for="{ clip, x, text } in chips"
       :key="clip.id"
-      class="absolute top-1 flex items-center"
-      :class="dragId === clip.id ? 'z-20' : ''"
-      :style="{ left: (x + (dragId === clip.id ? dragOffset : 0)) + 'px' }"
-      @mouseenter="hoveredId = clip.id"
-      @mouseleave="hoveredId = null"
-    >
-      <button
-        type="button"
-        class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold leading-none
-               bg-background border border-border text-foreground hover:border-primary/60 transition-colors whitespace-nowrap touch-none"
-        :class="dragId === clip.id ? 'cursor-grabbing border-primary shadow-md' : 'cursor-grab'"
-        @pointerdown.prevent="startDrag(clip, $event)"
-        @click.stop="onChipClick(clip)"
-      >
-        {{ text }}
-      </button>
-
-      <button
-        v-if="hoveredId === clip.id && dragId !== clip.id"
-        type="button"
-        class="ml-0.5 size-4 flex items-center justify-center rounded text-muted-foreground hover:text-destructive"
-        @click.stop="$emit('delete-clip', clip)"
-      >
-        <Icon icon="mdi:close" class="size-3" />
-      </button>
-    </div>
+      class="top-1"
+      :clip="clip"
+      :x="x"
+      :text="text"
+      :px-per-frame="pxPerFrame"
+      :min-position="timeline.startFrame"
+      @edit="$emit('edit-clip', $event)"
+      @delete="$emit('delete-clip', $event)"
+      @move="$emit('move-clip', $event)"
+    />
   </div>
 </template>

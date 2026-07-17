@@ -1,11 +1,20 @@
 import { ref, computed, watch } from 'vue'
 import { clamp } from './useEditorUtils.js'
-import { startAudioPlayback, resyncAudioPlayback, stopAudioPlayback } from './useAudioEngine.js'
+import { startAudioPlayback, seekAudioPlayback, resyncAudioPlayback, stopAudioPlayback, getPlaybackFrame, nudgePlaybackAnchor } from './useAudioEngine.js'
 import { resolveTrackSettings } from './behaviors/trackSettings.js'
 import { createMetronome } from './behaviors/metronome.js'
 import { createCueSpeaker } from './behaviors/tts.js'
 
-const PLAYING_SYNC_INTERVAL_MS = 1000
+const PLAYING_SYNC_INTERVAL_MS = 500
+
+// Two-tier drift correction: the visual playhead corrects on ANY measurable
+// drift so every client shows the same frame as closely as possible, but audio
+// only re-anchors (restarts voices) when the correction is at least
+// AUDIO_RESYNC_FRAMES — anything smaller is absorbed by shifting the run's
+// clock anchor, which is inaudible. Corrections below the deadband are noise
+// (clock-offset estimation error) and are ignored entirely.
+const AUDIO_RESYNC_FRAMES   = 10
+const DRIFT_DEADBAND_FRAMES = 0.25
 
 /**
  * Playhead + transport state for the timeline editor.
@@ -64,13 +73,31 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     _behaviors = []
   }
 
-  // A seek moves the playhead, so the whole run's time reference changes: restart
-  // the audio and re-anchor the behaviors at the new position. A brief gap here is
-  // inherent to jumping and expected while scrubbing.
+  // Align the running audio with the playhead. Close-enough corrections
+  // (< AUDIO_RESYNC_FRAMES, incl. accumulated nudges) don't restart audio at
+  // all: the run's anchor shifts so the clocks agree and the sounding voices
+  // play on — no jitter from small seeks or sync corrections. Only a genuine
+  // jump re-anchors the run in place (voices retire with a declick fade, the
+  // gain subtree and scheduler survive).
   function resyncAudioFull() {
     if (!isPlaying.value || !timeline.value) return
     const fps = parseFloat(timeline.value.frameRate)
-    startAudioPlayback(currentClips(), playheadFrame.value, fps)
+
+    const engineFrame = getPlaybackFrame()
+    if (engineFrame != null) {
+      const delta = playheadFrame.value - engineFrame
+      if (Math.abs(delta) < AUDIO_RESYNC_FRAMES) {
+        const skew = nudgePlaybackAnchor(delta)
+        if (skew < AUDIO_RESYNC_FRAMES) {
+          // Metronome/TTS are timed off the reported frame — re-time them for
+          // noticeable shifts; audio clips stay untouched either way.
+          if (Math.abs(delta) >= 1) resyncBehaviors()
+          return
+        }
+      }
+    }
+
+    seekAudioPlayback(currentClips(), playheadFrame.value, fps)
     _stopBehaviors()
     _startBehaviors(fps)
   }
@@ -93,17 +120,26 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     _startBehaviors(parseFloat(timeline.value.frameRate))
   }
 
-  // Coalesce high-frequency triggers (a drag emits many updates; a peer's edits
-  // arrive as a burst of relays) into one trailing call. Each kind of resync gets
-  // its own debounce so, e.g., a bpm edit doesn't also restart clip audio.
+  // Leading edge + true trailing debounce: a lone trigger (a single seek click)
+  // fires immediately; calls arriving in a burst (a scrub, a relay storm) keep
+  // deferring one trailing call until the burst pauses — so a fast scrub does
+  // NOT re-anchor audio a dozen times a second, it re-attacks once where the
+  // scrub lands (and at natural pauses of a slow scrub). Each kind of resync
+  // gets its own debounce so, e.g., a bpm edit doesn't also restart clip audio.
   function debounceWhilePlaying(fn, delayMs = 80) {
-    let timer = null
+    let timer    = null
+    let lastCall = 0
     const run = () => {
       if (!isPlaying.value) return
+      const now   = Date.now()
+      const burst = now - lastCall < delayMs
+      lastCall = now
       if (timer) clearTimeout(timer)
+      if (!burst) { fn(); return }
       timer = setTimeout(() => { timer = null; fn() }, delayMs)
     }
-    run.cancel = () => { if (timer) { clearTimeout(timer); timer = null } }
+    run.pending = () => timer !== null
+    run.cancel  = () => { if (timer) { clearTimeout(timer); timer = null } }
     return run
   }
 
@@ -145,19 +181,24 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
   function setPlayhead(frame, { broadcast = true } = {}) {
     if (!timeline.value) return
     playheadFrame.value = clamp(frame, timeline.value.startFrame, timeline.value.endFrame)
-    if (broadcast) {
-      sendPlayhead(playheadFrame.value, isPlaying.value)
-      scheduleResync()  // local seek while playing → audio follows the playhead
+    // Seeking a STOPPED timeline is private — everyone browses their own
+    // position. Only an active (playing) transport is shared, so only then
+    // does a seek broadcast and re-anchor the running audio.
+    if (broadcast && isPlaying.value) {
+      sendPlayhead(playheadFrame.value, true)
+      scheduleResync()
     }
   }
 
+  // Home/End: if the shared transport is running this stops it for everyone
+  // (broadcast), then the jump itself is a private stopped-state seek.
   function seekStart() {
-    stopPlayback(false)
+    stopPlayback()
     setPlayhead(timeline.value?.startFrame ?? 0)
   }
 
   function seekEnd() {
-    stopPlayback(false)
+    stopPlayback()
     setPlayhead(timeline.value?.endFrame ?? 0)
   }
 
@@ -202,7 +243,25 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     _lastTs = ts
 
     const fps = parseFloat(timeline.value.frameRate)
-    playheadFrame.value += elapsed * fps / 1000
+
+    // The audio clock is the time base while it runs: the playhead is DERIVED
+    // from the engine's run position, so sound and visuals cannot drift apart
+    // (no accumulated rAF error, no lead-time offset) and the periodic peer
+    // broadcasts below carry audio-true positions. rAF integration covers a
+    // context that isn't running (autoplay-blocked remote playback) and the
+    // moments the engine anchor disagrees with the playhead — mid-scrub before
+    // the debounced resync lands, or a context that resumed after being
+    // suspended. Disagreement routes through scheduleResync (debounced) so a
+    // scrub doesn't re-anchor audio sixty times a second.
+    const engineFrame = getPlaybackFrame()
+    if (engineFrame != null && Math.abs(engineFrame - playheadFrame.value) <= fps / 2) {
+      playheadFrame.value = engineFrame
+    } else {
+      playheadFrame.value += elapsed * fps / 1000
+      // Nudge a re-anchor only when none is queued — repeating the call every
+      // frame would keep resetting the trailing debounce and starve it.
+      if (engineFrame != null && !scheduleResync.pending()) scheduleResync()
+    }
 
     if (playheadFrame.value >= timeline.value.endFrame) {
       playheadFrame.value = timeline.value.endFrame
@@ -231,24 +290,39 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     _rafId = requestAnimationFrame(_tick)
   }
 
-  /** Apply a peer's transport state without echoing it back. */
-  function applyRemotePlayhead({ frame, isPlaying: remotePlaying }) {
+  /**
+   * Apply a peer's transport state without echoing it back.
+   *
+   * The shared transport is the PLAYING state: while a peer plays, everyone
+   * displays the active timeline. `ageMs` (from useTimelineSync) is how old
+   * the state is by the time it gets here — while playing, the target is
+   * frame + age, i.e. where the playhead is SUPPOSED to be now, not where it
+   * was when the message left, so a behind follower catches up on every sync.
+   * A stopped timeline is browsed privately: a remote stop ends the shared run
+   * at its stop position, but is ignored when we're already stopped — it must
+   * never yank a privately-seeking user's playhead.
+   */
+  function applyRemotePlayhead({ frame, isPlaying: remotePlaying, ageMs = 0 }) {
     if (!timeline.value) return
-    const fps = parseFloat(timeline.value.frameRate)
+    const fps    = parseFloat(timeline.value.frameRate)
+    const target = remotePlaying ? frame + (ageMs / 1000) * fps : frame
 
     if (remotePlaying) {
       if (!isPlaying.value) {
-        setPlayhead(frame, { broadcast: false })
+        setPlayhead(target, { broadcast: false })
         startPlayback(false)
-      } else if (Math.abs(playheadFrame.value - frame) > fps / 2) {
-        // Drifted more than half a second — snap and restart audio at the new position.
-        stopPlayback(false)
-        setPlayhead(frame, { broadcast: false })
-        startPlayback(false)
+      } else if (Math.abs(playheadFrame.value - target) > DRIFT_DEADBAND_FRAMES) {
+        // Correct ANY measurable drift so every client tracks the same frame.
+        // resyncAudioFull decides how: small corrections nudge the audio
+        // anchor (voices play on, no jitter); only ≥ AUDIO_RESYNC_FRAMES
+        // actually re-anchors the audio.
+        setPlayhead(target, { broadcast: false })
+        resyncAudioFull()
       }
     } else {
-      if (isPlaying.value) stopPlayback(false)
-      setPlayhead(frame, { broadcast: false })
+      if (!isPlaying.value) return
+      stopPlayback(false)
+      setPlayhead(target, { broadcast: false })
     }
   }
 

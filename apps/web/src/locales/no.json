@@ -260,6 +260,15 @@
     "zoomOut": "Zoom ut",
     "zoomFit": "Vis hele tidslinjen",
     "zoomReset": "Tilbakestill zoom (5-minutters merker)",
+    "goToStart": "Gå til start (Home)",
+    "playPause": "Spill av / pause (mellomrom)",
+    "goToEnd": "Gå til slutt (End)",
+    "clipMenu": {
+      "edit": "Rediger",
+      "delete": "Slett"
+    },
+    "confirmDeleteTrackTitle": "Slette spor?",
+    "confirmDeleteTrack": "Slette «{name}» og alle klippene på sporet? Dette kan ikke angres.",
     "liveSync": "Direktesynk aktiv — avspilling og endringer følger alle i denne editoren",
     "syncOffline": "Direktesynk frakoblet",
     "sourceBar": {

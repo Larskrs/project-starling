@@ -260,6 +260,15 @@
     "zoomOut": "Zoom out",
     "zoomFit": "Fit whole timeline",
     "zoomReset": "Reset zoom (5-minute ticks)",
+    "goToStart": "Go to start (Home)",
+    "playPause": "Play / Pause (Space)",
+    "goToEnd": "Go to end (End)",
+    "clipMenu": {
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "confirmDeleteTrackTitle": "Delete track?",
+    "confirmDeleteTrack": "Delete \"{name}\" and all of its clips? This cannot be undone.",
     "liveSync": "Live sync active — playback and edits follow everyone in this editor",
     "syncOffline": "Live sync offline",
     "sourceBar": {

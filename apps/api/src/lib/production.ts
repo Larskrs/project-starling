@@ -48,6 +48,60 @@ async function resolveRef(ref: ProductionRef): Promise<{ company: typeof compani
   throw createError({ statusCode: 404, message: 'Production not found', errorKey: 'errors.production.notFound' });
 }
 
+/** The membership part of a ProductionContext — what resolveAccessLevel yields. */
+export interface AccessLevel {
+  privileged:      boolean;
+  memberRoleId:    string | null;
+  rolePermissions: bigint | null;
+}
+
+/**
+ * Core membership resolution shared by REST (requireProductionAccess) and the
+ * socket layer (timeline join): global admin or company owner/admin →
+ * privileged; else explicit production membership with its role permissions
+ * resolved in the same pass. Returns null when the user has no access.
+ */
+export async function resolveAccessLevel(
+  user: { id: string; role: 'admin' | 'user' },
+  companyId: string,
+  productionId: string,
+): Promise<AccessLevel | null> {
+  if (user.role === 'admin') {
+    return { privileged: true, memberRoleId: null, rolePermissions: null };
+  }
+
+  // Both membership checks are independent — run them in parallel, and resolve
+  // the member's role permissions in the same query so permission checks never
+  // need another round-trip.
+  const [[companyMem], [prodMem]] = await Promise.all([
+    db.select({ id: companyMembers.id })
+      .from(companyMembers)
+      .where(and(
+        eq(companyMembers.companyId, companyId),
+        eq(companyMembers.userId, user.id),
+        or(eq(companyMembers.role, 'owner'), eq(companyMembers.role, 'admin')),
+      ))
+      .limit(1),
+    db.select({ roleId: productionMembers.roleId, permissions: productionRoles.permissions })
+      .from(productionMembers)
+      .leftJoin(productionRoles, eq(productionMembers.roleId, productionRoles.id))
+      .where(and(
+        eq(productionMembers.productionId, productionId),
+        eq(productionMembers.userId, user.id),
+      ))
+      .limit(1),
+  ]);
+
+  if (companyMem) return { privileged: true, memberRoleId: null, rolePermissions: null };
+  if (!prodMem)   return null;
+
+  return {
+    privileged:      false,
+    memberRoleId:    prodMem.roleId,
+    rolePermissions: prodMem.permissions ?? null,
+  };
+}
+
 /**
  * Resolves company + production and verifies the caller has access:
  * global admin, company owner/admin, or explicit production membership.
@@ -61,44 +115,10 @@ export async function requireProductionAccess(
   const auth = await requireAuth(event);
   const { company, production } = await resolveRef(ref);
 
-  if (auth.role === 'admin') {
-    return { auth, company, production, privileged: true, memberRoleId: null, rolePermissions: null };
-  }
+  const level = await resolveAccessLevel({ id: auth.userId, role: auth.role }, company.id, production.id);
+  if (!level) throw createError({ statusCode: 403, message: 'Access denied', errorKey: 'errors.generic.accessDenied' });
 
-  // Both membership checks are independent — run them in parallel, and resolve
-  // the member's role permissions in the same query so requirePermission never
-  // needs another round-trip.
-  const [[companyMem], [prodMem]] = await Promise.all([
-    db.select({ id: companyMembers.id })
-      .from(companyMembers)
-      .where(and(
-        eq(companyMembers.companyId, company.id),
-        eq(companyMembers.userId, auth.userId),
-        or(eq(companyMembers.role, 'owner'), eq(companyMembers.role, 'admin')),
-      ))
-      .limit(1),
-    db.select({ roleId: productionMembers.roleId, permissions: productionRoles.permissions })
-      .from(productionMembers)
-      .leftJoin(productionRoles, eq(productionMembers.roleId, productionRoles.id))
-      .where(and(
-        eq(productionMembers.productionId, production.id),
-        eq(productionMembers.userId, auth.userId),
-      ))
-      .limit(1),
-  ]);
-
-  if (companyMem) {
-    return { auth, company, production, privileged: true, memberRoleId: null, rolePermissions: null };
-  }
-
-  if (!prodMem) throw createError({ statusCode: 403, message: 'Access denied', errorKey: 'errors.generic.accessDenied' });
-
-  return {
-    auth, company, production,
-    privileged:      false,
-    memberRoleId:    prodMem.roleId,
-    rolePermissions: prodMem.permissions ?? null,
-  };
+  return { auth, company, production, ...level };
 }
 
 /**

@@ -1,7 +1,8 @@
 import type { Server as SocketIOServer, Socket } from 'socket.io';
-import { eq, and, or } from 'drizzle-orm';
-import { db, timelines, productions, companyMembers, productionMembers, productionRoles } from '@starling/db';
+import { eq } from 'drizzle-orm';
+import { db, timelines, productions } from '@starling/db';
 import { socketAuth, type SocketData, type SocketUser } from './sockets.js';
+import { resolveAccessLevel, type AccessLevel } from './production.js';
 import { can } from './permissions.js';
 import { Permission } from '@starling/auth/permissions';
 
@@ -40,7 +41,10 @@ interface ServerToClientEvents {
   'timeline:presence': (users: PresenceUser[]) => void;
   'clip:change':       (change: ClipChange) => void;
   'track:change':      (change: TrackChange) => void;
-  'playhead:sync':     (state: PlayheadState & { userId: string }) => void;
+  // `at` = server epoch ms at relay time. Receivers age the state against
+  // their measured clock offset (see time:ping) so they land where the
+  // sender's playhead IS, not where it was when the message left.
+  'playhead:sync':     (state: PlayheadState & { userId: string; at: number }) => void;
 }
 
 type AckResult = { ok: true } | { error: string };
@@ -52,6 +56,9 @@ interface ClientToServerEvents {
   'clip:change':    (change: ClipChange) => void;
   'track:change':   (change: TrackChange) => void;
   'playhead:update': (state: PlayheadState) => void;
+  // NTP-style clock probe: acks the server's epoch ms so clients can estimate
+  // their offset from the server clock (used to age playhead:sync stamps).
+  'time:ping':      (ack?: (serverNow: number) => void) => void;
 }
 
 interface TimelineSocketData extends SocketData {
@@ -72,6 +79,19 @@ type TimelineSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<
 // timelineId → userId → { user, socketIds }
 const rooms = new Map<string, Map<string, { user: PresenceUser; sockets: Set<string> }>>();
 
+// timelineId → the room's shared transport state (one JSON object per socket
+// room): whether the timeline is playing, at which frame, who drives it, and
+// the server stamp. While the timeline is ACTIVE (playing) this is what late
+// joiners are caught up with; a stopped timeline is browsed privately by each
+// member, so a stopped state is stored (it ends the run for joiners) but never
+// replayed. Cleared when the room empties.
+const roomTransport = new Map<string, PlayheadState & { userId: string; at: number }>();
+
+// A stored "playing" state is only replayed while fresh — the driver streams
+// one every 500ms, so anything older means playback stopped ungracefully
+// (e.g. the driver disconnected mid-play).
+const PLAYING_REPLAY_MAX_AGE_MS = 5000;
+
 function roomName(timelineId: string): string {
   return `tl:${timelineId}`;
 }
@@ -81,18 +101,11 @@ function presenceList(timelineId: string): PresenceUser[] {
 }
 
 // ── Access check ──────────────────────────────────────────────────────────────
-// Mirrors requireProductionAccess: global admin, company owner/admin, or explicit
-// production membership. Resolves the member's role permission bits in the same
-// pass so per-event permission checks (EDIT_TIMELINE) need no extra round-trip.
+// Resolves the timeline's owning production, then delegates to the same
+// membership resolution REST uses (resolveAccessLevel in production.ts), so the
+// two layers can never drift.
 
-interface TimelineAccess {
-  /** Global admin or company owner/admin — every permission check passes. */
-  privileged:      boolean;
-  /** The member's role permission bits; null when privileged or role-less. */
-  rolePermissions: bigint | null;
-}
-
-async function resolveTimelineAccess(user: SocketUser, timelineId: string): Promise<TimelineAccess | null> {
+async function resolveTimelineAccess(user: SocketUser, timelineId: string): Promise<AccessLevel | null> {
   const [tl] = await db
     .select({ productionId: timelines.productionId, companyId: productions.companyId })
     .from(timelines)
@@ -101,33 +114,11 @@ async function resolveTimelineAccess(user: SocketUser, timelineId: string): Prom
     .limit(1);
   if (!tl) return null;
 
-  if (user.role === 'admin') return { privileged: true, rolePermissions: null };
-
-  const [companyMem] = await db.select({ id: companyMembers.id })
-    .from(companyMembers)
-    .where(and(
-      eq(companyMembers.companyId, tl.companyId),
-      eq(companyMembers.userId, user.id),
-      or(eq(companyMembers.role, 'owner'), eq(companyMembers.role, 'admin')),
-    ))
-    .limit(1);
-  if (companyMem) return { privileged: true, rolePermissions: null };
-
-  const [prodMem] = await db.select({ roleId: productionMembers.roleId, permissions: productionRoles.permissions })
-    .from(productionMembers)
-    .leftJoin(productionRoles, eq(productionMembers.roleId, productionRoles.id))
-    .where(and(
-      eq(productionMembers.productionId, tl.productionId),
-      eq(productionMembers.userId, user.id),
-    ))
-    .limit(1);
-  if (!prodMem) return null;
-
-  return { privileged: false, rolePermissions: prodMem.permissions ?? null };
+  return resolveAccessLevel({ id: user.id, role: user.role }, tl.companyId, tl.productionId);
 }
 
 /** Whether the resolved access grants a specific production permission. */
-function accessGrants(access: TimelineAccess, user: SocketUser, required: bigint): boolean {
+function accessGrants(access: AccessLevel, user: SocketUser, required: bigint): boolean {
   if (access.privileged) return true;
   return can(user.role, access.rolePermissions, required);
 }
@@ -180,7 +171,10 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       if (!room || !entry) return;
       entry.sockets.delete(socket.id);
       if (entry.sockets.size === 0) room.delete(user.id);
-      if (room.size === 0) rooms.delete(timelineId);
+      if (room.size === 0) {
+        rooms.delete(timelineId);
+        roomTransport.delete(timelineId);
+      }
       nsp.to(roomName(timelineId)).emit('timeline:presence', presenceList(timelineId));
     }
 
@@ -191,7 +185,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
         return;
       }
 
-      let access: TimelineAccess | null;
+      let access: AccessLevel | null;
       try {
         access = await resolveTimelineAccess(user, timelineId);
       } catch {
@@ -212,6 +206,15 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       await socket.join(roomName(timelineId));
       joinPresence(timelineId);
       socket.emit('timeline:presence', presenceList(timelineId));
+
+      // An ACTIVE timeline is shared: the joiner immediately follows the
+      // playing transport (aged from the stamp, landing where the playhead is
+      // NOW). A stopped timeline is browsed privately — nothing to replay.
+      const state = roomTransport.get(timelineId);
+      if (state?.isPlaying && Date.now() - state.at < PLAYING_REPLAY_MAX_AGE_MS) {
+        socket.emit('playhead:sync', state);
+      }
+
       ack?.({ ok: true });
     });
 
@@ -229,6 +232,9 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       if (!timelineId || (!socket.data.canEdit && !socket.data.canRename)) return;
       if (!change || typeof change.trackId !== 'string') return;
       if (change.type !== 'upsert' && change.type !== 'remove') return;
+      // Rename-only members persist label PATCHes (upserts) — they have no
+      // REST path to a remove, so don't let them relay one either.
+      if (!socket.data.canEdit && change.type !== 'upsert') return;
       if (relayTooLarge(change)) return;
       socket.to(roomName(timelineId)).emit('clip:change', change);
     });
@@ -253,11 +259,18 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       if (socket.data.lastPlayheadAt && now - socket.data.lastPlayheadAt < PLAYHEAD_MIN_INTERVAL_MS) return;
       socket.data.lastPlayheadAt = now;
 
-      socket.to(roomName(timelineId)).emit('playhead:sync', {
+      const stamped = {
         frame:     state.frame,
         isPlaying: state.isPlaying === true,
         userId:    user.id,
-      });
+        at:        Date.now(),
+      };
+      roomTransport.set(timelineId, stamped);
+      socket.to(roomName(timelineId)).emit('playhead:sync', stamped);
+    });
+
+    socket.on('time:ping', (ack) => {
+      if (typeof ack === 'function') ack(Date.now());
     });
 
     socket.on('disconnect', leavePresence);

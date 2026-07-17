@@ -3,6 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import { db, tracks, clips } from '@starling/db';
 import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/handler.js';
 import { requireTimelineParam } from '../../../../lib/production.js';
+import { clipDataSchema } from '../../../../lib/clipData.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
@@ -14,7 +15,7 @@ const bodySchema = z.object({
   end:        z.number().int().min(0).nullable().optional(),
   sourceId:   z.string().uuid().nullable().optional(),
   hue:        z.number().int().min(0).max(360).nullable().optional(),
-  data:       z.any().optional(),
+  data:       clipDataSchema.nullable().optional(),
 }).refine(
   d => !(d.mediaStart !== null && d.mediaStart !== undefined && d.end !== null && d.end !== undefined) || d.end > d.mediaStart,
   { message: 'end must be greater than mediaStart', path: ['end'] },

@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import type { ZodType } from 'zod';
 import type { SessionData } from './session.js';
-import { sessionFromCookies } from './session.js';
+import { parseSessionCookie, getSession, renewSessionIfDue } from './session.js';
 
 // ── Route metadata ────────────────────────────────────────────────────────────
 
@@ -61,7 +61,20 @@ export type AuthContext = SessionData;
 
 /** Returns the session for the request cookie, or null. */
 export async function getAuth(event: ApiEvent): Promise<AuthContext | null> {
-  return sessionFromCookies(event.req.headers.cookie);
+  const id = parseSessionCookie(event.req.headers.cookie);
+  if (!id) return null;
+  const session = await getSession(id);
+  if (!session) return null;
+
+  // Sliding renewal: refresh the cookie once the session is past half its TTL
+  // so active users never hit the fixed 24h cliff mid-work. Routes that set
+  // their own session cookie (login/logout) overwrite this header afterwards.
+  if (!event.res.headersSent && !event.res.getHeader('Set-Cookie')) {
+    const refreshed = await renewSessionIfDue(id, session).catch(() => null);
+    if (refreshed) event.res.setHeader('Set-Cookie', refreshed);
+  }
+
+  return session;
 }
 
 /** Returns the session or throws 401. */
