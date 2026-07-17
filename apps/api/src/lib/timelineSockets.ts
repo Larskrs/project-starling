@@ -1,6 +1,6 @@
-import type { Server as SocketIOServer, Socket } from 'socket.io';
+import type { Server as SocketIOServer, Socket, Namespace } from 'socket.io';
 import { eq } from 'drizzle-orm';
-import { db, timelines, productions } from '@starling/db';
+import { db, timelines, productions, tracks, clips } from '@starling/db';
 import { socketAuth, type SocketData, type SocketUser } from './sockets.js';
 import { resolveAccessLevel, type AccessLevel } from './production.js';
 import { can } from './permissions.js';
@@ -54,11 +54,27 @@ export interface TransportCommand {
   frame?: number;
 }
 
+/**
+ * Emitted while a room's transport is playing, whenever the clip under the
+ * playhead CHANGES on a track — computed by the server from its own clock, so
+ * lightweight clients (mobile) can show "now playing" per track without
+ * holding the clip model or running their own boundary math.
+ */
+export interface ActiveClipEvent {
+  trackId:  string;
+  clipId:   string | null;   // null = the track went silent (a length clip ended)
+  label:    string | null;
+  sourceId: string | null;   // lets clients prefix the source short name
+  frame:    number;          // transport frame at emit time
+  at:       number;          // server epoch ms (age it like transport anchors)
+}
+
 interface ServerToClientEvents {
   'timeline:presence': (users: PresenceUser[]) => void;
   'clip:change':       (change: ClipChange) => void;
   'track:change':      (change: TrackChange) => void;
   'transport:state':   (state: TransportState) => void;
+  'clip:active':       (event: ActiveClipEvent) => void;
 }
 
 type AckResult = { ok: true } | { error: string };
@@ -105,6 +121,132 @@ const roomTransport = new Map<string, TransportState>();
 
 // Seek commands can arrive as a scrub burst — bound them per socket.
 const SEEK_MIN_INTERVAL_MS = 80;
+
+// ── Active-clip watcher ───────────────────────────────────────────────────────
+// While a room's transport plays, the server walks the timeline's clip
+// boundaries on its own clock and emits `clip:active` whenever the clip under
+// the playhead changes on a track. Semantics mirror the web editor's
+// activeClipLabel: a clip is active from `position`; with an `end` it runs for
+// `end − mediaStart` frames, otherwise until the next clip on the track.
+// Armed on play/seek, reloaded on clip/track edits, disarmed on pause/empty.
+
+interface WatcherClip {
+  id:         string;
+  trackId:    string;
+  position:   number;
+  mediaStart: number | null;
+  end:        number | null;
+  label:      string | null;
+  sourceId:   string | null;
+}
+
+interface RoomWatcher {
+  timer:        ReturnType<typeof setTimeout> | null;
+  clipsByTrack: Map<string, WatcherClip[]>;   // sorted by position
+  active:       Map<string, string | null>;   // trackId → active clipId
+}
+
+const roomWatchers = new Map<string, RoomWatcher>();
+
+function transportFrameAt(state: TransportState, now: number): number {
+  return state.playing ? state.frame + ((now - state.at) / 1000) * state.frameRate : state.frame;
+}
+
+function activeClipAt(trackClips: WatcherClip[], frame: number): WatcherClip | null {
+  let active: WatcherClip | null = null;
+  for (const clip of trackClips) {
+    if (clip.position > frame) break;
+    active = clip;
+  }
+  if (!active) return null;
+  if (active.end != null && frame >= active.position + (active.end - (active.mediaStart ?? 0))) return null;
+  return active;
+}
+
+/** The next frame at which any track's active clip can change. */
+function nextBoundaryAfter(clipsByTrack: Map<string, WatcherClip[]>, frame: number): number | null {
+  let next: number | null = null;
+  const consider = (b: number | null) => {
+    if (b != null && b > frame && (next == null || b < next)) next = b;
+  };
+  for (const trackClips of clipsByTrack.values()) {
+    for (const clip of trackClips) {
+      consider(clip.position);
+      consider(clip.end != null ? clip.position + (clip.end - (clip.mediaStart ?? 0)) : null);
+    }
+  }
+  return next;
+}
+
+function disarmWatcher(timelineId: string): void {
+  const watcher = roomWatchers.get(timelineId);
+  if (watcher?.timer) clearTimeout(watcher.timer);
+  roomWatchers.delete(timelineId);
+}
+
+/** (Re)load the timeline's clip windows and start walking boundaries. */
+async function armWatcher(nsp: Namespace, timelineId: string): Promise<void> {
+  const prev = roomWatchers.get(timelineId);
+  if (prev?.timer) clearTimeout(prev.timer);
+
+  const state = roomTransport.get(timelineId);
+  if (!state?.playing) { roomWatchers.delete(timelineId); return; }
+
+  const rows = await db
+    .select({
+      id:         clips.id,
+      trackId:    clips.trackId,
+      position:   clips.position,
+      mediaStart: clips.mediaStart,
+      end:        clips.end,
+      label:      clips.label,
+      sourceId:   clips.sourceId,
+    })
+    .from(clips)
+    .innerJoin(tracks, eq(clips.trackId, tracks.id))
+    .where(eq(tracks.timelineId, timelineId))
+    .orderBy(clips.position);
+
+  const clipsByTrack = new Map<string, WatcherClip[]>();
+  for (const row of rows) {
+    const list = clipsByTrack.get(row.trackId);
+    if (list) list.push(row);
+    else clipsByTrack.set(row.trackId, [row]);
+  }
+
+  // Keep the previous active map across re-arms (seeks, edits) so only genuine
+  // changes emit; a fresh play starts empty and emits the initial snapshot.
+  roomWatchers.set(timelineId, { timer: null, clipsByTrack, active: prev?.active ?? new Map() });
+  evaluateWatcher(nsp, timelineId);
+}
+
+function evaluateWatcher(nsp: Namespace, timelineId: string): void {
+  const watcher = roomWatchers.get(timelineId);
+  const state   = roomTransport.get(timelineId);
+  if (!watcher || !state?.playing) { disarmWatcher(timelineId); return; }
+
+  const now   = Date.now();
+  const frame = transportFrameAt(state, now);
+
+  for (const [trackId, trackClips] of watcher.clipsByTrack) {
+    const active = activeClipAt(trackClips, frame);
+    if ((active?.id ?? null) === (watcher.active.get(trackId) ?? null)) continue;
+    watcher.active.set(trackId, active?.id ?? null);
+    nsp.to(roomName(timelineId)).emit('clip:active', {
+      trackId,
+      clipId:   active?.id ?? null,
+      label:    active?.label ?? null,
+      sourceId: active?.sourceId ?? null,
+      frame,
+      at:       now,
+    });
+  }
+
+  const boundary = nextBoundaryAfter(watcher.clipsByTrack, frame);
+  if (boundary == null) return;   // no more changes ahead — sleep until re-armed
+  const delayMs = Math.max(10, ((boundary - frame) / state.frameRate) * 1000 + 5);
+  watcher.timer = setTimeout(() => evaluateWatcher(nsp, timelineId), delayMs);
+}
 
 function roomName(timelineId: string): string {
   return `tl:${timelineId}`;
@@ -194,6 +336,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       if (room.size === 0) {
         rooms.delete(timelineId);
         roomTransport.delete(timelineId);
+        disarmWatcher(timelineId);
       }
       nsp.to(roomName(timelineId)).emit('timeline:presence', presenceList(timelineId));
     }
@@ -233,7 +376,28 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       // anchor and derives the current frame from it — anchors never go stale.
       // A stopped timeline is browsed privately — nothing to replay.
       const state = roomTransport.get(timelineId);
-      if (state?.playing) socket.emit('transport:state', state);
+      if (state?.playing) {
+        socket.emit('transport:state', state);
+
+        // Catch the joiner up on what's currently active per track.
+        const watcher = roomWatchers.get(timelineId);
+        if (watcher) {
+          const now   = Date.now();
+          const frame = transportFrameAt(state, now);
+          for (const [trackId, clipId] of watcher.active) {
+            if (clipId == null) continue;
+            const clip = watcher.clipsByTrack.get(trackId)?.find(c => c.id === clipId);
+            socket.emit('clip:active', {
+              trackId,
+              clipId,
+              label:    clip?.label ?? null,
+              sourceId: clip?.sourceId ?? null,
+              frame,
+              at:       now,
+            });
+          }
+        }
+      }
 
       ack?.({ ok: true });
     });
@@ -257,6 +421,9 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       if (!socket.data.canEdit && change.type !== 'upsert') return;
       if (relayTooLarge(change)) return;
       socket.to(roomName(timelineId)).emit('clip:change', change);
+
+      // Clip windows changed — reload the active-clip watcher if one is armed.
+      if (roomWatchers.has(timelineId)) void armWatcher(nsp, timelineId).catch(() => {});
     });
 
     socket.on('track:change', (change) => {
@@ -267,6 +434,11 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       if (change.type === 'reorder' && !Array.isArray(change.order)) return;
       if (relayTooLarge(change)) return;
       socket.to(roomName(timelineId)).emit('track:change', change);
+
+      // A removed track takes its clips along — refresh the watcher if armed.
+      if (change.type === 'remove' && roomWatchers.has(timelineId)) {
+        void armWatcher(nsp, timelineId).catch(() => {});
+      }
     });
 
     // Transport commands — the server OWNS the clock. A command updates the
@@ -315,6 +487,10 @@ export function setupTimelineSockets(io: SocketIOServer): void {
 
       roomTransport.set(timelineId, next);
       nsp.to(roomName(timelineId)).emit('transport:state', next);
+
+      // Keep the active-clip watcher in step with the transport.
+      if (next.playing) void armWatcher(nsp, timelineId).catch(() => {});
+      else disarmWatcher(timelineId);
     });
 
     socket.on('time:ping', (ack) => {
