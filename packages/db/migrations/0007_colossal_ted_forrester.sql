@@ -1,0 +1,1 @@
+ALTER TABLE "timelines" ADD COLUMN "profile_image_id" uuid;

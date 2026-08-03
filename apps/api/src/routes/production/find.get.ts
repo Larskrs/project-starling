@@ -4,6 +4,7 @@ import { db, productionRoles } from '@starling/db';
 import { decode } from '@starling/auth/permissions';
 import { defineEventHandler, getValidatedQuery } from '../../lib/handler.js';
 import { requireProductionAccess } from '../../lib/production.js';
+import { trackActivity } from '../../lib/activity.js';
 
 const querySchema = z.object({
   cslug: z.string().min(1),
@@ -15,7 +16,17 @@ const querySchema = z.object({
 export default defineEventHandler(async (event) => {
   const { cslug, pslug } = getValidatedQuery(event, querySchema);
 
-  const { company, production, privileged, memberRoleId } = await requireProductionAccess(event, { cslug, pslug });
+  const { auth, company, production, privileged, memberRoleId } = await requireProductionAccess(event, { cslug, pslug });
+
+  // This route only runs when a production page is opened by URL — the
+  // "recently opened projects" signal.
+  trackActivity({
+    userId:       auth.userId,
+    entityType:   'production',
+    entityId:     production.id,
+    productionId: production.id,
+    companyId:    company.id,
+  });
 
   let permissions: string[] = [];
   if (!privileged && memberRoleId) {

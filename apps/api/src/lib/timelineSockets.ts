@@ -2,6 +2,7 @@ import type { Server as SocketIOServer, Socket, Namespace } from 'socket.io';
 import { eq } from 'drizzle-orm';
 import { db, timelines, productions, tracks, clips } from '@starling/db';
 import { socketAuth, type SocketData, type SocketUser } from './sockets.js';
+import { trackActivity } from './activity.js';
 import { resolveAccessLevel, type AccessLevel } from './production.js';
 import { can } from './permissions.js';
 import { Permission } from '@starling/auth/permissions';
@@ -264,7 +265,7 @@ function presenceList(timelineId: string): PresenceUser[] {
 async function resolveTimelineAccess(
   user: SocketUser,
   timelineId: string,
-): Promise<{ level: AccessLevel; frameRate: number } | null> {
+): Promise<{ level: AccessLevel; frameRate: number; productionId: string; companyId: string } | null> {
   const [tl] = await db
     .select({ productionId: timelines.productionId, companyId: productions.companyId, frameRate: timelines.frameRate })
     .from(timelines)
@@ -276,7 +277,12 @@ async function resolveTimelineAccess(
   const level = await resolveAccessLevel({ id: user.id, role: user.role }, tl.companyId, tl.productionId);
   if (!level) return null;
 
-  return { level, frameRate: parseFloat(tl.frameRate) || 25 };
+  return {
+    level,
+    frameRate:    parseFloat(tl.frameRate) || 25,
+    productionId: tl.productionId,
+    companyId:    tl.companyId,
+  };
 }
 
 /** Whether the resolved access grants a specific production permission. */
@@ -348,7 +354,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
         return;
       }
 
-      let resolved: { level: AccessLevel; frameRate: number } | null;
+      let resolved: Awaited<ReturnType<typeof resolveTimelineAccess>>;
       try {
         resolved = await resolveTimelineAccess(user, timelineId);
       } catch {
@@ -371,6 +377,16 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       await socket.join(roomName(timelineId));
       joinPresence(timelineId);
       socket.emit('timeline:presence', presenceList(timelineId));
+
+      // Joining the room IS opening the timeline — this is what puts it in the
+      // user's "recently opened" list on the home page.
+      trackActivity({
+        userId:       user.id,
+        entityType:   'timeline',
+        entityId:     timelineId,
+        productionId: resolved.productionId,
+        companyId:    resolved.companyId,
+      });
 
       // An ACTIVE timeline is shared: the joiner receives the authoritative
       // anchor and derives the current frame from it — anchors never go stale.

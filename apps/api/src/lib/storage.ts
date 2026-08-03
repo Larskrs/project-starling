@@ -40,6 +40,11 @@ export function productionProfileImagePath(companyId: string, productionId: stri
   return join(STORAGE_ROOT, 'c', companyId, 'p', productionId, 'profile', slot, `${fileId}@${quality}.webp`);
 }
 
+// storage/c/{companyId}/p/{productionId}/t/{timelineId}/profile/{fileId}@{quality}.webp
+export function timelineProfileImagePath(companyId: string, productionId: string, timelineId: string, fileId: string, quality: number): string {
+  return join(STORAGE_ROOT, 'c', companyId, 'p', productionId, 't', timelineId, 'profile', `${fileId}@${quality}.webp`);
+}
+
 /** How many quality versions to generate based on raw file size. */
 function versionCount(sizeBytes: number): number {
   if (sizeBytes < 100 * 1024)       return 1; // <100 KB
@@ -142,6 +147,20 @@ export async function writeUserProfileImage(
   fileId: string,
 ): Promise<ImageVersion[]> {
   return processImage(data, (q) => userProfileImagePath(userId, slot, fileId, q));
+}
+
+/**
+ * Write a timeline's profile image. Timelines have no banner slot, so unlike
+ * companies/productions there is nothing to select — one image per timeline.
+ */
+export async function writeTimelineProfileImage(
+  data:         Buffer,
+  companyId:    string,
+  productionId: string,
+  timelineId:   string,
+  fileId:       string,
+): Promise<ImageVersion[]> {
+  return processImage(data, (q) => timelineProfileImagePath(companyId, productionId, timelineId, fileId, q));
 }
 
 /**

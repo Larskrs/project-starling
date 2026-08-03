@@ -10,7 +10,10 @@ const router = createRouter({
     { path: '/login',    component: () => import('../views/LoginView.vue'),     meta: { layout: AuthLayout,   title: 'Login' } },
     { path: '/register', component: () => import('../views/RegisterView.vue'),  meta: { layout: AuthLayout,   title: 'Register' } },
     { path: '/chat',     component: () => import('../views/Chat/index.vue'),    meta: { requiresAuth: true, layout: EmptyLayout,   title: 'Chat' } },
-    { path: '/home',       component: () => import('../views/Home/index.vue'),             meta: { requiresAuth: true, layout: DefaultLayout, title: 'Home' } },
+    { path: '/welcome',  component: () => import('../views/WelcomeView.vue'),      meta: { guestOnly: true,    layout: EmptyLayout,  title: 'Welcome' } },
+    // Signed-out visitors landing on the home page get the product pitch rather
+    // than a login form — every other protected route still routes to /login.
+    { path: '/home',       component: () => import('../views/Home/index.vue'),             meta: { requiresAuth: true, guestRedirect: '/welcome', layout: DefaultLayout, title: 'Home' } },
     { path: '/settings',   component: () => import('../views/Settings/index.vue'),         meta: { requiresAuth: true, layout: DefaultLayout, title: 'Settings' } },
     { path: '/c/:slug',    component: () => import('../views/Company/index.vue'),           meta: { requiresAuth: true, layout: DefaultLayout } },
     { path: '/c/:slug/settings', component: () => import('../views/Company/SettingsView.vue'), meta: { requiresAuth: true, requiresCompanyAdmin: true, layout: DefaultLayout } },
@@ -47,15 +50,16 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const needsAuth  = to.meta.requiresAuth
-  const isAuthPage = to.path === '/login' || to.path === '/register'
+  // Pages only a signed-out visitor should see — a session sends them home.
+  const guestOnly  = to.meta.guestOnly || to.path === '/login' || to.path === '/register'
 
-  if (!needsAuth && !isAuthPage) return true
+  if (!needsAuth && !guestOnly) return true
 
   const res = await fetch('/api/auth/me', { credentials: 'include' }).catch(() => null)
   const ok  = res?.ok ?? false
 
-  if (needsAuth  && !ok) return '/login'
-  if (isAuthPage &&  ok) return '/home'
+  if (needsAuth && !ok) return to.meta.guestRedirect ?? '/login'
+  if (guestOnly &&  ok) return '/home'
 
   if (to.meta.requiresCompanyAdmin) {
     const slug        = to.params.slug

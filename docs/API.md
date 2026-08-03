@@ -205,6 +205,24 @@ All paths are prefixed `/api`. "Access" is what the handler enforces beyond a va
 | `GET /user/me` | session | profile |
 | `POST /user/profile` | session | avatar/banner upload (multipart) |
 
+### Activity & recents (`lib/activity.ts`)
+
+A single generic log table (`activity`) records *what a user did to which entity*: `{ userId, entityType: 'timeline'|'production'|'company'|'file', entityId, action: 'open'|'create'|'update'|'delete', productionId?, companyId?, data?, count, occurredAt, createdAt }`. `entityId` carries **no FK** — readers inner-join the concrete table, so rows for deleted entities simply fall out of results. Today only `open` is written (it feeds the home page's recents); the shape is deliberately open-ended for later features.
+
+**Writing** — `trackActivity(input)` is fire-and-forget: it never blocks a response and swallows its own errors, because activity is a side effect of a request, never its purpose. Repeats of the same user/entity/action **coalesce** onto the existing row within a 30-minute window (`occurredAt` moves forward, `count` increments), and an in-process 60s TTL cache skips the DB round-trip entirely for immediate repeats — so a socket reconnect plus the editor's bootstrap fetch cost one row, not three.
+
+Recorded at:
+
+| Trigger | Logs |
+| --- | --- |
+| `timeline:join` (socket, after the access check) | `open` on the timeline — the primary "opened a timeline" signal |
+| `GET /timeline/[tlId]` | `open` on the timeline — covers clients that read without joining the room |
+| `GET /production/find` · `GET /production/[pid]` | `open` on the production |
+
+| Method + path | Access | Notes |
+| --- | --- | --- |
+| `GET /activity/recent?limit=1..24` (default 6) | session | `{ timelines: [{ id, name, profileImageId, frameRate, startFrame, endFrame, productionId, productionName, productionSlug, productionImageId, companyName, companySlug, lastOpenedAt }], productions: [{ id, name, slug, profileImageId, bannerImageId, companyId, companyName, companySlug, lastOpenedAt }] }`, newest first. **Access is re-checked at read time** with the same `productionAccessFilter` as `/production/list` — a log row survives losing membership, the listing must not. Each entity appears once (`max(occurredAt)` per entity). |
+
 ### Companies & company members
 
 | Method + path | Access |
@@ -221,8 +239,8 @@ All paths are prefixed `/api`. "Access" is what the handler enforces beyond a va
 | Method + path | Access |
 | --- | --- |
 | `GET /production/list?cid=…` · `POST /production/list` | session (list is access-filtered; `cid` optional) |
-| `GET /production/find?cslug=…&pslug=…` | production access — slug → production lookup for initial page loads; returns `{ company, production, access }` |
-| `GET /production/[pid]` | production access — same payload as `find`, keyed by id |
+| `GET /production/find?cslug=…&pslug=…` | production access — slug → production lookup for initial page loads; returns `{ company, production, access }`. Records an `open` activity row |
+| `GET /production/[pid]` | production access — same payload as `find`, keyed by id. Records an `open` activity row |
 | `PATCH /production/[pid]` · `DELETE /production/[pid]` | `ADMINISTRATOR` |
 | `GET /production/[pid]/dashboard` · `GET /production/[pid]/storage-stats` | production access |
 | `GET /production/[pid]/files?type=…` | `VIEW` |
@@ -262,8 +280,9 @@ Timelines are the one production resource kept at the top level (create/list by 
 | Method + path | Access | Body highlights |
 | --- | --- | --- |
 | `GET/POST /timelines?pid=…` | POST: `MANAGE_TIMELINES` | `{ name ≤128, frameRate (db enum: 23.976…60, from frameRateEnum), startFrame, endFrame > startFrame, ltcOffsetFrames }` |
-| `GET /timeline/[tlId]` | access | **The editor bootstrap**: `{ timeline, tracks: [{ …track, typeName, typeColor, sourceName/ShortName/Hue, clips: [{ …clip, fileType }] }], trackTypes, sources }` |
-| `PATCH/DELETE /timeline/[tlId]` | `MANAGE_TIMELINES` | PATCH bumps `updatedAt` |
+| `GET /timeline/[tlId]` | access | **The editor bootstrap** (also records an `open` activity row): `{ timeline, tracks: [{ …track, typeName, typeColor, sourceName/ShortName/Hue, clips: [{ …clip, fileType }] }], trackTypes, sources }` |
+| `PATCH/DELETE /timeline/[tlId]` | `MANAGE_TIMELINES` | PATCH bumps `updatedAt`. DELETE also purges the timeline's profile image (hidden `storageFiles` row + disk versions — nothing cascades to it) |
+| `POST /timeline/[tlId]/profile` | `MANAGE_TIMELINES` | Timeline profile image — multipart `file`, image mimes only. Same flow as the company/production profile routes but **no `slot` field**: a timeline has one image, no banner. Replaces and purges the previous image, writes quality versions to `storage/c/{companyId}/p/{productionId}/t/{timelineId}/profile/{fileId}@{quality}.webp`, sets `timelines.profileImageId`. Returns `{ fileId, versions }`; clients render it through `/storage/[id]/serve?quality=…` like every other image |
 | `GET/POST /timeline/[tlId]/tracks` | `EDIT_TIMELINE` (GET: access) | create track (typeId, sourceId?, name, mode, sortOrder…) — typeId verified same-production; `sortOrder` defaults to **max+1** (append). Track listings (here and in the editor bootstrap) are ordered by `sortOrder, createdAt` |
 | `PATCH/DELETE /timeline/[tlId]/tracks/[trackId]` | `EDIT_TIMELINE` | e.g. `{ isMuted }`, `{ isLocked }`, `{ sortOrder }` — scoped by timeline id |
 | `POST /timeline/[tlId]/tracks/reorder` | `EDIT_TIMELINE` | `{ order: [trackId…] }` — rewrites `sortOrder` to the array index. Lenient: ids outside the timeline are ignored, unlisted tracks keep their old value (concurrent add/delete safe). Returns `{ order }` (the applied ids) |
@@ -347,7 +366,7 @@ Design: **REST is the source of truth for persistent data.** The socket layer (a
 
 | Direction | Event | Behavior |
 | --- | --- | --- |
-| C→S | `timeline:join` `{ timelineId }` + ack | `resolveTimelineAccess` check: timeline→production→company; allowed if global admin, company owner/admin, or production member (mirrors §5 layers 1–2 + membership). The member's role permission bits are resolved in the same pass and the resulting `EDIT_TIMELINE` capability is cached on the socket to gate the mutation relays below. Ack `{ ok }` or `{ error: 'Access denied' … }`. On success: join room, add to presence, emit presence to the room. |
+| C→S | `timeline:join` `{ timelineId }` + ack | `resolveTimelineAccess` check: timeline→production→company; allowed if global admin, company owner/admin, or production member (mirrors §5 layers 1–2 + membership). The member's role permission bits are resolved in the same pass and the resulting `EDIT_TIMELINE` capability is cached on the socket to gate the mutation relays below. Ack `{ ok }` or `{ error: 'Access denied' … }`. On success: join room, add to presence, emit presence to the room, and record an `open` activity row for the timeline (fire-and-forget — see §6 "Activity & recents"). |
 | C→S | `timeline:leave` | leave room + presence (also on `disconnect`) |
 | S→C | `timeline:presence` | `PresenceUser[]` — `{ id, name, avatarImageId, createdAt }`, deduped per user across tabs; sent to the whole room on every join/leave |
 | C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — relayed verbatim to the room **except the sender** (`socket.to(room)`). **Requires `EDIT_TIMELINE` or `RENAME_CLIPS`** (cached join-time capabilities) — rename-only members must be able to relay their label PATCHes, but are restricted to `upsert` (they have no REST path to a remove); sockets with neither permission are silently dropped. `clip` is the full REST response row. Payloads over **32 KB** are dropped (relay amplification guard). |

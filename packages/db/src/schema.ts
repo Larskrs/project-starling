@@ -169,6 +169,9 @@ export const timelines = pgTable("timelines", {
       .notNull()
       .references(() => productions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    // Same convention as companies/productions: a storageFiles id, no FK, so
+    // clients resolve it through /storage/[id]/serve?quality=…
+    profileImageId: uuid("profile_image_id"),
     frameRate: frameRateEnum("frame_rate").notNull().default("25"),
     startFrame: integer("start_tc").notNull().default(0),
     endFrame: integer("end_tc").notNull(),
@@ -248,8 +251,58 @@ export const clips = pgTable(
   ],
 );
  
+// ─── Aktivitet ───────────────────────────────────────────────────────
+
+/**
+ * What an activity row points at. `entityId` is deliberately un-constrained
+ * (no FK) so one log can cover every kind of entity — readers join to the
+ * concrete table, which also makes rows for deleted entities fall out of
+ * results on their own.
+ */
+export const activityEntityEnum = pgEnum('activity_entity', [
+  'timeline', 'production', 'company', 'file',
+]);
+
+export const activityActionEnum = pgEnum('activity_action', [
+  'open', 'create', 'update', 'delete',
+]);
+
+/**
+ * Generic per-user activity log. Today it feeds the home page's "recently
+ * opened" lists; the shape is intentionally open-ended (any entity, any
+ * action, free-form `data`) so later features can log into the same table.
+ *
+ * Repeats of the same user/entity/action inside a short window are COALESCED
+ * onto the existing row — `occurredAt` moves forward and `count` increments —
+ * so a user reopening a timeline all day leaves one row, not hundreds.
+ */
+export const activity = pgTable(
+  'activity',
+  {
+    id:         uuid('id').primaryKey().defaultRandom(),
+    userId:     uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    entityType: activityEntityEnum('entity_type').notNull(),
+    entityId:   uuid('entity_id').notNull(),
+    action:     activityActionEnum('action').notNull().default('open'),
+    // Scope columns — nullable because not every entity has both. They give
+    // future features a cheap "everything that happened in this production"
+    // query, and let a deleted production take its log rows with it.
+    productionId: uuid('production_id').references(() => productions.id, { onDelete: 'cascade' }),
+    companyId:    uuid('company_id').references(() => companies.id, { onDelete: 'cascade' }),
+    data:       jsonb('data'),
+    count:      integer('count').notNull().default(1),
+    occurredAt: timestamp('occurred_at').notNull().defaultNow(),  // last occurrence
+    createdAt:  timestamp('created_at').notNull().defaultNow(),   // first occurrence
+  },
+  (t) => [
+    index('activity_user_recent_idx').on(t.userId, t.occurredAt),
+    index('activity_user_entity_idx').on(t.userId, t.entityType, t.entityId, t.action),
+    index('activity_entity_idx').on(t.entityType, t.entityId),
+  ],
+);
+
 // ─── Notater ─────────────────────────────────────────────────────────
- 
+
 export const clipNotes = pgTable(
   "clip_notes",
   {

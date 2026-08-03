@@ -227,6 +227,8 @@
     "endFrame": "Sluttbilde",
     "ltcOffset": "LTC-forskyvning (bilder)",
     "frames": "b",
+    "image": "Tidslinjebilde",
+    "imageHint": "Valgfritt — gjør den lettere å kjenne igjen i lister",
     "endFrameMustBeAfterStart": "Sluttbildet må være etter startbildet",
     "addDialog": {
       "title": "Legg til tidslinje"
@@ -431,5 +433,36 @@
     "weeksAgo": "{n}u siden",
     "monthsAgo": "{n}md siden",
     "yearsAgo": "{n}å siden"
+  },
+  "activity": {
+    "jumpBackIn": "Hopp tilbake",
+    "recentTimelines": "Nylige tidslinjer",
+    "noRecentTimelines": "Ingen tidslinjer åpnet ennå",
+    "noRecentTimelinesHint": "Tidslinjer du åpner dukker opp her",
+    "failedToLoad": "Kunne ikke laste nylig aktivitet"
+  },
+  "welcome": {
+    "title": "Planlegg, rediger og spill av produksjonene dine — sammen.",
+    "lede": "Cino er samarbeidsflaten for liveproduksjoner: delte tidslinjer, synkronisert avspilling og alt kildematerialet ditt på ett sted.",
+    "getStarted": "Kom i gang",
+    "featuresTitle": "Alt produksjonen din trenger",
+    "features": {
+      "timelines": {
+        "title": "Tidslinjer som holder seg synkronisert",
+        "text": "Bygg tidslinjer med spor og klipp, og se hver endring dukke opp live for hele teamet — spillehodet inkludert."
+      },
+      "tracks": {
+        "title": "Spor som passer arbeidsflyten din",
+        "text": "Sett opp sportyper med linjaler, metronom, tekst-til-tale og mer, eller start fra ferdige forhåndsinnstillinger."
+      },
+      "files": {
+        "title": "Alle filene dine på ett sted",
+        "text": "Organiser lyd, video og dokumenter i produksjonsmapper, og dra kilder rett inn på tidslinjen."
+      },
+      "teams": {
+        "title": "Laget for team",
+        "text": "Selskaper, produksjoner, roller og tilganger — alle ser akkurat det de trenger, ikke noe mer."
+      }
+    }
   }
 }

@@ -227,6 +227,8 @@
     "endFrame": "End frame",
     "ltcOffset": "LTC offset (frames)",
     "frames": "fr",
+  "image": "Timeline image",
+  "imageHint": "Optional — helps you spot it in lists",
     "endFrameMustBeAfterStart": "End frame must be after start frame",
     "addDialog": {
       "title": "Add Timeline"
@@ -431,5 +433,36 @@
     "weeksAgo": "{n}w ago",
     "monthsAgo": "{n}mo ago",
     "yearsAgo": "{n}y ago"
+  },
+  "activity": {
+    "jumpBackIn": "Jump back in",
+    "recentTimelines": "Recent timelines",
+    "noRecentTimelines": "No timelines opened yet",
+    "noRecentTimelinesHint": "Timelines you open show up here",
+    "failedToLoad": "Could not load your recent activity"
+  },
+  "welcome": {
+    "title": "Plan, edit and play back your productions — together.",
+    "lede": "Cino is the collaborative workspace for live productions: shared timelines, synchronized playback and all your source material in one place.",
+    "getStarted": "Get started",
+    "featuresTitle": "Everything your production needs",
+    "features": {
+      "timelines": {
+        "title": "Timelines that stay in sync",
+        "text": "Build show timelines with tracks and clips, and watch every change appear live for the whole team — playhead included."
+      },
+      "tracks": {
+        "title": "Tracks that fit your workflow",
+        "text": "Configure track types with rulers, metronomes, text-to-speech and more, or start from ready-made presets."
+      },
+      "files": {
+        "title": "All your files in one place",
+        "text": "Organize audio, video and documents in production folders, and drop sources straight onto the timeline."
+      },
+      "teams": {
+        "title": "Built for teams",
+        "text": "Companies, productions, roles and permissions — everyone sees exactly what they need, nothing they don't."
+      }
+    }
   }
 }

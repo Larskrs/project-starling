@@ -17,9 +17,16 @@ import { useApi } from './useApi.js'
  *   payload:       () => object,           request body built from form fields
  *   validate?:     () => boolean,          extra guard before submitting
  *   failedMessage: () => string,           fallback error message
+ *   afterSubmit?:  (saved, { isEdit }) => Promise<object|void>,
+ *                                          follow-up work that needs the saved
+ *                                          entity — e.g. uploading an image to
+ *                                          a row that only just got an id.
+ *                                          Runs before created/updated is
+ *                                          emitted; return a replacement entity
+ *                                          to emit instead of the saved one.
  * }} options
  */
-export function useEntityDialog({ open, entity, emit, url, itemUrl, fill, reset, payload, validate, failedMessage }) {
+export function useEntityDialog({ open, entity, emit, url, itemUrl, fill, reset, payload, validate, failedMessage, afterSubmit }) {
   const { $fetch } = useApi()
 
   const loading = ref(false)
@@ -51,9 +58,14 @@ export function useEntityDialog({ open, entity, emit, url, itemUrl, fill, reset,
       json:   payload(),
       silent: true,
     })
+    if (!ok) { loading.value = false; error.value = err ?? failedMessage(); return }
+
+    // Stays in the loading state across the follow-up so the dialog can't be
+    // resubmitted while, say, an image upload is still in flight.
+    const finished = afterSubmit ? await afterSubmit(data, { isEdit: isEdit.value }) : null
     loading.value = false
-    if (!ok) { error.value = err ?? failedMessage(); return }
-    emit(isEdit.value ? 'updated' : 'created', data)
+
+    emit(isEdit.value ? 'updated' : 'created', finished ?? data)
     close()
   }
 

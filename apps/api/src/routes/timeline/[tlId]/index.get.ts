@@ -2,9 +2,20 @@ import { eq, inArray } from 'drizzle-orm';
 import { db, tracks, trackTypes, sources, clips, storageFiles } from '@starling/db';
 import { defineEventHandler } from '../../../lib/handler.js';
 import { requireTimelineParam } from '../../../lib/production.js';
+import { trackActivity } from '../../../lib/activity.js';
 
 export default defineEventHandler(async (event) => {
-  const { production, timeline } = await requireTimelineParam(event);
+  const { auth, company, production, timeline } = await requireTimelineParam(event);
+
+  // Bootstrapping a timeline counts as opening it — covers clients that read
+  // the timeline without joining the socket room.
+  trackActivity({
+    userId:       auth.userId,
+    entityType:   'timeline',
+    entityId:     timeline.id,
+    productionId: production.id,
+    companyId:    company.id,
+  });
 
   const [trackRows, trackTypeRows, sourceRows] = await Promise.all([
     db.select({

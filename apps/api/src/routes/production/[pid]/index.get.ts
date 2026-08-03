@@ -3,9 +3,19 @@ import { db, productionRoles } from '@starling/db';
 import { decode } from '@starling/auth/permissions';
 import { defineEventHandler } from '../../../lib/handler.js';
 import { requireProductionParam } from '../../../lib/production.js';
+import { trackActivity } from '../../../lib/activity.js';
 
 export default defineEventHandler(async (event) => {
-  const { company, production, privileged, memberRoleId } = await requireProductionParam(event);
+  const { auth, company, production, privileged, memberRoleId } = await requireProductionParam(event);
+
+  // Same signal as /production/find, for clients that already hold the id.
+  trackActivity({
+    userId:       auth.userId,
+    entityType:   'production',
+    entityId:     production.id,
+    productionId: production.id,
+    companyId:    company.id,
+  });
 
   let permissions: string[] = [];
   if (!privileged && memberRoleId) {
