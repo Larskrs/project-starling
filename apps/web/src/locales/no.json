@@ -67,6 +67,8 @@
     "noProductionsHint": "Opprett en fra firmasiden",
     "createFirst": "Opprett den første",
     "failedToLoad": "Klarte ikke å laste produksjoner",
+    "openedAgo": "åpnet {time}",
+    "addedAgo": "lagt til {time}",
     "couldNotLoad": "Klarte ikke å laste produksjoner",
     "notFound": "Produksjon ikke funnet",
     "noAccess": "Du har ikke tilgang til denne produksjonen",
@@ -436,9 +438,6 @@
   },
   "activity": {
     "jumpBackIn": "Hopp tilbake",
-    "recentTimelines": "Nylige tidslinjer",
-    "noRecentTimelines": "Ingen tidslinjer åpnet ennå",
-    "noRecentTimelinesHint": "Tidslinjer du åpner dukker opp her",
     "failedToLoad": "Kunne ikke laste nylig aktivitet"
   },
   "welcome": {

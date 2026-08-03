@@ -1,12 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n }        from 'vue-i18n'
 import { Icon }           from '@iconify/vue'
 import { Avatar }         from '@starling/ui'
 import ListCard           from '@starling/ui/ListCard'
 import ListHeader         from '@starling/ui/ListHeader'
-import ListItem        from '@starling/ui/ListItem'
+import ListItem           from '@starling/ui/ListItem'
 import { useApi }         from '../../composables/useApi.js'
+import { useRecentActivity } from '../../composables/useRecentActivity.js'
 import { relativeTime }   from '../../lib/utils.js'
 import { Skeleton }       from '@starling/ui'
 
@@ -14,21 +15,48 @@ const { t }      = useI18n()
 const { $fetch } = useApi()
 
 const productions = ref([])
-const loading     = ref(true)
+const listLoading = ref(true)
 const error       = ref('')
 
+const { productions: recents, loading: recentsLoading, load: loadRecents } = useRecentActivity()
+
+// Both requests go out together; the rows only render once both have settled,
+// so the list never visibly reshuffles when the recents arrive late.
+const loading = computed(() => listLoading.value || recentsLoading.value)
+
+const openedAt = computed(() => new Map(recents.value.map(p => [p.id, p.lastOpenedAt])))
+
+/** Recently opened first, then everything else newest-created first. */
+const ordered = computed(() => {
+  const opened = openedAt.value
+  return [...productions.value].sort((a, b) => {
+    const ao = opened.get(a.id)
+    const bo = opened.get(b.id)
+    if (ao && bo) return new Date(bo) - new Date(ao)
+    if (ao) return -1
+    if (bo) return 1
+    return new Date(b.createdAt) - new Date(a.createdAt)
+  })
+})
+
 async function load() {
-  loading.value = true
+  listLoading.value = true
   error.value   = ''
   const { ok, data } = await $fetch('/api/production/list', { silent: true })
-  loading.value = false
+  listLoading.value = false
   if (!ok) { error.value = t('production.failedToLoad'); return }
   productions.value = data
 }
 
-onMounted(load)
+onMounted(() => { load(); loadRecents() })
 
-const relativeDate = iso => relativeTime(t, iso)
+/** "opened 2h ago" for projects you've been in, "added 3d ago" otherwise. */
+function timeLabel(p) {
+  const opened = openedAt.value.get(p.id)
+  return opened
+    ? t('production.openedAgo', { time: relativeTime(t, opened) })
+    : t('production.addedAgo',  { time: relativeTime(t, p.createdAt) })
+}
 </script>
 
 <template>
@@ -38,12 +66,12 @@ const relativeDate = iso => relativeTime(t, iso)
 
     <ul v-if="loading" class="divide-y divide-border">
       <li v-for="i in 4" :key="i" class="flex items-center gap-3 px-4 py-3">
-        <Skeleton class="size-8 rounded-sm shrink-0" />
-        <div class="flex-1 min-w-0 flex items-baseline gap-2.5">
-          <Skeleton class="h-3.5 rounded w-28" />
-          <Skeleton class="h-3 rounded w-16" />
+        <Skeleton class="size-9 rounded-md shrink-0" />
+        <div class="flex-1 min-w-0 flex flex-col gap-1.5">
+          <Skeleton class="h-3.5 rounded w-32" />
+          <Skeleton class="h-3 rounded w-20" />
         </div>
-        <Skeleton class="h-3 rounded w-12 shrink-0" />
+        <Skeleton class="h-3 rounded w-16 shrink-0" />
       </li>
     </ul>
 
@@ -57,18 +85,18 @@ const relativeDate = iso => relativeTime(t, iso)
 
     <ul v-else class="divide-y divide-border">
       <ListItem
-        v-for="p in productions"
+        v-for="p in ordered"
         :key="p.id"
         :to="`/c/${p.companySlug}/p/${p.slug}`"
       >
-        <Avatar :id="p.profileImageId" class="size-8 rounded-sm shrink-0" />
+        <Avatar :id="p.profileImageId" :alt="p.name" class="size-9 rounded-md shrink-0" />
 
-        <div class="flex-1 min-w-0 flex items-baseline gap-2.5">
+        <div class="flex-1 min-w-0 flex flex-col gap-0.5">
           <span class="text-sm font-medium text-foreground truncate">{{ p.name }}</span>
-          <span class="text-xs text-muted-foreground truncate shrink-0">{{ p.companyName }}</span>
+          <span class="text-xs text-muted-foreground truncate">{{ p.companyName }}</span>
         </div>
 
-        <span class="text-xs text-muted-foreground/70 tabular-nums shrink-0">{{ relativeDate(p.createdAt) }}</span>
+        <span class="text-xs text-muted-foreground/70 shrink-0">{{ timeLabel(p) }}</span>
 
       </ListItem>
     </ul>

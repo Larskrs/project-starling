@@ -67,6 +67,8 @@
     "noProductionsHint": "Create one from your company page",
     "createFirst": "Create the first",
     "failedToLoad": "Failed to load productions",
+    "openedAgo": "opened {time}",
+    "addedAgo": "added {time}",
     "couldNotLoad": "Could not load productions",
     "notFound": "Production not found",
     "noAccess": "You don't have access to this production",
@@ -436,9 +438,6 @@
   },
   "activity": {
     "jumpBackIn": "Jump back in",
-    "recentTimelines": "Recent timelines",
-    "noRecentTimelines": "No timelines opened yet",
-    "noRecentTimelinesHint": "Timelines you open show up here",
     "failedToLoad": "Could not load your recent activity"
   },
   "welcome": {

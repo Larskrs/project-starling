@@ -1,14 +1,13 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { Icon }              from '@iconify/vue'
-import Image                 from '@starling/ui/Image'
 import ListCard              from '@starling/ui/ListCard'
 import ListHeader            from '@starling/ui/ListHeader'
 import ListItem              from '@starling/ui/ListItem'
 import CreateCompanyDialog   from './CreateCompanyDialog.vue'
 import { useApi }            from '../../composables/useApi.js'
 import { useAuth }           from '../../composables/useAuth.js'
-import { Skeleton }          from '@starling/ui'
+import { Avatar, Skeleton }  from '@starling/ui'
 
 const { $fetch } = useApi()
 const { user } = useAuth()
@@ -69,7 +68,11 @@ onMounted(load)
 
     <ul v-else class="divide-y divide-border">
       <ListItem v-for="c in companies" :key="c.id" :to="`/c/${c.slug}`">
-        <Image v-if="c.profileImageId" :id="c.profileImageId" :quality="25" class="size-8 rounded-md object-cover shrink-0" />
+        <!-- Avatar, not a bare Image: a logo-less company still needs the block
+             so names stay on one left edge down the column. -->
+        <Avatar :id="c.profileImageId" :alt="c.name" :quality="25" class="size-8 rounded-md shrink-0">
+          <Icon icon="mdi:domain" class="text-base text-muted-foreground/60" />
+        </Avatar>
         <span class="text-sm text-foreground truncate flex-1">{{ c.name }}</span>
       </ListItem>
     </ul>
