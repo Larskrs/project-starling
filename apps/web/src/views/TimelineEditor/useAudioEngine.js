@@ -14,7 +14,24 @@
  * - Lazy AudioContext (created on first startPlayback — after a user gesture)
  * - Decoded AudioBuffer cache keyed by fileId (shared with the waveform module)
  * - Rolling look-ahead scheduler: clips decode + schedule only as they approach
+ *
+ * Two invariants keep playback predictable, and every change here has to hold
+ * them:
+ *
+ *  1. ONE VOICE PER CLIP. Scheduling is async (decode), so a seek or an edit can
+ *     land between "this clip is due" and "here is its buffer". Every schedule
+ *     stamps the clip with a monotonic token and a late decode that no longer
+ *     holds the current stamp is dropped — without that, the stale callback
+ *     installs a second voice at the OLD timing and you hear the clip twice,
+ *     offset. See `_scheduleSeq` / `_invalidateClip`.
+ *
+ *  2. POSITIONS ARE REPORTED AS HEARD, not as scheduled — `_audibleTime()`
+ *     subtracts the device's output latency, so the visual playhead matches the
+ *     speakers and clients on different hardware converge on the same audible
+ *     frame.
  */
+
+import { fetchTracked, markDownloadStage, markDownloadDone, markDownloadFailed } from './mediaDownloads.js'
 
 let _ctx          = null
 let _master       = null
@@ -22,7 +39,19 @@ let _masterVolume = 1
 
 // The active run, or null when stopped. Async scheduler callbacks capture their
 // run and bail if it's no longer `_run` (stale = superseded or stopped).
-let _run = null   // { gain, frameRate, startCtxTime, startFrame, clips, scheduled:Set, sigs:Map, voices:[], timer }
+let _run = null   // { gain, frameRate, startCtxTime, startFrame, clips, scheduled:Set, sigs:Map, tokens:Map, voices:[], timer }
+
+// Monotonic scheduling token. Scheduling a clip means starting an async decode
+// and installing a voice when it resolves — by which time a seek or an edit may
+// have moved that clip, or moved the run's whole time reference. Checking
+// `_run === run` is NOT enough to catch that: seek and resync keep the same run
+// object alive, so a stale callback would happily install a SECOND voice at the
+// old timing, on top of the correctly rescheduled one. That is the duplicated,
+// out-of-sync playback this counter exists to prevent: every schedule stamps
+// the clip with a fresh token, invalidating a clip bumps it, and a decode that
+// resolves against a stale stamp is dropped. Never reused, so a stale token can
+// never match again.
+let _scheduleSeq = 0
 
 const _bufferPromises = new Map()  // fileId → Promise<AudioBuffer>
 
@@ -41,8 +70,12 @@ function _clipSig(clip) {
 }
 
 const TICK_MS          = 200   // scheduler poll interval
-const SCHEDULE_AHEAD_S = 0.5   // create + start sources this far ahead of playtime
-const DECODE_AHEAD_S   = 4     // warm the decode cache this far ahead
+// The look-ahead has to cover the worst interval the scheduler can be woken at,
+// not the nominal one: browsers clamp setInterval to ~1s in a background tab, so
+// a 0.5s window let backgrounded playback miss clip starts outright (they then
+// attacked late, mid-sample). 1.5s keeps a 1s-throttled tick comfortably ahead.
+const SCHEDULE_AHEAD_S = 1.5   // create + start sources this far ahead of playtime
+const DECODE_AHEAD_S   = 6     // warm the decode cache this far ahead
 
 function getContext() {
   if (!_ctx) {
@@ -57,6 +90,24 @@ function getContext() {
 /** Shared AudioContext — behavior controllers (metronome etc.) schedule on it. */
 export function getAudioContext() {
   return getContext()
+}
+
+/**
+ * Context time of the audio reaching the listener's ears RIGHT NOW.
+ *
+ * `currentTime` is the clock we SCHEDULE against; what is actually being heard
+ * lags it by the device's output latency — a couple of ms on wired output, tens
+ * of ms through a USB interface, and well over 100ms on Bluetooth. Every
+ * position this module reports is the audible one, so (a) the playhead lines up
+ * with what you hear instead of running ahead of it, and (b) because each
+ * client compensates for its own device, clients converge on the same *audible*
+ * frame rather than the same scheduling frame — two people on different
+ * hardware hear the same moment together.
+ *
+ * Scheduling itself deliberately keeps using raw `currentTime`.
+ */
+function _audibleTime() {
+  return _ctx.currentTime - (_ctx.outputLatency || _ctx.baseLatency || 0)
 }
 
 /** Master gain node — route generated audio through it so master volume applies. */
@@ -78,17 +129,27 @@ export function getMasterVolume() {
 /**
  * Returns (and caches) a decoded AudioBuffer for the given file.
  * Usable immediately — the AudioContext need not be running.
+ *
+ * The transfer is reported into the shared download registry, so the same fetch
+ * that feeds playback also drives the clip's loading state and the download
+ * island. Decoding is reported as its own stage: a long file spends real time
+ * there after the last byte lands, and a progress bar frozen at 100% with
+ * nothing audible yet reads as a hang.
  */
 export function getAudioBuffer(fileId) {
   if (!_bufferPromises.has(fileId)) {
-    const p = fetch(`/api/storage/${fileId}/serve`, { credentials: 'include' })
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.arrayBuffer()
+    const p = fetchTracked(fileId, `/api/storage/${fileId}/serve`, { kind: 'audio' })
+      .then(ab => {
+        markDownloadStage(fileId, 'decoding')
+        return getContext().decodeAudioData(ab)
       })
-      .then(ab => getContext().decodeAudioData(ab))
+      .then(buf => {
+        markDownloadDone(fileId)
+        return buf
+      })
       .catch(err => {
         _bufferPromises.delete(fileId)
+        markDownloadFailed(fileId, err?.message)
         throw err
       })
     _bufferPromises.set(fileId, p)
@@ -133,6 +194,7 @@ export function startAudioPlayback(clips, playheadFrame, frameRate) {
     clips:        _schedulableFrom(clips, playheadFrame),
     scheduled:    new Set(),
     sigs:         new Map(),   // clipId → _clipSig at schedule time (for resync diffing)
+    tokens:       new Map(),   // clipId → scheduling token (invalidates stale decodes)
     voices:       [],
     timer:        null,
     skew:         0,           // frames the sounding voices are off after anchor nudges
@@ -151,7 +213,7 @@ export function startAudioPlayback(clips, playheadFrame, frameRate) {
  */
 export function getPlaybackFrame() {
   if (!_run || !_ctx || _ctx.state !== 'running') return null
-  return _run.startFrame + Math.max(0, _ctx.currentTime - _run.startCtxTime) * _run.frameRate
+  return _run.startFrame + Math.max(0, _audibleTime() - _run.startCtxTime) * _run.frameRate
 }
 
 /**
@@ -194,13 +256,15 @@ function _scheduleDue() {
     if (startAt <= t + SCHEDULE_AHEAD_S) {
       run.scheduled.add(clip.id)
       run.sigs.set(clip.id, _clipSig(clip))
-      _scheduleClip(clip, run)
+      const token = ++_scheduleSeq
+      run.tokens.set(clip.id, token)
+      _scheduleClip(clip, run, token)
     }
   }
 }
 
 /** Create + start one clip's source node into its run's subtree. */
-function _scheduleClip(clip, run) {
+function _scheduleClip(clip, run, token) {
   const ms             = clip.mediaStart ?? 0
   const durationFrames = clip.end - ms
   const offsetFrames   = Math.max(0, run.startFrame - clip.position)  // playhead started inside clip
@@ -210,13 +274,22 @@ function _scheduleClip(clip, run) {
   if (playSeconds <= 0) return
 
   getAudioBuffer(clip.fileId).then(buf => {
-    // Bail if this run was stopped or superseded while decoding.
+    // Bail if this run was stopped or superseded while decoding, or if the clip
+    // was re-scheduled meanwhile (seek / edit) — `startAt` and `bufferStart`
+    // above were computed against a time reference that no longer applies, and
+    // installing them now would stack a stale voice under the current one.
     if (_run !== run || !_ctx) return
+    if (run.tokens.get(clip.id) !== token) return
 
     const when = Math.max(_ctx.currentTime, startAt)
     const lost = Math.max(0, _ctx.currentTime - startAt)  // time spent decoding past the start
     const dur  = playSeconds - lost
     if (dur <= 0) return
+
+    // Belt and braces: one clip, one voice. The token check above is what makes
+    // a stale schedule impossible; this makes a duplicate INAUDIBLE even if some
+    // future path forgets to invalidate.
+    _retireClipVoices(run, clip.id)
 
     const src  = _ctx.createBufferSource()
     const gain = _ctx.createGain()
@@ -266,6 +339,19 @@ function _retireClipVoices(run, clipId) {
 }
 
 /**
+ * Forget a clip completely: retire what it is playing AND invalidate its
+ * scheduling, so an in-flight decode for it can no longer install a voice. Any
+ * path that intends to re-schedule a clip must go through here first, or the
+ * old and new schedules both land.
+ */
+function _invalidateClip(run, clipId) {
+  _retireClipVoices(run, clipId)
+  run.scheduled.delete(clipId)
+  run.sigs.delete(clipId)
+  run.tokens.delete(clipId)
+}
+
+/**
  * Re-anchor a LIVE run at a new playhead (a seek): every voice retires with a
  * declick fade, the run's time reference moves, and due clips reschedule
  * immediately. The run's gain subtree and scheduler timer survive — much
@@ -285,6 +371,9 @@ export function seekAudioPlayback(clips, playheadFrame, frameRate) {
   run.voices = []
   run.scheduled.clear()
   run.sigs.clear()
+  // The run's whole time reference moves below, so EVERY in-flight decode is
+  // now stale — it would place its voice against the pre-seek anchor.
+  run.tokens.clear()
 
   run.clips        = _schedulableFrom(clips, playheadFrame)
   run.startCtxTime = t + SEEK_LEAD_S
@@ -311,6 +400,10 @@ export function resyncAudioPlayback(clips, playheadFrame, frameRate) {
     return
   }
 
+  // Deliberately NOT filtered by the playhead the way a seek is: an edit can
+  // move a clip backwards under the playhead, and it has to be able to
+  // re-attack. Filtering here would also retire a voice whose clip ends within
+  // the anchor skew — audibly early — because this playhead is the visual one.
   const schedulable = clips.filter(clip => {
     if (!clip.fileId) return false
     const ms = clip.mediaStart ?? 0
@@ -323,9 +416,7 @@ export function resyncAudioPlayback(clips, playheadFrame, frameRate) {
   for (const clipId of [...run.scheduled]) {
     const next = nextById.get(clipId)
     if (next && _clipSig(next) === run.sigs.get(clipId)) continue  // unchanged → leave playing
-    _retireClipVoices(run, clipId)
-    run.scheduled.delete(clipId)
-    run.sigs.delete(clipId)
+    _invalidateClip(run, clipId)
   }
 
   // Swap in the new set; the scheduler picks up adds/moves on its next walk,

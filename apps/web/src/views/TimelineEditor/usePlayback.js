@@ -68,6 +68,7 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
   let _behaviors = []
 
   function _startBehaviors(fps) {
+    _stopBehaviors()   // never stack two metronomes/speakers on one transport
     for (const track of trackList.value) {
       if (isMuted(track)) continue
       const settings = resolveTrackSettings(track, trackTypes?.value ?? [])
@@ -215,6 +216,12 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
 
   function startPlayback(broadcast = true) {
     if (!timeline.value) return
+    // Starting a run that is already running would strand the previous rAF
+    // chain — it re-registers itself every frame, so two loops would then both
+    // advance the playhead and it would run at double speed while the audio
+    // (correctly) played once. Reachable from key-repeat, a toolbar double
+    // click, or a remote play landing as we start locally.
+    if (isPlaying.value) return
     if (playheadFrame.value >= timeline.value.endFrame) {
       playheadFrame.value = timeline.value.startFrame
     }
@@ -222,6 +229,7 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
     _lastTs          = null
     _serverAnchor    = null   // set by the server's echo of our play command
     _lastAnchorCheck = 0
+    if (_rafId !== null) cancelAnimationFrame(_rafId)
     _rafId           = requestAnimationFrame(_tick)
 
     const fps = parseFloat(timeline.value.frameRate)
@@ -252,6 +260,10 @@ export function usePlayback({ timeline, trackList, trackTypes, mutedTracks, pxPe
   }
 
   function _tick(ts) {
+    // A stray loop must die rather than keep driving the playhead — this is the
+    // backstop for the double-start guard above.
+    if (!isPlaying.value || !timeline.value) { _rafId = null; return }
+
     if (!_lastTs) _lastTs = ts
     const elapsed = ts - _lastTs
     _lastTs = ts

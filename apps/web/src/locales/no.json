@@ -260,6 +260,11 @@
     "lock": "Lås spor",
     "unlock": "Lås opp spor",
     "deleteTrack": "Slett spor",
+    "tracks": "Spor",
+    "locked": "Sporet er låst",
+    "trackMenu": {
+      "more": "Flere handlinger"
+    },
     "zoomIn": "Zoom inn",
     "zoomOut": "Zoom ut",
     "zoomFit": "Vis hele tidslinjen",
@@ -276,7 +281,6 @@
     "liveSync": "Direktesynk aktiv — avspilling og endringer følger alle i denne editoren",
     "syncOffline": "Direktesynk frakoblet",
     "sourceBar": {
-      "hint": "Klikk en kilde for å legge til et klipp ved spillehodet",
       "addsAt": "Klikk en kilde for å legge til et klipp ved {tc}",
       "noSources": "Dette kildesettet har ingen kilder ennå",
       "close": "Fjern valg av spor"
@@ -317,6 +321,18 @@
     },
     "editClipDialog": {
       "title": "Rediger klipp"
+    },
+    "downloads": {
+      "title": "Laster ned media",
+      "ready": "Media klart",
+      "failedTitle": "Noe media kunne ikke lastes",
+      "count": "{done} av {total} filer",
+      "expand": "Vis filer",
+      "collapse": "Skjul filer",
+      "dismiss": "Lukk",
+      "decoding": "Dekoder…",
+      "failed": "Mislyktes",
+      "unnamed": "Mediefil"
     }
   },
   "trackTypes": {

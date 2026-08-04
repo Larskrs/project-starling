@@ -2,17 +2,19 @@
 import { ref, computed, provide, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { Icon } from '@iconify/vue'
 import { Skeleton, ResizeHandle, ConfirmDialog } from '@starling/ui'
 import { useApi } from '../../composables/useApi.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
 import { useCookie } from '../../composables/useCookie.js'
 import { useResizable } from '../../composables/useResizable.js'
-import { clamp, framesToTC, RULER_TICK_TARGET_PX } from './useEditorUtils.js'
+import { clamp, framesToTC, sourceIndexFromKey, RULER_TICK_TARGET_PX } from './useEditorUtils.js'
 import { createDrag } from './usePointerDrag.js'
 import { useTimelineSync } from './useTimelineSync.js'
 import { usePlayback } from './usePlayback.js'
 import { destroyAudioEngine } from './useAudioEngine.js'
 import { clearWaveformCache } from './useWaveform.js'
+import { describeDownload, resetDownloads } from './mediaDownloads.js'
 import { resolveTrackSettings, RULER_TRACK_HEIGHT, BPM_TRACK_HEIGHT, bpmAtFrame } from './behaviors/trackSettings.js'
 import RulerLane       from './behaviors/RulerLane.vue'
 import BpmLane         from './behaviors/BpmLane.vue'
@@ -21,6 +23,7 @@ import Ruler           from './components/Ruler.vue'
 import TrackHeader     from './components/TrackHeader.vue'
 import TrackLane       from './components/TrackLane.vue'
 import SourceBar       from './components/SourceBar.vue'
+import DownloadToast   from './components/DownloadToast.vue'
 import AddTrackDialog  from './components/AddTrackDialog.vue'
 import ClipDialog      from './components/ClipDialog.vue'
 import BpmClipDialog   from './components/BpmClipDialog.vue'
@@ -52,6 +55,7 @@ async function load() {
   trackList.value  = data.tracks
   trackTypes.value = data.trackTypes
   sources.value    = data.sources
+  describeClipMedia()
   sync.join(route.params.tlId)
   nextTick(() => {
     // Restore the saved view for this timeline; otherwise the 5-minute default.
@@ -67,6 +71,20 @@ async function load() {
 }
 
 onMounted(load)
+
+/**
+ * Names every clip's media file up front. The playback scheduler pulls audio in
+ * on its own — often for clips that have never been on screen — so without this
+ * pass those transfers would show in the download island as bare file ids.
+ */
+function describeClipMedia() {
+  for (const track of trackList.value) {
+    for (const clip of track.clips) {
+      if (!clip.fileId) continue
+      describeDownload(clip.fileId, { name: clip.label || track.name, kind: clip.fileType || 'file' })
+    }
+  }
+}
 
 usePageTitle(computed(() => timeline.value ? `${timeline.value.name} — ${t('editor.title')}` : null))
 
@@ -337,18 +355,24 @@ function headerBadge(track) {
 
 // The clip under the playhead: last clip at/before it, still running if it has
 // a length (clip mode); event-mode clips stay active until the next clip.
-function activeClipLabel(track) {
+function activeClip(track) {
   const frame = playheadFrame.value
   let active = null
   for (const clip of track.clips) {
     if (clip.position > frame) break
     active = clip
   }
-  if (!active) return ''
+  if (!active) return null
   if (active.end != null) {
     const len = active.end - (active.mediaStart ?? 0)
-    if (frame >= active.position + len) return ''
+    if (frame >= active.position + len) return null
   }
+  return active
+}
+
+function activeClipLabel(track) {
+  const active = activeClip(track)
+  if (!active) return ''
   // Matches the clip display: source short name prefixes a custom label.
   const short = active.sourceId ? sources.value.find(s => s.id === active.sourceId)?.shortName : null
   if (short && active.label) return `${short} - ${active.label}`
@@ -377,11 +401,11 @@ const {
 } = playback
 
 // ── Layout: sidebar width + per-track heights (persisted in cookies) ─────────
-const TRACK_HEIGHT_DEFAULT = 48
+const TRACK_HEIGHT_DEFAULT = 56
 const TRACK_HEIGHT_MIN     = 32
 const TRACK_HEIGHT_MAX     = 256
 
-const sidebarWidth = useCookie('editor-sidebar-width', 224)
+const sidebarWidth = useCookie('editor-sidebar-width', 264)
 const trackHeights = useCookie('editor-track-heights', {})   // trackId → px
 
 function trackHeight(track) {
@@ -395,7 +419,7 @@ const totalTracksHeight = computed(() =>
   trackList.value.reduce((sum, tr) => sum + trackHeight(tr), 0),
 )
 
-const sidebarResizer = useResizable({ axis: 'x', min: 160, max: 480 })
+const sidebarResizer = useResizable({ axis: 'x', min: 200, max: 480 })
 const rowResizer     = useResizable({ axis: 'y', min: TRACK_HEIGHT_MIN, max: TRACK_HEIGHT_MAX })
 
 function startSidebarResize(e) {
@@ -428,6 +452,11 @@ const selectedTrackHasSourceSet = computed(() => {
 })
 const selectedTrackSources = computed(() =>
   selectedTrack.value ? getTrackSources(selectedTrack.value) : [],
+)
+
+// The take on air: the source of the selected track's clip under the playhead.
+const activeSourceId = computed(() =>
+  selectedTrack.value ? activeClip(selectedTrack.value)?.sourceId ?? null : null,
 )
 
 function selectTrack(track) {
@@ -511,10 +540,23 @@ async function reorderTracks(order) {
   sync.sendTrackChange({ type: 'reorder', order: data.order })
 }
 
+// Picking a source is often a blind keypress during a take — the clip lands at
+// the playhead, which may be nowhere near the viewport. Flashing the chip is
+// the only acknowledgement the operator gets, so it fires before the request.
+const flashSourceId = ref(null)
+let _flashTimer = null
+
+function flashSource(sourceId) {
+  flashSourceId.value = sourceId
+  if (_flashTimer) clearTimeout(_flashTimer)
+  _flashTimer = setTimeout(() => { flashSourceId.value = null }, 260)
+}
+
 /** Create a clip for `source` on the selected track at the playhead. */
 async function addSourceClip(source) {
   const track = selectedTrack.value
   if (!track) return
+  flashSource(source.id)
   const { ok, data } = await $fetch(`${timelineUrl.value}/clips`, {
     method: 'POST',
     json:   { trackId: track.id, position: Math.max(0, Math.round(playheadFrame.value)), sourceId: source.id },
@@ -536,10 +578,21 @@ function onKeydown(e) {
   }
   const tag = e.target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+
+  // Source switcher: 1…9 then 0 add a clip for the Nth source of the selected
+  // track (number row or numpad). Bare digits only — Ctrl/⌘+digit belongs to
+  // the browser, and a modifier held by accident shouldn't cut a take.
+  if (selectedTrackHasSourceSet.value && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    const source = selectedTrackSources.value[sourceIndexFromKey(e)]
+    if (source) { e.preventDefault(); addSourceClip(source); return }
+  }
+
   // Bare +/− step the zoom ladder too — no modifier needed outside inputs.
   if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return }
   if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
-  if (e.code === 'Space')  { e.preventDefault(); togglePlayback() }
+  // Ignore auto-repeat: holding space would otherwise machine-gun play/stop,
+  // tearing down and restarting the run many times a second.
+  if (e.code === 'Space')  { e.preventDefault(); if (!e.repeat) togglePlayback() }
   if (e.code === 'Home')   { e.preventDefault(); seekStart() }
   if (e.code === 'End')    { e.preventDefault(); seekEnd() }
   if (e.code === 'Escape') { selectedTrackId.value = null }
@@ -553,10 +606,12 @@ onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
   if (_viewSaveTimer) clearTimeout(_viewSaveTimer)
+  if (_flashTimer)    clearTimeout(_flashTimer)
   saveView()   // flush the debounced view save so the last zoom/scroll sticks
   stopPlayback(false)
   destroyAudioEngine()
   clearWaveformCache()
+  resetDownloads()   // paired with the caches above: they hold these downloads' decoded results
   sync.leave()
 })
 
@@ -716,13 +771,13 @@ provide('editor-viewport',   viewport)
         <Skeleton class="h-7 w-24 rounded-md" />
       </div>
       <div class="flex-1 flex">
-        <div class="w-56 border-r border-border flex flex-col gap-0">
+        <div class="w-[264px] border-r border-border flex flex-col gap-0">
           <Skeleton class="h-8 rounded-none" />
-          <Skeleton v-for="i in 3" :key="i" class="h-12 rounded-none border-b border-border" />
+          <Skeleton v-for="i in 3" :key="i" class="h-14 rounded-none border-b border-border" />
         </div>
         <div class="flex-1 p-6 flex flex-col gap-2">
           <Skeleton class="h-8 w-full rounded" />
-          <Skeleton v-for="i in 3" :key="i" class="h-12 w-full rounded" />
+          <Skeleton v-for="i in 3" :key="i" class="h-14 w-full rounded" />
         </div>
       </div>
     </template>
@@ -760,7 +815,16 @@ provide('editor-viewport',   viewport)
           class="shrink-0 border-r border-border flex flex-col overflow-hidden"
           :style="{ width: sidebarWidth + 'px' }"
         >
-          <div class="h-8 shrink-0 border-b border-border bg-muted/40" />
+          <!-- Aligns with the ruler strip (h-8) across the divider -->
+          <div class="h-8 shrink-0 border-b border-border bg-muted/40 flex items-center gap-1.5 px-3">
+            <Icon icon="mdi:layers-triple-outline" class="size-3.5 text-muted-foreground shrink-0" />
+            <span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
+              {{ $t('editor.tracks') }}
+            </span>
+            <span class="ml-auto text-[11px] font-mono text-muted-foreground/70 tabular-nums shrink-0">
+              {{ trackList.length }}
+            </span>
+          </div>
 
           <div ref="trackHeadersRef" class="flex-1 overflow-y-hidden relative">
             <!-- Reorder insertion line -->
@@ -793,10 +857,10 @@ provide('editor-viewport',   viewport)
           </div>
 
           <button
-            class="shrink-0 border-t border-border px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center gap-1.5 w-full"
+            class="shrink-0 border-t border-border px-3 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center gap-2 w-full"
             @click="addTrackOpen = true"
           >
-            <span class="text-base leading-none">+</span>
+            <Icon icon="mdi:plus" class="size-4 shrink-0" />
             {{ $t('editor.addTrack') }}
           </button>
         </div>
@@ -882,15 +946,20 @@ provide('editor-viewport',   viewport)
 
       </div>
 
-      <!-- Source island: floats bottom-center while a source-set track is selected -->
+      <!-- Source switcher: floats bottom-center while a source-set track is selected -->
       <SourceBar
         v-if="selectedTrack && selectedTrackHasSourceSet"
         :track="selectedTrack"
         :sources="selectedTrackSources"
         :tc="framesToTC(playheadFrame, timeline.frameRate)"
+        :active-source-id="activeSourceId"
+        :flash-source-id="flashSourceId"
         @add="addSourceClip"
         @close="selectedTrackId = null"
       />
+
+      <!-- Media download queue: appears on its own while files are in flight -->
+      <DownloadToast />
     </template>
 
     <AddTrackDialog

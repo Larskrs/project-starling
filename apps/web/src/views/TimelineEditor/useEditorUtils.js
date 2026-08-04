@@ -45,3 +45,23 @@ export function clipWidth(clip, pxPerFrame) {
 export function clipLeft(clip, startFrame, pxPerFrame) {
   return (clip.position - startFrame) * pxPerFrame
 }
+
+// ── Source switcher hotkeys ───────────────────────────────────────────────────
+// The first ten sources of the selected track are bound to the digit keys, in
+// reading order: 1…9 then 0 for the tenth. Shared by the key handler and the
+// switcher's keycaps so the labels can never disagree with what the keys do.
+export const SOURCE_HOTKEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+
+/**
+ * Source index a keydown selects, or -1 for anything else.
+ *
+ * Matches on `event.code`, so the number row and the numpad both work and the
+ * binding follows the PHYSICAL key — a layout where the digit needs Shift (or
+ * one that isn't QWERTY at all) still triggers off the key labelled "3".
+ */
+export function sourceIndexFromKey(event) {
+  const match = /^(?:Digit|Numpad)(\d)$/.exec(event.code)
+  if (!match) return -1
+  const digit = Number(match[1])
+  return digit === 0 ? SOURCE_HOTKEYS.length - 1 : digit - 1
+}

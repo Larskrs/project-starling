@@ -1,62 +1,86 @@
 <script setup>
+import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
-import { FloatingIsland, IconButton } from '@starling/ui'
+import { SOURCE_HOTKEYS } from '../useEditorUtils.js'
 import SourceBadge from '../../Production/components/SourceBadge.vue'
 
-// Floating island shown while a track whose type has a source set is selected.
-// Clicking a source creates a clip at the playhead with that source.
-defineProps({
-  track:   { type: Object, required: true },
-  sources: { type: Array,  default: () => [] },
-  tc:      { type: String, default: '' },   // playhead timecode the clip lands on
+// Compact switcher shown while a track whose type has a source set is selected.
+// Picking a source — by click or by its digit key — drops a clip at the
+// playhead. It is opaque on purpose: it sits over the timeline during a live
+// take, and a translucent panel with clips scrolling underneath makes the chips
+// hard to read at a glance.
+const props = defineProps({
+  track:          { type: Object, required: true },
+  sources:        { type: Array,  default: () => [] },
+  tc:             { type: String, default: '' },   // playhead timecode the clip lands on
+  /** Source under the playhead right now — the take currently on air. */
+  activeSourceId: { type: String, default: null },
+  /** Briefly set after a source is picked, so a keypress visibly registers. */
+  flashSourceId:  { type: String, default: null },
 })
 
 defineEmits(['add', 'close'])
+
+// Only the first ten get a key — there are only ten digits. The rest stay
+// clickable, and lose the keycap rather than showing a lie.
+const chips = computed(() =>
+  props.sources.map((source, i) => ({ source, hotkey: SOURCE_HOTKEYS[i] ?? null })),
+)
 </script>
 
 <template>
-  <FloatingIsland class="min-w-96">
-    <template #header>
-      <span
-        class="size-2.5 rounded-full shrink-0"
-        :style="{ backgroundColor: `oklch(65% 0.18 ${track.typeHue ?? 250})` }"
-      />
-      <div class="min-w-0">
-        <p class="text-sm font-semibold text-foreground truncate leading-tight">{{ track.name }}</p>
-        <p class="text-xs text-muted-foreground leading-tight">
-          {{ $t('editor.sourceBar.addsAt', { tc }) }}
-        </p>
-      </div>
-    </template>
-
-    <template #actions>
-      <IconButton :title="$t('editor.sourceBar.close')" @click="$emit('close')">
-        <Icon icon="mdi:close" class="size-4" />
-      </IconButton>
-    </template>
-
-    <!-- Sources: large tap targets, wrapping grid, scrolls when the set is big -->
-    <div v-if="sources.length" class="flex flex-wrap gap-2 max-h-44 overflow-y-auto">
-      <button
-        v-for="s in sources"
-        :key="s.id"
-        type="button"
-        :title="$t('editor.sourceBar.hint')"
-        class="group flex items-center gap-2.5 pl-2 pr-3 py-2 rounded-xl border border-border bg-background/60
-               hover:bg-accent hover:border-muted-foreground/40 active:scale-[0.98] transition-all"
-        @click="$emit('add', s)"
-      >
-        <SourceBadge :short-name="s.shortName" :hue="s.hue" class="text-sm px-2 py-1 min-w-10" />
-        <span class="text-sm font-medium text-foreground whitespace-nowrap">{{ s.name }}</span>
-        <Icon
-          icon="mdi:plus"
-          class="size-4 text-muted-foreground/50 group-hover:text-foreground transition-colors"
+  <div class="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex justify-center px-4">
+    <div
+      class="pointer-events-auto flex flex-col rounded-xl border border-border bg-popover shadow-2xl
+             overflow-hidden max-w-[min(92vw,56rem)]"
+    >
+      <!-- One-line header: what you're writing to, and where -->
+      <div class="flex items-center gap-2 px-2.5 py-1.5 border-b border-border bg-muted/40">
+        <span
+          class="size-2 rounded-full shrink-0"
+          :style="{ backgroundColor: `oklch(65% 0.18 ${track.typeHue ?? 250})` }"
         />
-      </button>
-    </div>
+        <span class="text-xs font-semibold text-foreground truncate">{{ track.name }}</span>
+        <span class="text-[11px] font-mono text-muted-foreground tabular-nums shrink-0">{{ tc }}</span>
+        <div class="flex-1 min-w-4" />
+        <button
+          type="button"
+          class="shrink-0 -mr-0.5 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          :title="$t('editor.sourceBar.close')"
+          @click="$emit('close')"
+        >
+          <Icon icon="mdi:close" class="size-3.5" />
+        </button>
+      </div>
 
-    <p v-else class="text-sm text-muted-foreground py-1">
-      {{ $t('editor.sourceBar.noSources') }}
-    </p>
-  </FloatingIsland>
+      <div v-if="chips.length" class="flex flex-wrap gap-1 p-1.5 max-h-40 overflow-y-auto">
+        <button
+          v-for="{ source, hotkey } in chips"
+          :key="source.id"
+          type="button"
+          :title="$t('editor.sourceBar.addsAt', { tc })"
+          class="flex items-center gap-1.5 rounded-lg border py-1 pr-2 transition-all active:scale-[0.97]"
+          :class="[
+            hotkey ? 'pl-1' : 'pl-2',
+            source.id === flashSourceId  ? 'border-primary bg-primary/20'
+            : source.id === activeSourceId ? 'border-primary/60 bg-primary/10'
+            : 'border-border bg-background hover:bg-accent hover:border-muted-foreground/40',
+          ]"
+          @click="$emit('add', source)"
+        >
+          <kbd
+            v-if="hotkey"
+            class="flex items-center justify-center size-[18px] rounded border border-border bg-muted
+                   text-[10px] font-mono font-semibold text-muted-foreground shrink-0"
+          >{{ hotkey }}</kbd>
+          <SourceBadge :short-name="source.shortName" :hue="source.hue" />
+          <span class="text-xs font-medium text-foreground whitespace-nowrap">{{ source.name }}</span>
+        </button>
+      </div>
+
+      <p v-else class="px-3 py-2 text-xs text-muted-foreground">
+        {{ $t('editor.sourceBar.noSources') }}
+      </p>
+    </div>
+  </div>
 </template>

@@ -229,8 +229,8 @@
     "endFrame": "End frame",
     "ltcOffset": "LTC offset (frames)",
     "frames": "fr",
-  "image": "Timeline image",
-  "imageHint": "Optional — helps you spot it in lists",
+    "image": "Timeline image",
+    "imageHint": "Optional — helps you spot it in lists",
     "endFrameMustBeAfterStart": "End frame must be after start frame",
     "addDialog": {
       "title": "Add Timeline"
@@ -260,6 +260,11 @@
     "lock": "Lock track",
     "unlock": "Unlock track",
     "deleteTrack": "Delete track",
+    "tracks": "Tracks",
+    "locked": "Track is locked",
+    "trackMenu": {
+      "more": "More actions"
+    },
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "zoomFit": "Fit whole timeline",
@@ -276,7 +281,6 @@
     "liveSync": "Live sync active — playback and edits follow everyone in this editor",
     "syncOffline": "Live sync offline",
     "sourceBar": {
-      "hint": "Click a source to add a clip at the playhead",
       "addsAt": "Click a source to add a clip at {tc}",
       "noSources": "This source set has no sources yet",
       "close": "Deselect track"
@@ -317,6 +321,18 @@
     },
     "editClipDialog": {
       "title": "Edit Clip"
+    },
+    "downloads": {
+      "title": "Downloading media",
+      "ready": "Media ready",
+      "failedTitle": "Some media failed to load",
+      "count": "{done} of {total} files",
+      "expand": "Show files",
+      "collapse": "Hide files",
+      "dismiss": "Dismiss",
+      "decoding": "Decoding…",
+      "failed": "Failed",
+      "unnamed": "Media file"
     }
   },
   "trackTypes": {

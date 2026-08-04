@@ -1,9 +1,12 @@
 <script setup>
 import { ref, shallowRef, computed, inject, watch } from 'vue'
+import { Icon } from '@iconify/vue'
 import { clipLeft, clipWidth } from '../useEditorUtils.js'
 import { createDrag } from '../usePointerDrag.js'
 import { useViewportRange } from '../useViewportRange.js'
 import { getPeakPyramid, pickLevel } from '../useWaveform.js'
+import { useFileDownload } from '../useMediaDownloads.js'
+import { describeDownload, getMediaObjectUrl } from '../mediaDownloads.js'
 import { ContextMenuRoot, ContextMenuTrigger } from 'radix-vue'
 import ContextMenuContent   from '@starling/ui/ContextMenuContent'
 import ContextMenuItem      from '@starling/ui/ContextMenuItem'
@@ -267,6 +270,53 @@ watch(
   drawWaveform,
   { flush: 'post' },
 )
+
+// ── Media download state ──────────────────────────────────────────────────────
+// The clip's file may be fetched from here (image) or from the playback
+// scheduler well before this clip is on screen (audio); either way the transfer
+// lands in the shared registry, so the same progress drives this clip's loading
+// skin and the download island.
+const isImageClip = computed(() => !!props.clip.fileId && props.clip.fileType === 'image')
+
+const download    = useFileDownload(() => props.clip.fileId)
+const isLoading   = computed(() => ['downloading', 'decoding'].includes(download.value?.status))
+const loadFailed  = computed(() => download.value?.status === 'error')
+
+// Decoding has no byte progress of its own — the bar sits full while the file
+// is turned into an AudioBuffer rather than dropping back to zero.
+const loadPercent = computed(() => {
+  const entry = download.value
+  if (!entry) return 0
+  if (entry.status === 'decoding') return 100
+  if (!entry.total) return 0
+  return Math.min(100, Math.round((entry.loaded / entry.total) * 100))
+})
+
+// Only the clip knows what its file should be CALLED — register the label so a
+// download the scheduler started on its own isn't listed as a bare id.
+watch(
+  [() => props.clip.fileId, labelText],
+  ([fileId, label]) => {
+    if (fileId) describeDownload(fileId, { name: label, kind: props.clip.fileType || 'file' })
+  },
+  { immediate: true },
+)
+
+// Image clips paint from a blob: URL instead of pointing <img> straight at the
+// API, so the transfer is measurable — otherwise the browser would download it
+// invisibly and the clip could show no progress at all.
+const imageUrl = ref(null)
+watch(
+  [() => props.clip.fileId, isImageClip],
+  ([fileId, isImage]) => {
+    imageUrl.value = null
+    if (!fileId || !isImage) return
+    getMediaObjectUrl(fileId, { quality: 30, name: labelText.value, kind: 'image' })
+      .then(url => { if (props.clip.fileId === fileId) imageUrl.value = url })
+      .catch(() => {})
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -278,6 +328,7 @@ watch(
       <div
         v-if="isPoint"
         class="absolute top-1 bottom-1 rounded-sm flex items-start justify-center select-none touch-none tl-clip-normal"
+        :class="isLoading ? 'animate-pulse' : ''"
         :style="bgStyle"
         @pointerdown="startMove"
         @click.stop
@@ -300,10 +351,10 @@ watch(
           @pointerdown.stop="startCrop('left', $event)"
         />
 
-        <!-- Image background (image clips) -->
+        <!-- Image background (image clips) — blob: URL, see the download watcher -->
         <img
-          v-if="clip.fileId && clip.fileType === 'image'"
-          :src="`/api/storage/${clip.fileId}/serve?quality=30`"
+          v-if="isImageClip && imageUrl"
+          :src="imageUrl"
           class="absolute inset-0 w-full h-full object-cover pointer-events-none"
           style="opacity: 0.55;"
           :alt="clip.label || ''"
@@ -349,6 +400,39 @@ watch(
         </span>
         <span v-if="nameDisplay === 'stretch'" class="flex-1" />
 
+        <!-- Media loading skin: shimmer over the body, byte progress along the
+             bottom edge, spinner once the clip is wide enough to fit one.
+             Paints above the label (later in DOM at the same z) but below the
+             crop handles, and never takes pointer events. -->
+        <div
+          v-if="isLoading"
+          class="absolute inset-0 z-10 pointer-events-none overflow-hidden rounded"
+        >
+          <div class="absolute inset-0 tl-clip-shimmer" :class="faintBody ? 'tl-clip-shimmer-faint' : ''" />
+          <Icon
+            v-if="displayedWidth > 56"
+            icon="mdi:loading"
+            class="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 animate-spin"
+            :class="faintBody ? 'text-foreground/70' : 'text-white/85'"
+          />
+          <div class="absolute bottom-0 inset-x-0 h-[3px]" :class="faintBody ? 'bg-foreground/10' : 'bg-black/25'">
+            <div
+              class="h-full transition-[width] duration-200 ease-out"
+              :class="faintBody ? 'bg-foreground/60' : 'bg-white/85'"
+              :style="{ width: loadPercent + '%' }"
+            />
+          </div>
+        </div>
+
+        <!-- Media that never arrived — the clip is silent/blank for a reason -->
+        <span
+          v-else-if="loadFailed"
+          class="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex items-center"
+          :title="download?.error || $t('editor.downloads.failed')"
+        >
+          <Icon icon="mdi:alert-circle" class="size-3.5 text-destructive" />
+        </span>
+
         <!-- Right crop handle (clip-mode only) -->
         <div
           v-if="!isEventTrack"
@@ -388,4 +472,20 @@ watch(
 
 .tl-clip-transparent       { background: transparent }
 .dark .tl-clip-transparent { background: transparent }
+
+/* Loading sweep over a clip whose file is still coming down. Faint bodies
+   (border/transparent) sweep in their own hue — a white sheen is invisible on
+   the lane background. --clip-hue is inherited from the clip body. */
+.tl-clip-shimmer {
+  background-image: linear-gradient(100deg, transparent 25%, rgba(255, 255, 255, 0.22) 50%, transparent 75%);
+  background-size: 220% 100%;
+  animation: tl-clip-shimmer 1.3s linear infinite;
+}
+.tl-clip-shimmer-faint {
+  background-image: linear-gradient(100deg, transparent 25%, oklch(60% 0.14 var(--clip-hue) / 0.3) 50%, transparent 75%);
+}
+@keyframes tl-clip-shimmer {
+  from { background-position: 220% 0; }
+  to   { background-position: -120% 0; }
+}
 </style>
