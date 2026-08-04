@@ -159,6 +159,7 @@ function onBackgroundClick(e) {
       :text="text"
       :px-per-frame="pxPerFrame"
       :min-position="timeline.startFrame"
+      :locked="!!track.isLocked"
       @edit="$emit('edit-clip', $event)"
       @delete="$emit('delete-clip', $event)"
       @move="$emit('move-clip', $event)"

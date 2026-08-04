@@ -9,10 +9,15 @@ import { formatBytes, dismissFinishedDownloads, dismissDownload } from '../media
 // its own the moment anything starts loading and retires itself once the queue
 // is quiet — except when something failed, which stays until dismissed, since a
 // clip that never got its audio is a state the user has to know about.
-const { entries, active, failed, done, progress } = useDownloadQueue()
+const { entries, active, failed, progress } = useDownloadQueue()
 
 const visible  = ref(false)
 const expanded = ref(false)
+
+// Closing by hand suppresses the panel until the queue next falls idle — so a
+// long download the user chose to dismiss can't pop straight back the moment
+// the scheduler reaches the next file.
+const dismissed = ref(false)
 
 const HIDE_DELAY_MS = 2400   // long enough to see the bar land on 100%
 let _hideTimer = null
@@ -28,6 +33,12 @@ function hideNow() {
   dismissFinishedDownloads()
 }
 
+/** Header close button: hides the panel; downloads keep running. */
+function closePanel() {
+  hideNow()
+  dismissed.value = true
+}
+
 // Retires itself once the queue is quiet — but never out from under someone
 // who has the file list open, or while a failure still needs acknowledging.
 function maybeScheduleHide() {
@@ -39,7 +50,14 @@ function maybeScheduleHide() {
 watch(
   [() => active.value.length, () => failed.value.length, () => entries.value.length],
   ([activeCount, failedCount, total]) => {
-    if (activeCount > 0 || failedCount > 0) { cancelHide(); visible.value = true; return }
+    if (activeCount > 0 || failedCount > 0) {
+      if (dismissed.value) return
+      cancelHide()
+      visible.value = true
+      return
+    }
+    // Idle: a later burst is new news, so it may show itself again.
+    dismissed.value = false
     if (total === 0) { cancelHide(); visible.value = false; expanded.value = false; return }
     maybeScheduleHide()
   },
@@ -66,6 +84,14 @@ const headline = computed(() => {
   if (state.value === 'error')   return { key: 'editor.downloads.failedTitle', args: { count: failed.value.length } }
   if (state.value === 'loading') return { key: 'editor.downloads.title',       args: {} }
   return { key: 'editor.downloads.ready', args: {} }
+})
+
+// Counts the work outstanding, not a running total: completed entries are
+// pruned from the registry, so "5 of 12 done" would keep rewriting history.
+const subline = computed(() => {
+  if (state.value === 'loading') return { key: 'editor.downloads.inFlight', args: { count: active.value.length } }
+  if (state.value === 'error')   return { key: 'editor.downloads.failedCount', args: { count: failed.value.length } }
+  return null
 })
 
 const percent = computed(() => Math.round(progress.value * 100))
@@ -95,42 +121,54 @@ const isIndeterminate = (entry) => entry.status === 'downloading' && !entry.tota
       class="absolute bottom-5 right-5 z-40 w-80 max-w-[calc(100vw-2.5rem)] rounded-xl border border-border
              bg-popover/95 backdrop-blur-md shadow-2xl overflow-hidden"
     >
-      <!-- Summary row — the whole strip toggles the file list -->
-      <button
-        type="button"
-        class="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40 transition-colors"
-        :title="expanded ? $t('editor.downloads.collapse') : $t('editor.downloads.expand')"
-        @click="toggleExpanded"
-      >
-        <Icon
-          :icon="HEAD_ICON[state]"
-          class="size-4 shrink-0"
-          :class="{
-            'text-primary animate-pulse': state === 'loading',
-            'text-destructive':           state === 'error',
-            'text-muted-foreground':      state === 'done',
-          }"
-        />
+      <!-- Summary row. Close sits OUTSIDE the expand button — nesting one
+           button inside another is invalid and swallows the inner click. -->
+      <div class="flex items-stretch">
+        <button
+          type="button"
+          class="flex-1 min-w-0 flex items-center gap-2.5 pl-3 pr-2 py-2.5 text-left hover:bg-accent/40 transition-colors"
+          :title="expanded ? $t('editor.downloads.collapse') : $t('editor.downloads.expand')"
+          @click="toggleExpanded"
+        >
+          <Icon
+            :icon="HEAD_ICON[state]"
+            class="size-4 shrink-0"
+            :class="{
+              'text-primary animate-pulse': state === 'loading',
+              'text-destructive':           state === 'error',
+              'text-muted-foreground':      state === 'done',
+            }"
+          />
 
-        <div class="flex-1 min-w-0">
-          <p class="text-xs font-semibold text-foreground truncate leading-tight">
-            {{ $t(headline.key, headline.args) }}
-          </p>
-          <p class="text-[11px] text-muted-foreground leading-tight tabular-nums">
-            {{ $t('editor.downloads.count', { done: done.length, total: entries.length }) }}
-          </p>
-        </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-semibold text-foreground truncate leading-tight">
+              {{ $t(headline.key, headline.args) }}
+            </p>
+            <p v-if="subline" class="text-[11px] text-muted-foreground leading-tight tabular-nums">
+              {{ $t(subline.key, subline.args) }}
+            </p>
+          </div>
 
-        <span v-if="state === 'loading'" class="text-xs font-mono text-muted-foreground tabular-nums shrink-0">
-          {{ percent }}%
-        </span>
+          <span v-if="state === 'loading'" class="text-xs font-mono text-muted-foreground tabular-nums shrink-0">
+            {{ percent }}%
+          </span>
 
-        <Icon
-          icon="mdi:chevron-down"
-          class="size-4 text-muted-foreground shrink-0 transition-transform"
-          :class="expanded ? 'rotate-180' : ''"
-        />
-      </button>
+          <Icon
+            icon="mdi:chevron-down"
+            class="size-4 text-muted-foreground shrink-0 transition-transform"
+            :class="expanded ? 'rotate-180' : ''"
+          />
+        </button>
+
+        <button
+          type="button"
+          class="shrink-0 px-2 text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
+          :title="$t('editor.downloads.hide')"
+          @click="closePanel"
+        >
+          <Icon icon="mdi:close" class="size-3.5" />
+        </button>
+      </div>
 
       <!-- Overall progress -->
       <div class="h-1 bg-muted/60">

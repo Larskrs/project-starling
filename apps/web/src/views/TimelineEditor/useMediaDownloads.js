@@ -54,23 +54,27 @@ export function useDownloadQueue() {
   const failed  = computed(() => entries.value.filter(e => e.status === 'error'))
   const done    = computed(() => entries.value.filter(e => e.status === 'ready'))
 
-  // Weighted by bytes so one big file doesn't jump to "50% done" the moment a
-  // small one finishes. Files whose size isn't known yet are excluded from the
-  // total rather than counted as zero-length — otherwise the bar would race to
-  // 100% and then fall back as headers arrive. Falls back to counting files
-  // when no size is known at all.
+  // How far through the work that is STILL RUNNING, weighted by bytes so one
+  // big file doesn't jump to "50%" the moment a small one finishes.
+  //
+  // Deliberately over the in-flight set rather than every entry: completed
+  // entries are pruned a few seconds after they land, and counting them would
+  // make the bar lurch backwards each time one aged out of the denominator.
+  // Files whose size isn't known yet are excluded rather than counted as
+  // zero-length — otherwise the bar would race to 100%, then fall back as
+  // Content-Length arrived.
   const progress = computed(() => {
-    const list = entries.value
-    if (!list.length) return 0
+    const list = active.value
+    if (!list.length) return 1
     let loaded = 0
     let total  = 0
     for (const entry of list) {
       if (!entry.total) continue
       total  += entry.total
-      loaded += entry.status === 'ready' ? entry.total : Math.min(entry.loaded, entry.total)
+      // Decoding means every byte is in — it just isn't playable yet.
+      loaded += entry.status === 'decoding' ? entry.total : Math.min(entry.loaded, entry.total)
     }
-    if (total > 0) return Math.min(1, loaded / total)
-    return list.filter(e => !isActive(e)).length / list.length
+    return total > 0 ? Math.min(1, loaded / total) : 0
   })
 
   return { entries, active, failed, done, progress }

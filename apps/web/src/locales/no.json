@@ -188,6 +188,9 @@
     },
     "permission": {
       "missing": "Du har ikke tillatelse til å utføre denne handlingen"
+    },
+    "track": {
+      "locked": "Sporet er låst"
     }
   },
   "danger": {
@@ -262,6 +265,7 @@
     "deleteTrack": "Slett spor",
     "tracks": "Spor",
     "locked": "Sporet er låst",
+    "trackLocked": "«{name}» er låst",
     "trackMenu": {
       "more": "Flere handlinger"
     },
@@ -326,7 +330,9 @@
       "title": "Laster ned media",
       "ready": "Media klart",
       "failedTitle": "Noe media kunne ikke lastes",
-      "count": "{done} av {total} filer",
+      "inFlight": "{count} pågår",
+      "failedCount": "{count} kunne ikke lastes",
+      "hide": "Skjul",
       "expand": "Vis filer",
       "collapse": "Skjul filer",
       "dismiss": "Lukk",

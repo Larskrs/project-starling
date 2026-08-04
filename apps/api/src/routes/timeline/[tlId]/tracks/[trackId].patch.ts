@@ -2,7 +2,7 @@ import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, tracks } from '@starling/db';
 import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/handler.js';
-import { requireTimelineParam } from '../../../../lib/production.js';
+import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
@@ -19,6 +19,18 @@ export default defineEventHandler(async (event) => {
 
   const update = pickDefined(await readValidatedBody(event, bodySchema));
   if (Object.keys(update).length === 0) throw createError({ statusCode: 422, message: 'Nothing to update' });
+
+  // A locked track accepts exactly one change: the lock itself. Anything else
+  // would let a rename or a re-point slip past the guard — and blocking the
+  // whole route would make the lock impossible to release.
+  const lockOnly = Object.keys(update).every(k => k === 'isLocked');
+  if (!lockOnly) {
+    const [current] = await db.select({ isLocked: tracks.isLocked }).from(tracks)
+      .where(and(eq(tracks.id, trackId), eq(tracks.timelineId, timeline.id)))
+      .limit(1);
+    if (!current) throw createError({ statusCode: 404, message: 'Track not found' });
+    assertTrackUnlocked(current.isLocked);
+  }
 
   const [updated] = await db.update(tracks)
     .set(update)

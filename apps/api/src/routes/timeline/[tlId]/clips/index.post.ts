@@ -2,7 +2,7 @@ import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, tracks, clips } from '@starling/db';
 import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/handler.js';
-import { requireTimelineParam } from '../../../../lib/production.js';
+import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
 import { clipDataSchema } from '../../../../lib/clipData.js';
 import { Permission } from '@starling/auth/permissions';
 
@@ -26,11 +26,12 @@ export default defineEventHandler(async (event) => {
 
   const body = await readValidatedBody(event, bodySchema);
 
-  // The track must belong to this timeline.
-  const [track] = await db.select({ id: tracks.id }).from(tracks)
+  // The track must belong to this timeline, and accept clips at all.
+  const [track] = await db.select({ id: tracks.id, isLocked: tracks.isLocked }).from(tracks)
     .where(and(eq(tracks.id, body.trackId), eq(tracks.timelineId, timeline.id)))
     .limit(1);
   if (!track) throw createError({ statusCode: 404, message: 'Track not found' });
+  assertTrackUnlocked(track.isLocked);
 
   const [clip] = await db.insert(clips).values({
     trackId:    body.trackId,

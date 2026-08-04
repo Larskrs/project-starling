@@ -82,8 +82,10 @@ const stackBadge = computed(() => props.height >= 52 && !!props.badge)
     <div class="flex items-center gap-0.5 shrink-0 pr-1.5">
       <button
         v-if="!compact"
-        class="size-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-        :title="$t('editor.addClip')"
+        class="size-7 flex items-center justify-center rounded-md transition-colors disabled:opacity-40 disabled:pointer-events-none
+               text-muted-foreground hover:text-foreground hover:bg-accent"
+        :disabled="track.isLocked"
+        :title="track.isLocked ? $t('editor.locked') : $t('editor.addClip')"
         @click.stop="$emit('add-clip')"
         @pointerdown.stop
       >
@@ -114,7 +116,7 @@ const stackBadge = computed(() => props.height >= 52 && !!props.badge)
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end">
-          <DropdownMenuItem icon="mdi:plus" @click="$emit('add-clip')">
+          <DropdownMenuItem icon="mdi:plus" :disabled="track.isLocked" @click="$emit('add-clip')">
             {{ $t('editor.addClip') }}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -130,7 +132,13 @@ const stackBadge = computed(() => props.height >= 52 && !!props.badge)
             {{ track.isLocked ? $t('editor.unlock') : $t('editor.lock') }}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem icon="mdi:trash-can-outline" destructive @click="$emit('delete')">
+          <!-- Deleting takes every clip with it — exactly what the lock guards -->
+          <DropdownMenuItem
+            icon="mdi:trash-can-outline"
+            destructive
+            :disabled="track.isLocked"
+            @click="$emit('delete')"
+          >
             {{ $t('editor.deleteTrack') }}
           </DropdownMenuItem>
         </DropdownMenuContent>

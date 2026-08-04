@@ -30,6 +30,10 @@ const dragging   = ref(false)
 
 const isEventTrack = computed(() => props.track.mode === 'event')
 
+// A locked track is read-only: drags never start, so nothing moves under the
+// pointer only to snap back when the editor refuses the mutation.
+const locked = computed(() => !!props.track.isLocked)
+
 // Narrow point marker: source-backed clips on clip-mode tracks only.
 const isPoint = computed(() => !isEventTrack.value && props.clip.sourceId != null)
 
@@ -77,7 +81,7 @@ const stretchViewBox = computed(() =>
 const moveAdj = ref(0)   // pixel offset applied during drag
 let _didMove  = false    // true once movement threshold is exceeded
 
-const startMove = createDrag({
+const moveDrag = createDrag({
   onStart: () => { _didMove = false },
   onMove:  ({ dx }) => { _didMove = true; dragging.value = true; moveAdj.value = dx },
   onEnd:   ({ dx, moved }) => {
@@ -91,11 +95,17 @@ const startMove = createDrag({
   },
 })
 
+function startMove(e) {
+  if (locked.value) return
+  moveDrag(e)
+}
+
 // Double-click opens the clip settings dialog (single click is reserved for
 // selecting / dragging); the context menu's "Edit" item does the same. Guard
 // against a drag that ends in a stray double-click.
 function onClipDblClick() {
   if (_didMove) { _didMove = false; return }
+  if (locked.value) return
   emit('edit')
 }
 
@@ -131,6 +141,7 @@ const cropDrag = createDrag({
 })
 
 function startCrop(side, e) {
+  if (locked.value) return
   _cropSide = side
   cropDrag(e)
 }
@@ -149,7 +160,7 @@ const bgStyle = computed(() => ({
   '--clip-hue': hue.value,
   left:   displayedLeft.value + 'px',
   width:  displayedWidth.value + 'px',
-  cursor: dragging.value ? 'grabbing' : 'grab',
+  cursor: locked.value ? 'default' : dragging.value ? 'grabbing' : 'grab',
   zIndex: dragging.value ? 30 : undefined,
 }))
 
@@ -346,7 +357,7 @@ watch(
       >
         <!-- Left crop handle (clip-mode only) -->
         <div
-          v-if="!isEventTrack"
+          v-if="!isEventTrack && !locked"
           class="absolute left-0 top-0 bottom-0 w-1.5 z-20 cursor-col-resize bg-black/20 hover:bg-white/30 transition-colors rounded-l"
           @pointerdown.stop="startCrop('left', $event)"
         />
@@ -435,7 +446,7 @@ watch(
 
         <!-- Right crop handle (clip-mode only) -->
         <div
-          v-if="!isEventTrack"
+          v-if="!isEventTrack && !locked"
           class="absolute right-0 top-0 bottom-0 w-1.5 z-20 cursor-col-resize bg-black/20 hover:bg-white/30 transition-colors rounded-r"
           @pointerdown.stop="startCrop('right', $event)"
         />
@@ -443,9 +454,12 @@ watch(
     </ContextMenuTrigger>
 
     <ContextMenuContent>
-      <ContextMenuItem icon="mdi:pencil-outline" @click="$emit('edit')">{{ $t('editor.clipMenu.edit') }}</ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuItem icon="mdi:delete-outline" destructive @click="$emit('delete')">{{ $t('editor.clipMenu.delete') }}</ContextMenuItem>
+      <ContextMenuItem v-if="locked" icon="mdi:lock" disabled>{{ $t('editor.locked') }}</ContextMenuItem>
+      <template v-else>
+        <ContextMenuItem icon="mdi:pencil-outline" @click="$emit('edit')">{{ $t('editor.clipMenu.edit') }}</ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem icon="mdi:delete-outline" destructive @click="$emit('delete')">{{ $t('editor.clipMenu.delete') }}</ContextMenuItem>
+      </template>
     </ContextMenuContent>
   </ContextMenuRoot>
 </template>

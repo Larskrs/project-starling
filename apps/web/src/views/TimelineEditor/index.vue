@@ -3,7 +3,7 @@ import { ref, computed, provide, nextTick, watch, onMounted, onUnmounted } from 
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { Skeleton, ResizeHandle, ConfirmDialog } from '@starling/ui'
+import { Skeleton, ResizeHandle, ConfirmDialog, useToast } from '@starling/ui'
 import { useApi } from '../../composables/useApi.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
 import { useCookie } from '../../composables/useCookie.js'
@@ -32,6 +32,7 @@ const route      = useRoute()
 const router     = useRouter()
 const { t }      = useI18n()
 const { $fetch } = useApi()
+const toast      = useToast()
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 const timeline   = ref(null)
@@ -555,7 +556,7 @@ function flashSource(sourceId) {
 /** Create a clip for `source` on the selected track at the playhead. */
 async function addSourceClip(source) {
   const track = selectedTrack.value
-  if (!track) return
+  if (!track || blockedByLock(track)) return
   flashSource(source.id)
   const { ok, data } = await $fetch(`${timelineUrl.value}/clips`, {
     method: 'POST',
@@ -642,6 +643,23 @@ function getTrackSources(track) {
   return sources.value.filter(s => s.sourceSetId === tt.sourceSetId)
 }
 
+// ── Track lock ────────────────────────────────────────────────────────────────
+/**
+ * True when the track is locked — and says so, once, on the way out.
+ *
+ * Every clip mutation funnels through here. The UI also disables the obvious
+ * affordances, so this mostly catches the paths that have no affordance to
+ * disable (source hotkeys) and anything reaching a track that a peer locked a
+ * moment ago. The API enforces the same rule independently: a client that
+ * hasn't received the lock yet would otherwise push an edit that live sync
+ * relays to everyone.
+ */
+function blockedByLock(track) {
+  if (!track?.isLocked) return false
+  toast.warning(t('editor.trackLocked', { name: track.name }))
+  return true
+}
+
 // ── Track mutations ───────────────────────────────────────────────────────────
 const addTrackOpen = ref(false)
 
@@ -666,6 +684,7 @@ const deletingTrack     = ref(false)
 async function confirmDeleteTrack() {
   const track = deleteTrackTarget.value
   if (!track) return
+  if (blockedByLock(track)) { deleteTrackTarget.value = null; return }
   deletingTrack.value = true
   const { ok } = await $fetch(trackUrl(track.id), { method: 'DELETE', silent: true })
   deletingTrack.value     = false
@@ -681,6 +700,7 @@ const clipDialog = ref({ open: false, track: null, clip: null, defaultPosition: 
 const bpmDialog  = ref({ open: false, track: null, clip: null, defaultPosition: 0 })
 
 function openAddClip(track) {
+  if (blockedByLock(track)) return
   if (settingsFor(track).metronome) {
     bpmDialog.value = { open: true, track, clip: null, defaultPosition: Math.round(playheadFrame.value) }
     return
@@ -694,6 +714,7 @@ function openAddClip(track) {
   }
 }
 function openEditClip(track, clip) {
+  if (blockedByLock(track)) return
   if (settingsFor(track).metronome) {
     bpmDialog.value = { open: true, track, clip, defaultPosition: clip.position }
     return
@@ -725,7 +746,9 @@ function onClipSaved(savedClip) {
   closeClipDialog()
 }
 
+// The single choke point for clip edits (move, crop, dialog saves).
 async function patchClip(track, clip, json) {
+  if (blockedByLock(track)) return
   const { ok, data } = await $fetch(clipUrl(clip.id), {
     method: 'PATCH', json, silent: true,
   })
@@ -738,6 +761,7 @@ const moveClip = (track, clip, position) => patchClip(track, clip, { position })
 const cropClip = (track, clip, fields)   => patchClip(track, clip, fields)
 
 async function deleteClip(track, clip) {
+  if (blockedByLock(track)) return
   const { ok } = await $fetch(clipUrl(clip.id), {
     method: 'DELETE', silent: true,
   })

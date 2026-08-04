@@ -31,6 +31,17 @@ const _listeners = new Set()
 const NOTIFY_MS = 90
 let _notifyTimer = null
 
+// How long a completed file stays in the queue before it is forgotten.
+//
+// Without this the registry is a session-long log, not a queue: the playback
+// scheduler pulls in each new file as the playhead reaches it, so on a timeline
+// with many audio files something is almost always in flight — a consumer
+// waiting for the queue to go quiet would wait forever, and the list would
+// climb into the hundreds. Failures are exempt: an unplayable clip is a state
+// the user has to acknowledge, so those stay until dismissed.
+const READY_TTL_MS = 4000
+let _pruneTimer = null
+
 function _notify(immediate = false) {
   if (!_listeners.size) return          // nothing observing → never arm a timer
   if (immediate) {
@@ -43,6 +54,30 @@ function _notify(immediate = false) {
     _notifyTimer = null
     for (const fn of _listeners) fn()
   }, NOTIFY_MS)
+}
+
+// One timer at a time, always set to the earliest expiry; the sweep re-arms
+// itself while any completed entry is still inside its TTL.
+function _schedulePrune(delayMs) {
+  if (_pruneTimer) return
+  _pruneTimer = setTimeout(_prune, delayMs)
+}
+
+function _prune() {
+  _pruneTimer = null
+  const now = Date.now()
+  let changed = false
+  let nextDue = Infinity
+
+  for (const [fileId, entry] of _files) {
+    if (entry.status !== 'ready') continue
+    const due = (entry.finishedAt ?? now) + READY_TTL_MS
+    if (due <= now) { _files.delete(fileId); changed = true }
+    else nextDue = Math.min(nextDue, due)
+  }
+
+  if (changed) _notify(true)
+  if (nextDue !== Infinity) _schedulePrune(Math.max(50, nextDue - Date.now()))
 }
 
 function _ensure(fileId, meta) {
@@ -126,6 +161,7 @@ export function markDownloadDone(fileId) {
   entry.error      = null
   entry.finishedAt = Date.now()
   if (entry.total) entry.loaded = entry.total
+  _schedulePrune(READY_TTL_MS)
   _notify(true)
 }
 
@@ -243,6 +279,7 @@ export function resetDownloads() {
   for (const promise of _objectUrls.values()) {
     promise.then(url => URL.revokeObjectURL(url)).catch(() => {})
   }
+  if (_pruneTimer) { clearTimeout(_pruneTimer); _pruneTimer = null }
   _objectUrls.clear()
   _files.clear()
   _meta.clear()

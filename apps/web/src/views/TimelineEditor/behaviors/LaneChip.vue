@@ -12,6 +12,8 @@ const props = defineProps({
   text:        { type: String, default: '—' },
   pxPerFrame:  { type: Number, required: true },
   minPosition: { type: Number, default: 0 },
+  /** Locked track: read-only — no drag, no edit, no delete affordance. */
+  locked:      { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['edit', 'delete', 'move'])
@@ -34,8 +36,14 @@ const startDrag = createDrag({
   },
 })
 
+function onPointerdown(e) {
+  if (props.locked) return
+  startDrag(e)
+}
+
 function onClick() {
   if (_didMove) { _didMove = false; return }
+  if (props.locked) return
   emit('edit', props.clip)
 }
 </script>
@@ -54,15 +62,15 @@ function onClick() {
       type="button"
       class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold leading-none
              bg-background border border-border text-foreground hover:border-primary/60 transition-colors whitespace-nowrap touch-none"
-      :class="dragging ? 'cursor-grabbing border-primary shadow-md' : 'cursor-grab'"
-      @pointerdown.prevent="startDrag($event)"
+      :class="locked ? 'cursor-default' : dragging ? 'cursor-grabbing border-primary shadow-md' : 'cursor-grab'"
+      @pointerdown.prevent="onPointerdown"
       @click.stop="onClick"
     >
       {{ text }}
     </button>
 
     <button
-      v-if="hovered && !dragging"
+      v-if="hovered && !dragging && !locked"
       type="button"
       class="ml-0.5 size-4 flex items-center justify-center rounded text-muted-foreground hover:text-destructive"
       @click.stop="$emit('delete', clip)"

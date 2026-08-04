@@ -2,7 +2,7 @@ import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, tracks, clips } from '@starling/db';
 import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/handler.js';
-import { requireTimelineParam, requirePermission } from '../../../../lib/production.js';
+import { requireTimelineParam, requirePermission, assertTrackUnlocked } from '../../../../lib/production.js';
 import { clipDataSchema } from '../../../../lib/clipData.js';
 import { Permission } from '@starling/auth/permissions';
 
@@ -31,12 +31,13 @@ export default defineEventHandler(async (event) => {
     ? (Permission.RENAME_CLIPS | Permission.EDIT_TIMELINE)
     : Permission.EDIT_TIMELINE);
 
-  // Confirm the clip hangs off a track in this timeline.
-  const [owned] = await db.select({ id: clips.id }).from(clips)
+  // Confirm the clip hangs off a track in this timeline, and that it is editable.
+  const [owned] = await db.select({ id: clips.id, isLocked: tracks.isLocked }).from(clips)
     .innerJoin(tracks, eq(clips.trackId, tracks.id))
     .where(and(eq(clips.id, clipId), eq(tracks.timelineId, ctx.timeline.id)))
     .limit(1);
   if (!owned) throw createError({ statusCode: 404, message: 'Clip not found' });
+  assertTrackUnlocked(owned.isLocked);
 
   const [updated] = await db.update(clips)
     .set({ ...update, updatedAt: new Date() })

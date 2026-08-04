@@ -188,6 +188,9 @@
     },
     "permission": {
       "missing": "You don't have permission to perform this action"
+    },
+    "track": {
+      "locked": "That track is locked"
     }
   },
   "danger": {
@@ -262,6 +265,7 @@
     "deleteTrack": "Delete track",
     "tracks": "Tracks",
     "locked": "Track is locked",
+    "trackLocked": "\"{name}\" is locked",
     "trackMenu": {
       "more": "More actions"
     },
@@ -326,7 +330,9 @@
       "title": "Downloading media",
       "ready": "Media ready",
       "failedTitle": "Some media failed to load",
-      "count": "{done} of {total} files",
+      "inFlight": "{count} in progress",
+      "failedCount": "{count} could not be loaded",
+      "hide": "Hide",
       "expand": "Show files",
       "collapse": "Hide files",
       "dismiss": "Dismiss",

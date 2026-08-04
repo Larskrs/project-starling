@@ -229,6 +229,23 @@ export async function requireTimelineParam(
   return { ...ctx, timeline };
 }
 
+/**
+ * Refuses a mutation aimed at a locked track.
+ *
+ * The lock is a collaboration guard, not a permission: everyone editing a
+ * timeline has EDIT_TIMELINE, and locking a track is how one of them says
+ * "leave this alone". It therefore has to be enforced HERE and not only in the
+ * editor — a peer whose client hasn't yet received the lock would otherwise
+ * push the edit through and live sync would relay it to everybody.
+ *
+ * Callers already load the track for their ownership check, so this takes the
+ * flag rather than issuing a query of its own.
+ */
+export function assertTrackUnlocked(isLocked: boolean | null | undefined): void {
+  if (!isLocked) return;
+  throw createError({ statusCode: 423, message: 'Track is locked', errorKey: 'errors.track.locked' });
+}
+
 /** Access preamble for top-level collections scoped by ?pid=… (/api/timelines). */
 export async function requireProductionQuery(
   event: ApiEvent,
