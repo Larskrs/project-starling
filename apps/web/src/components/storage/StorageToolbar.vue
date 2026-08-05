@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { Button, IconButton } from '@starling/ui'
 import StorageBreadcrumb from './StorageBreadcrumb.vue'
-import { useStorage } from './storage.js'
+import { useStorage } from './storage'
 
 /** Where you are, how to get back, and the two ways to add something. */
 const ACCEPTED = [

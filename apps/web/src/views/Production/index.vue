@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, provide, onMounted, watch } from 'vue'
-import { usePageTitle } from '../../composables/usePageTitle.js'
+import { usePageTitle } from '../../composables/usePageTitle'
 import { Skeleton } from '@starling/ui'
 import { useRoute, useRouter, RouterView } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -8,7 +8,7 @@ import { Icon } from '@iconify/vue'
 import { useAuth } from '../../composables/useAuth'
 import { useColorMode } from '@starling/ui/useColorMode'
 import { useLocale } from '../../composables/useLocale'
-import { useApi } from '../../composables/useApi.js'
+import { useApi } from '../../composables/useApi'
 import Avatar from '@starling/ui/Avatar'
 import BreadcrumbNav from '@starling/ui/BreadcrumbNav'
 

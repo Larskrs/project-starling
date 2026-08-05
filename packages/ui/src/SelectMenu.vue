@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 import { Icon } from '@iconify/vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 import DropdownMenuContent   from './DropdownMenuContent.vue'
 import DropdownMenuItem      from './DropdownMenuItem.vue'
 import DropdownMenuSeparator from './DropdownMenuSeparator.vue'

@@ -1,7 +1,7 @@
 <script setup>
 import { Icon } from '@iconify/vue'
 import { Button, IconButton } from '@starling/ui'
-import { useStorage } from './storage.js'
+import { useStorage } from './storage'
 
 /** Appears once something is ticked; acts on the whole selection. */
 const { browser, selection, actions } = useStorage()

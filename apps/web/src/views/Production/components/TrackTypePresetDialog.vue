@@ -3,7 +3,7 @@ import { ref, computed, inject, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { FormField, Input, SplitDialog, Switch } from '@starling/ui'
-import { useApi } from '../../../composables/useApi.js'
+import { useApi } from '../../../composables/useApi'
 
 const props = defineProps({
   open:    { type: Boolean, required: true },

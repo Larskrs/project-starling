@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { EmptyState, Spinner } from '@starling/ui'
 import FolderTile from './FolderTile.vue'
 import FileTile   from './FileTile.vue'
-import { useStorage } from './storage.js'
+import { useStorage } from './storage'
 
 /** Folders then files, in a grid that reflows to the available width. */
 const props = defineProps({

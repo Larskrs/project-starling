@@ -5,8 +5,8 @@ import { Icon } from '@iconify/vue'
 import Avatar from '@starling/ui/Avatar'
 import ImageCropper from '@starling/ui/ImageCropper'
 import { Skeleton } from '@starling/ui'
-import { useApi } from '../../composables/useApi.js'
-import { useAuth } from '../../composables/useAuth.js'
+import { useApi } from '../../composables/useApi'
+import { useAuth } from '../../composables/useAuth'
 import { Button } from '@starling/ui'
 
 const { $fetch } = useApi()

@@ -1,6 +1,6 @@
 <script setup>
 import Label from './Label.vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 /**
  * One setting: label in the left half, the control that changes it in the

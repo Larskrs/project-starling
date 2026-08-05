@@ -2,7 +2,7 @@
 import { ref, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Spinner } from '@starling/ui'
-import { useApi } from '../../../composables/useApi.js'
+import { useApi } from '../../../composables/useApi'
 
 const emit = defineEmits(['created'])
 

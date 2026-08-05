@@ -5,7 +5,7 @@ import DialogContent from '@starling/ui/DialogContent'
 import DialogHeader  from '@starling/ui/DialogHeader'
 import DialogTitle   from '@starling/ui/DialogTitle'
 import Input  from '@starling/ui/Input'
-import { useApi } from '../../composables/useApi.js'
+import { useApi } from '../../composables/useApi'
 
 const props = defineProps({
   open: { type: Boolean, required: true },

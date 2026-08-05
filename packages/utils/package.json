@@ -5,12 +5,13 @@
   "type": "module",
   "exports": {
     ".": {
-      "types":   "./dist/index.d.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

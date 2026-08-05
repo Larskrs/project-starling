@@ -7,8 +7,8 @@ import Avatar from '@starling/ui/Avatar'
 import Image from '@starling/ui/Image'
 
 import ProductionList from './ProductionList.vue'
-import { useApi } from '../../composables/useApi.js'
-import { usePageTitle } from '../../composables/usePageTitle.js'
+import { useApi } from '../../composables/useApi'
+import { usePageTitle } from '../../composables/usePageTitle'
 import { Button, Skeleton } from '@starling/ui'
 
 const route  = useRoute()

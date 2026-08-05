@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { formatBytes } from '../../../lib/utils.js'
+import { formatBytes } from '../../../lib/utils'
 
 const props = defineProps({
   stats: { type: Object, default: null },

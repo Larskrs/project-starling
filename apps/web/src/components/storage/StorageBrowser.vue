@@ -7,7 +7,7 @@ import StorageUploadQueue  from './StorageUploadQueue.vue'
 import StorageGrid         from './StorageGrid.vue'
 import StorageDialogs      from './StorageDialogs.vue'
 import FilePreview         from './FilePreview.vue'
-import { provideStorage }  from './storage.js'
+import { provideStorage }  from './storage'
 
 /**
  * The file explorer, whole. The Files page mounts it as the page; the file

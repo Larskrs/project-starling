@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { Button, IconButton, ListItem, Skeleton } from '@starling/ui'
-import { useProductionCrud } from '../../composables/useProductionCrud.js'
+import { useProductionCrud } from '../../composables/useProductionCrud'
 import ManageListPage  from './components/ManageListPage.vue'
 import SourceSetDialog from './components/SourceSetDialog.vue'
 

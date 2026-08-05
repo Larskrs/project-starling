@@ -1,7 +1,7 @@
 <script setup>
 import { Icon } from '@iconify/vue'
 import { Spinner } from '@starling/ui'
-import { useStorage } from './storage.js'
+import { useStorage } from './storage'
 
 /** In-flight uploads, however they were started — the button or a drop. */
 const { upload } = useStorage()

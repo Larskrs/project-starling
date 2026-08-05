@@ -1,6 +1,6 @@
 <script setup>
 import { DialogTitle } from 'radix-vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 const props = defineProps({ class: { type: String, default: '' } })
 </script>
 

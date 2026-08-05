@@ -7,7 +7,7 @@ import Button from '@starling/ui/Button'
 import Input from '@starling/ui/Input'
 import Label from '@starling/ui/Label'
 import Spinner from '@starling/ui/Spinner'
-import { useApi } from '../../composables/useApi.js'
+import { useApi } from '../../composables/useApi'
 import ProductionProfileEditor from './components/ProductionProfileEditor.vue'
 import ConfirmValueDialog from '../../components/ui/ConfirmValueDialog.vue'
 

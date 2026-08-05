@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject } from 'vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 /**
  * One page of a SettingsDialog: a divided list of SettingsRows. The page rail

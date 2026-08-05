@@ -3,9 +3,9 @@ import { onMounted, onBeforeUnmount } from 'vue'
 import { Icon } from '@iconify/vue'
 import { Button, EmptyState, IconButton } from '@starling/ui'
 import WaveformPlayer from '../audio/WaveformPlayer.vue'
-import { useStorage } from './storage.js'
-import { fileUrl } from './useStorageApi.js'
-import { formatBytes } from '../../lib/utils.js'
+import { useStorage } from './storage'
+import { fileUrl } from './useStorageApi'
+import { formatBytes } from '../../lib/utils'
 
 /**
  * Full-screen preview of the open file, with the arrow keys stepping through

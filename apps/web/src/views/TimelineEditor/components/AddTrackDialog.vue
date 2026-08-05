@@ -8,7 +8,7 @@ import DialogTitle   from '@starling/ui/DialogTitle'
 import DialogFooter  from '@starling/ui/DialogFooter'
 import { Icon } from '@iconify/vue'
 import { Input, Label, Button, SelectMenu } from '@starling/ui'
-import { useApi } from '../../../composables/useApi.js'
+import { useApi } from '../../../composables/useApi'
 
 const props = defineProps({
   open:       { type: Boolean, required: true },

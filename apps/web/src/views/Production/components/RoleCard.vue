@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { Badge, IconButton } from '@starling/ui'
 import { Permission, PERMISSIONS as PERMISSION_NAMES } from '@starling/auth/permissions'
-import { useApi } from '../../../composables/useApi.js'
+import { useApi } from '../../../composables/useApi'
 
 const props = defineProps({
   role: { type: Object, required: true },

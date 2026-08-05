@@ -1,6 +1,6 @@
 <script setup>
 import { Icon } from '@iconify/vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 /**
  * Presentational checkbox — it draws the box and nothing else, so the caller

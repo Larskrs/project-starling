@@ -7,7 +7,7 @@ import Button from '@starling/ui/Button'
 import Avatar from '@starling/ui/Avatar'
 import Image from '@starling/ui/Image'
 import CreateProductionDialog from './CreateProductionDialog.vue'
-import { useApi } from '../../composables/useApi.js'
+import { useApi } from '../../composables/useApi'
 import { Skeleton } from '@starling/ui'
 
 const props = defineProps({

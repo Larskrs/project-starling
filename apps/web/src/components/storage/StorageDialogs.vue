@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ConfirmDialog, PromptDialog } from '@starling/ui'
 import SelectFolderDialog from './SelectFolderDialog.vue'
-import { useStorage } from './storage.js'
-import { FOLDER } from './useStorageApi.js'
+import { useStorage } from './storage'
+import { FOLDER } from './useStorageApi'
 
 /**
  * Every write dialog the browser can raise, mounted once at the root.

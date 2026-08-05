@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FormDialog, FormField, Input } from '@starling/ui'
-import { useApi } from '../../../composables/useApi.js'
+import { useApi } from '../../../composables/useApi'
 
 // Compact clip dialog for metronome (ruler/BPM) tracks: a clip is just a
 // position + tempo; the tempo applies until the next BPM clip.

@@ -1,6 +1,6 @@
 <script setup>
 import { Icon } from '@iconify/vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 /**
  * "There is nothing here" — an icon, a line of text, and optionally something

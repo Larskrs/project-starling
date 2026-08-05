@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import Skeleton from './Skeleton.vue'
-import { debugConfig } from './debugConfig.js'
+import { debugConfig } from './debugConfig'
 
 defineOptions({ inheritAttrs: false })
 

@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { useAuth } from '../composables/useAuth.js'
+import { useAuth } from '../composables/useAuth'
 import Button from '@starling/ui/Button'
 import Input  from '@starling/ui/Input'
 import Label  from '@starling/ui/Label'

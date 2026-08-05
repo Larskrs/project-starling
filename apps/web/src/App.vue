@@ -2,11 +2,11 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DefaultLayout from './layouts/DefaultLayout.vue'
-import { useLocale } from './composables/useLocale.js'
+import { useLocale } from './composables/useLocale'
 import DebugProvider from '@starling/ui/DebugProvider'
 import Toast from '@starling/ui/Toast'
 import TimelineLoadingScreen from './components/TimelineLoadingScreen.vue'
-import { useTimelineOpening } from './composables/useTimelineOpening.js'
+import { useTimelineOpening } from './composables/useTimelineOpening'
 
 const route  = useRoute()
 const router = useRouter()

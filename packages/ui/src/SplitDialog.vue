@@ -5,7 +5,7 @@ import DialogHeader  from './DialogHeader.vue'
 import DialogTitle   from './DialogTitle.vue'
 import DialogFooter  from './DialogFooter.vue'
 import Button        from './Button.vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 /**
  * The middle size between FormDialog and SettingsDialog: one form in two equal

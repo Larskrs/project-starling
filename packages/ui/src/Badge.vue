@@ -1,5 +1,5 @@
 <script setup>
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 const props = defineProps({
   variant: { type: String, default: 'muted' }, // muted | primary

@@ -2,7 +2,7 @@
 import { inject, ref, onMounted } from 'vue'
 import { Skeleton } from '@starling/ui'
 import { useI18n } from 'vue-i18n'
-import { useApi } from '../../composables/useApi.js'
+import { useApi } from '../../composables/useApi'
 import CreateRoleForm from './components/CreateRoleForm.vue'
 import RoleCard from './components/RoleCard.vue'
 

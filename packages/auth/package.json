@@ -5,16 +5,17 @@
   "type": "module",
   "exports": {
     ".": {
-      "types":   "./dist/index.d.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./permissions": {
-      "types":   "./dist/permissions.d.ts",
+      "types": "./dist/permissions.d.ts",
       "default": "./dist/permissions.js"
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "peerDependencies": {
     "vue": "^3.0.0"

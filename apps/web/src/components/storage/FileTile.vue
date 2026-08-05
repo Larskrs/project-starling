@@ -5,10 +5,10 @@ import { DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 import {
   Checkbox, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
 } from '@starling/ui'
-import { useStorage } from './storage.js'
-import { fileUrl, thumbnailUrl } from './useStorageApi.js'
-import { fileIcon } from './fileKinds.js'
-import { formatBytes } from '../../lib/utils.js'
+import { useStorage } from './storage'
+import { fileUrl, thumbnailUrl } from './useStorageApi'
+import { fileIcon } from './fileKinds'
+import { formatBytes } from '../../lib/utils'
 
 /**
  * One file in the grid. The thumbnail is the only thing that varies by type,

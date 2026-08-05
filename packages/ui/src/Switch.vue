@@ -1,6 +1,6 @@
 <script setup>
 import { SwitchRoot, SwitchThumb } from 'radix-vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 const props = defineProps({
   disabled: { type: Boolean, default: false },

@@ -1,5 +1,5 @@
 <script setup>
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 // Floating panel anchored bottom-center of the nearest positioned ancestor
 // (give the parent `relative`). Slot-based:

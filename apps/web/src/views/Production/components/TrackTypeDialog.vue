@@ -6,8 +6,8 @@ import {
   IconPicker, Input, SelectMenu, SettingsDialog, SettingsPage, SettingsRow, Switch, SwitchTab,
 } from '@starling/ui'
 import HuePicker from './HuePicker.vue'
-import { useEntityDialog } from '../../../composables/useEntityDialog.js'
-import { useIconPicker } from '../../../composables/useIconPicker.js'
+import { useEntityDialog } from '../../../composables/useEntityDialog'
+import { useIconPicker } from '../../../composables/useIconPicker'
 
 const props = defineProps({
   open:       { type: Boolean, required: true },

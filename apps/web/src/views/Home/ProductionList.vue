@@ -6,9 +6,9 @@ import { Avatar }         from '@starling/ui'
 import ListCard           from '@starling/ui/ListCard'
 import ListHeader         from '@starling/ui/ListHeader'
 import ListItem           from '@starling/ui/ListItem'
-import { useApi }         from '../../composables/useApi.js'
-import { useRecentActivity } from '../../composables/useRecentActivity.js'
-import { relativeTime }   from '../../lib/utils.js'
+import { useApi }         from '../../composables/useApi'
+import { useRecentActivity } from '../../composables/useRecentActivity'
+import { relativeTime }   from '../../lib/utils'
 import { Skeleton }       from '@starling/ui'
 
 const { t }      = useI18n()

@@ -5,8 +5,8 @@ import ListCard              from '@starling/ui/ListCard'
 import ListHeader            from '@starling/ui/ListHeader'
 import ListItem              from '@starling/ui/ListItem'
 import CreateCompanyDialog   from './CreateCompanyDialog.vue'
-import { useApi }            from '../../composables/useApi.js'
-import { useAuth }           from '../../composables/useAuth.js'
+import { useApi }            from '../../composables/useApi'
+import { useAuth }           from '../../composables/useAuth'
 import { Avatar, Skeleton }  from '@starling/ui'
 
 const { $fetch } = useApi()

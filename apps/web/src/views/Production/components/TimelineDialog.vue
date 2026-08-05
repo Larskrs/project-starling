@@ -3,8 +3,8 @@ import { ref, computed, inject, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { Avatar, FormField, ImageCropper, Input, SelectMenu, SplitDialog } from '@starling/ui'
-import { useEntityDialog } from '../../../composables/useEntityDialog.js'
-import { useApi } from '../../../composables/useApi.js'
+import { useEntityDialog } from '../../../composables/useEntityDialog'
+import { useApi } from '../../../composables/useApi'
 
 const FRAME_RATES = ['23.976', '24', '25', '29.97', '29.97df', '30', '50', '59.94', '60']
 

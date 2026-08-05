@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { useAuth }        from '../../composables/useAuth.js'
-import { useSocket }      from '../../composables/useSocket.js'
+import { useAuth }        from '../../composables/useAuth'
+import { useSocket }      from '../../composables/useSocket'
 import Button             from '@starling/ui/Button'
 import Input              from '@starling/ui/Input'
 import GifPickerDialog     from './GifPickerDialog.vue'

@@ -1,6 +1,6 @@
 <script setup>
 import Label from './Label.vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 const props = defineProps({
   label: { type: String, default: '' },

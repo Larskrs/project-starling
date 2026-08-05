@@ -1,6 +1,6 @@
 <script setup>
 import { Icon } from '@iconify/vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 /**
  * Page rail for SettingsDialog. Vertical alongside the content on sm+, a

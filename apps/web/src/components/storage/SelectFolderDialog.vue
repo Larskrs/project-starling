@@ -6,8 +6,8 @@ import {
   Button, Dialog, DialogContent, DialogHeader, DialogTitle, EmptyState, Input, Label, Spinner,
 } from '@starling/ui'
 import StorageBreadcrumb from './StorageBreadcrumb.vue'
-import { useStorageBrowser } from './useStorageBrowser.js'
-import { useStorageApi } from './useStorageApi.js'
+import { useStorageBrowser } from './useStorageBrowser'
+import { useStorageApi } from './useStorageApi'
 
 /**
  * Pick a destination folder. Runs on the same browser as the file explorer,

@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["vite/client"]
+  },
+  // Only the TypeScript sources. The .vue files still carry plain-JS
+  // <script setup> blocks, so type-checking them would need vue-tsc and a
+  // separate `lang="ts"` migration — see env.d.ts.
+  //
+  // The standalone .test.ts scripts run in node, not the browser, and are
+  // checked separately by tsconfig.test.json.
+  "include": ["src/**/*.ts", "env.d.ts"],
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts"]
+}

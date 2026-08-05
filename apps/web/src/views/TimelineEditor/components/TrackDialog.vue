@@ -2,8 +2,8 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FormDialog, FormField, IconPicker, Input } from '@starling/ui'
-import { useIconPicker } from '../../../composables/useIconPicker.js'
-import { useApi } from '../../../composables/useApi.js'
+import { useIconPicker } from '../../../composables/useIconPicker'
+import { useApi } from '../../../composables/useApi'
 
 // Per-track settings. The icon is an override: leaving it empty keeps whatever
 // the track type provides, which is why the "none" choice names the type's icon

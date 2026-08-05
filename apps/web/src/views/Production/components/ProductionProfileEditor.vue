@@ -5,7 +5,7 @@ import { Icon } from '@iconify/vue'
 import Avatar from '@starling/ui/Avatar'
 import ProductionBanner from '@starling/ui/ProductionBanner'
 import ImageCropper from '@starling/ui/ImageCropper'
-import { useApi } from '../../../composables/useApi.js'
+import { useApi } from '../../../composables/useApi'
 
 const props = defineProps({
   uploadUrl:      { type: String, required: true },

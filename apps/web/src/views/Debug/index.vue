@@ -1,6 +1,6 @@
 <script setup>
 import { debugConfig, resetDebugConfig, Skeleton } from '@starling/ui'
-import { usePageTitle } from '../../composables/usePageTitle.js'
+import { usePageTitle } from '../../composables/usePageTitle'
 
 usePageTitle('Debug Settings')
 </script>

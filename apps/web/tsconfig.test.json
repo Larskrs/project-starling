@@ -1,0 +1,13 @@
+{
+  // The hand-rolled regression scripts next to the editor modules. They run in
+  // bare node (`node src/views/TimelineEditor/transportClock.test.ts`), not in
+  // the browser bundle, so they get node's globals and their own check.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"],
+    "noUnusedLocals": false
+  },
+  "include": ["src/**/*.test.ts"],
+  "exclude": []
+}

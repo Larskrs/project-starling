@@ -9,7 +9,7 @@ import DialogFooter  from '@starling/ui/DialogFooter'
 import Input  from '@starling/ui/Input'
 import Label  from '@starling/ui/Label'
 import Button from '@starling/ui/Button'
-import { useApi } from '../../composables/useApi.js'
+import { useApi } from '../../composables/useApi'
 
 const props = defineProps({
   open: { type: Boolean, required: true },

@@ -1,5 +1,5 @@
 <script setup>
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 // Thin grab strip for drag-resizing. Position it with a class (flex child or
 // absolute edge) and wire @pointerdown to a useResizable().start call.

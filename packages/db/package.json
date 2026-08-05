@@ -13,12 +13,13 @@
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --import=tsx/esm src/migrate.ts",
-    "db:reset":   "node --import=tsx/esm src/reset.ts",
-    "db:seed":    "node --import=tsx/esm src/seed.ts",
-    "db:fresh":   "npm run db:reset && npm run db:migrate && npm run db:seed",
-    "set-role":   "node --import=tsx/esm src/setRole.ts",
+    "db:reset": "node --import=tsx/esm src/reset.ts",
+    "db:seed": "node --import=tsx/esm src/seed.ts",
+    "db:fresh": "npm run db:reset && npm run db:migrate && npm run db:seed",
+    "set-role": "node --import=tsx/esm src/setRole.ts",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

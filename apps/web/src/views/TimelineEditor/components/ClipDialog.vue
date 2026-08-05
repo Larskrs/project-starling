@@ -5,7 +5,7 @@ import { Icon } from '@iconify/vue'
 import { Button, FormField, Input, SplitDialog } from '@starling/ui'
 import HuePicker from '../../Production/components/HuePicker.vue'
 import { SelectFileDialog } from '../../../components/storage'
-import { useApi } from '../../../composables/useApi.js'
+import { useApi } from '../../../composables/useApi'
 
 const props = defineProps({
   open:            { type: Boolean, required: true },

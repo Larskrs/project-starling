@@ -6,9 +6,9 @@ import {
   useColorMode,
   DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub,
 } from '@starling/ui'
-import { useStorage } from './storage.js'
-import { useStorageApi, thumbnailUrl } from './useStorageApi.js'
-import { fileIcon, FOLDER_HUES } from './fileKinds.js'
+import { useStorage } from './storage'
+import { useStorageApi, thumbnailUrl } from './useStorageApi'
+import { fileIcon, FOLDER_HUES } from './fileKinds'
 
 /**
  * A folder in the grid, tinted by its hue and peeking at the first few files

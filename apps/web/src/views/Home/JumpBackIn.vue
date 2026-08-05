@@ -4,9 +4,9 @@ import { useI18n }           from 'vue-i18n'
 import { RouterLink }        from 'vue-router'
 import { Icon }              from '@iconify/vue'
 import { Avatar, Skeleton }  from '@starling/ui'
-import { useRecentActivity } from '../../composables/useRecentActivity.js'
-import { useTimelineOpening } from '../../composables/useTimelineOpening.js'
-import { relativeTime }      from '../../lib/utils.js'
+import { useRecentActivity } from '../../composables/useRecentActivity'
+import { useTimelineOpening } from '../../composables/useTimelineOpening'
+import { relativeTime }      from '../../lib/utils'
 
 const { t } = useI18n()
 const { timelines, loading, load } = useRecentActivity()

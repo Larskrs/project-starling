@@ -6,8 +6,8 @@ import DialogContent from './DialogContent.vue'
 import DialogHeader  from './DialogHeader.vue'
 import DialogTitle   from './DialogTitle.vue'
 import Input         from './Input.vue'
-import { ICON_GROUPS, iconLabel, searchIcons } from './icons.js'
-import { cn } from './utils.js'
+import { ICON_GROUPS, iconLabel, searchIcons } from './icons'
+import { cn } from './utils'
 
 /**
  * Trigger button + a picker dialog over the curated MDI catalogue.

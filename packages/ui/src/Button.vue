@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 const props = defineProps({
   variant: { type: String, default: 'default' },

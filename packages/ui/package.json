@@ -4,14 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev":   "vite build --watch"
+    "build": "vite build && vue-tsc --emitDeclarationOnly -p tsconfig.json",
+    "dev": "vite build --watch",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "exports": {
-    ".":                 "./dist/index.js",
-    "./theme.css":       "./src/theme.css",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./theme.css": "./src/theme.css",
     "./tailwind-preset": "./tailwind-preset.js",
-    "./*":               "./dist/*.js"
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -22,5 +29,8 @@
     "radix-vue": "^1.0.0",
     "vue": "^3.0.0",
     "vue-router": "^4.0.0"
+  },
+  "devDependencies": {
+    "vue-tsc": "^2.2.12"
   }
 }

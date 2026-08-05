@@ -2,8 +2,8 @@
 import { ref, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FormDialog, FormField, IconPicker, Input } from '@starling/ui'
-import { useEntityDialog } from '../../../composables/useEntityDialog.js'
-import { useIconPicker } from '../../../composables/useIconPicker.js'
+import { useEntityDialog } from '../../../composables/useEntityDialog'
+import { useIconPicker } from '../../../composables/useIconPicker'
 
 const props = defineProps({
   open:      { type: Boolean, required: true },

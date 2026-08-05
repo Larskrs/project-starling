@@ -1,7 +1,7 @@
 <script setup>
 import { DialogPortal, DialogOverlay, DialogContent, DialogClose } from 'radix-vue'
 import { Icon } from '@iconify/vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 const props = defineProps({
   class: { type: String, default: '' },

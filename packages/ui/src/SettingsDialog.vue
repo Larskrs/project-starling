@@ -7,7 +7,7 @@ import DialogTitle   from './DialogTitle.vue'
 import DialogFooter  from './DialogFooter.vue'
 import DialogSidebar from './DialogSidebar.vue'
 import Button        from './Button.vue'
-import { cn } from './utils.js'
+import { cn } from './utils'
 
 /**
  * A form dialog split into pages: a page rail on the left, the active page's

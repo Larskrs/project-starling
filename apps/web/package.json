@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "node src/views/TimelineEditor/transportClock.test.ts && node src/views/TimelineEditor/mediaDownloads.test.ts && node src/views/TimelineEditor/useAudioEngine.test.ts"
   },
   "dependencies": {
     "@iconify/vue": "^5.0.1",
@@ -23,10 +25,12 @@
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
     "@vitejs/plugin-vue": "^6.0.7",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.3",
     "vite": "^8.0.16"
   }
 }
