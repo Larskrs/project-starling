@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { Avatar, Button, ConfirmDialog, IconButton, ListSection, Skeleton } from '@starling/ui'
 import { useProductionCrud } from '../../composables/useProductionCrud.js'
+import { useTimelineOpening } from '../../composables/useTimelineOpening.js'
 import ManagePageHeader from './components/ManagePageHeader.vue'
 import TimelineDialog   from './components/TimelineDialog.vue'
 
@@ -12,6 +13,7 @@ const route  = useRoute()
 const router = useRouter()
 const { t }  = useI18n()
 const data   = inject('production-data')
+const { startOpening } = useTimelineOpening()
 
 const {
   items: timelinesList, loading, error, load,
@@ -47,6 +49,8 @@ function duration(tl) {
 }
 
 function openEditor(tl) {
+  // Names the loading screen before the route even starts resolving.
+  startOpening(tl)
   router.push(`/c/${route.params.cslug}/p/${route.params.pslug}/editor/${tl.id}`)
 }
 </script>

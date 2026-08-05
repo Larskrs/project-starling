@@ -59,7 +59,7 @@ function openDetail(id) {
       <template #empty>{{ $t('sourceSets.noSets') }}</template>
 
       <ListItem v-for="s in sourceSets" :key="s.id">
-        <Icon icon="mdi:layers-outline" class="size-4 text-muted-foreground shrink-0" />
+        <Icon :icon="s.icon || 'mdi:layers-outline'" class="size-4 text-muted-foreground shrink-0" />
         <button
           class="flex-1 text-left text-sm font-medium text-foreground hover:text-primary transition-colors truncate"
           @click="openDetail(s.id)"

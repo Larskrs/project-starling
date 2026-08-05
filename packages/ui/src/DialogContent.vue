@@ -6,6 +6,10 @@ import { cn } from './utils.js'
 const props = defineProps({
   class: { type: String, default: '' },
 })
+
+// Attrs (and listeners like @open-auto-focus) belong on the radix content, not
+// on the portal — the portal is a teleport and would swallow them.
+defineOptions({ inheritAttrs: false })
 </script>
 
 <template>
@@ -19,6 +23,7 @@ const props = defineProps({
       class="dialog-overlay fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <DialogContent
+        v-bind="$attrs"
         :class="cn(
           'relative w-full bg-card border border-border rounded-lg shadow-xl outline-none',
           props.class

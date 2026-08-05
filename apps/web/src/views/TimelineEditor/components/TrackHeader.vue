@@ -21,9 +21,12 @@ const props = defineProps({
 
 // reorder-start fires on any row pointerdown; the parent only enters reorder
 // mode after a ≥5px vertical drag, so plain clicks still select as before.
-defineEmits(['select', 'toggle-mute', 'toggle-lock', 'add-clip', 'delete', 'resize-start', 'reorder-start'])
+defineEmits(['select', 'toggle-mute', 'toggle-lock', 'add-clip', 'delete', 'settings', 'resize-start', 'reorder-start'])
 
 const menuOpen = ref(false)
+
+// The track's own icon wins; otherwise it shows whatever its type provides.
+const icon = computed(() => props.track.icon || props.track.typeIcon || null)
 
 // The row stretches from 28px (ruler strips) to 256px, so the layout adapts
 // rather than assuming one size: slim rows keep a single line and drop the
@@ -57,6 +60,13 @@ const stackBadge = computed(() => props.height >= 52 && !!props.badge)
         <span v-if="track.isLocked" class="shrink-0 flex items-center" :title="$t('editor.locked')">
           <Icon icon="mdi:lock" class="size-3 text-muted-foreground" />
         </span>
+        <Icon
+          v-if="icon"
+          :icon="icon"
+          class="shrink-0"
+          :class="compact ? 'size-3.5' : 'size-4'"
+          :style="{ color: `oklch(65% 0.18 ${track.typeHue ?? 250})` }"
+        />
         <span
           class="truncate min-w-0 font-medium text-foreground"
           :class="compact ? 'text-xs' : 'text-sm'"
@@ -130,6 +140,10 @@ const stackBadge = computed(() => props.height >= 52 && !!props.badge)
             @click="$emit('toggle-lock')"
           >
             {{ track.isLocked ? $t('editor.unlock') : $t('editor.lock') }}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem icon="mdi:cog-outline" :disabled="track.isLocked" @click="$emit('settings')">
+            {{ $t('editor.trackSettings') }}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <!-- Deleting takes every clip with it — exactly what the lock guards -->

@@ -3,11 +3,13 @@ import { eq, and, sql } from 'drizzle-orm';
 import { db, tracks, trackTypes } from '@starling/db';
 import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/handler.js';
 import { requireTimelineParam } from '../../../../lib/production.js';
+import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
   typeId:    z.string().uuid(),
   name:      z.string().min(1).max(128),
+  icon:      iconField,
   sourceId:  z.string().uuid().nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
 });
@@ -34,6 +36,7 @@ export default defineEventHandler(async (event) => {
     timelineId: timeline.id,
     typeId:     body.typeId,
     name:       body.name,
+    icon:       body.icon ?? null,
     mode:       trackType.trackMode,
     sourceId:   body.sourceId ?? null,
     sortOrder,

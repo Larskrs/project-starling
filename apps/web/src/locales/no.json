@@ -160,6 +160,11 @@
     "type": {
       "image": "Bilder",
       "audio": "Lyd"
+    },
+    "picker": {
+      "title": "Velg fil",
+      "none": "Ingen fil",
+      "cancel": "Avbryt"
     }
   },
   "profile": {
@@ -313,7 +318,6 @@
     "noSource": "Ingen",
     "file": "Lydfil",
     "noFile": "Ingen fil",
-    "noAudioFiles": "Ingen lydfiler lastet opp ennå.",
     "clipColor": "Klippfarge",
     "resetColor": "Tilbakestill",
     "endMustBeAfterStart": "Slutt må være etter mediestart",
@@ -339,6 +343,18 @@
       "decoding": "Dekoder…",
       "failed": "Mislyktes",
       "unnamed": "Mediefil"
+    },
+    "trackSettings": "Sporinnstillinger",
+    "trackDialog": {
+      "title": "Sporinnstillinger"
+    },
+    "trackIcon": "Ikon",
+    "trackIconDescription": "Overstyrer ikonet sporet arver fra sportypen.",
+    "trackIconInherit": "Samme som sportypen",
+    "trackIconInheritNamed": "Samme som sportypen ({name})",
+    "loading": {
+      "opening": "Åpner tidslinje…",
+      "untitled": "Tidslinje"
     }
   },
   "trackTypes": {
@@ -380,7 +396,6 @@
       "failedToCreate": "Klarte ikke å opprette sportype fra forhåndsvalg"
     },
     "settings": {
-      "title": "Editoroppførsel",
       "trackDisplay": "Sporvisning",
       "displayNormal": "Normal",
       "displayRuler": "Linjalstripe",
@@ -388,15 +403,21 @@
       "nameNormal": "Normal",
       "nameStretch": "Strekk",
       "nameEmphasize": "Fremhev",
-      "metronome": "Metronom — klipp setter BPM",
+      "metronome": "Metronom",
       "metronomeOverridesDisplay": "Metronom er på — spor av denne typen bruker alltid BPM-stripen (slag- og taktlinjer)",
-      "tts": "Les klipptekst høyt under avspilling",
+      "tts": "Les klipptekst høyt",
       "clipDisplay": "Klippvisning",
       "clipNormal": "Normal",
       "clipZebra": "Sebra",
       "clipBorder": "Ramme",
       "clipTransparent": "Gjennomsiktig"
-    }
+    },
+    "pages": {
+      "general": "Generelt",
+      "appearance": "Utseende",
+      "behavior": "Oppførsel"
+    },
+    "icon": "Ikon"
   },
   "sourceSets": {
     "title": "Kildesett",
@@ -420,7 +441,8 @@
     "rename": "Gi nytt navn",
     "delete": "Slett",
     "confirmDeleteTitle": "Slett kildesett?",
-    "confirmDelete": "Slett \"{name}\"? Kilder inni vil bli fratatt settet."
+    "confirmDelete": "Slett \"{name}\"? Kilder inni vil bli fratatt settet.",
+    "icon": "Ikon"
   },
   "sources": {
     "title": "Kilder",
@@ -447,7 +469,8 @@
     "edit": "Rediger kilde",
     "delete": "Slett",
     "confirmDeleteTitle": "Slett kilde?",
-    "confirmDelete": "Slett \"{name}\"? Dette kan ikke angres."
+    "confirmDelete": "Slett \"{name}\"? Dette kan ikke angres.",
+    "icon": "Ikon"
   },
   "time": {
     "justNow": "nå nettopp",
@@ -484,6 +507,21 @@
         "title": "Laget for team",
         "text": "Selskaper, produksjoner, roller og tilganger — alle ser akkurat det de trenger, ikke noe mer."
       }
+    }
+  },
+  "icons": {
+    "pick": "Velg ikon",
+    "search": "Søk etter ikoner…",
+    "none": "Uten ikon",
+    "empty": "Ingen ikoner passer søket.",
+    "groups": {
+      "production": "Produksjon",
+      "audio": "Lyd",
+      "graphics": "Grafikk og tekst",
+      "people": "Personer",
+      "time": "Tid og markører",
+      "status": "Former og status",
+      "objects": "Objekter"
     }
   }
 }

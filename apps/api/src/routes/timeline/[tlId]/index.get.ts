@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
       typeId:          tracks.typeId,
       sourceId:        tracks.sourceId,
       name:            tracks.name,
+      icon:            tracks.icon,
       mode:            tracks.mode,
       sortOrder:       tracks.sortOrder,
       isMuted:         tracks.isMuted,
@@ -31,6 +32,7 @@ export default defineEventHandler(async (event) => {
       createdAt:       tracks.createdAt,
       typeName:         trackTypes.name,
       typeHue:          trackTypes.hue,
+      typeIcon:         trackTypes.icon,
       typeTrackDisplay: trackTypes.trackDisplay,
       typeNameDisplay:  trackTypes.nameDisplay,
       typeClipDisplay:  trackTypes.clipDisplay,
@@ -39,6 +41,7 @@ export default defineEventHandler(async (event) => {
       sourceName:      sources.name,
       sourceShortName: sources.shortName,
       sourceHue:       sources.hue,
+      sourceIcon:      sources.icon,
     })
       .from(tracks)
       .leftJoin(trackTypes, eq(tracks.typeId, trackTypes.id))

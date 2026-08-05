@@ -6,6 +6,7 @@ import DialogContent from '@starling/ui/DialogContent'
 import DialogHeader  from '@starling/ui/DialogHeader'
 import DialogTitle   from '@starling/ui/DialogTitle'
 import DialogFooter  from '@starling/ui/DialogFooter'
+import { Icon } from '@iconify/vue'
 import { Input, Label, Button, SelectMenu } from '@starling/ui'
 import { useApi } from '../../../composables/useApi.js'
 
@@ -26,7 +27,7 @@ const loading   = ref(false)
 const error     = ref('')
 
 const typeOptions = computed(() =>
-  props.trackTypes.map(tt => ({ value: tt.id, label: tt.name }))
+  props.trackTypes.map(tt => ({ value: tt.id, label: tt.name, icon: tt.icon, hue: tt.hue }))
 )
 
 watch(() => props.open, (open) => {
@@ -85,7 +86,24 @@ async function submit() {
             v-model="typeId"
             :options="typeOptions"
             :null-label="$t('editor.selectTrackType')"
-          />
+          >
+            <template #selected="{ option }">
+              <Icon
+                v-if="option?.icon"
+                :icon="option.icon"
+                class="size-4 shrink-0"
+                :style="{ color: `oklch(65% 0.18 ${option.hue ?? 250})` }"
+              />
+            </template>
+            <template #icon="{ option }">
+              <Icon
+                v-if="option?.icon"
+                :icon="option.icon"
+                class="size-4"
+                :style="{ color: `oklch(65% 0.18 ${option.hue ?? 250})` }"
+              />
+            </template>
+          </SelectMenu>
         </div>
 
         <p v-if="!trackTypes.length" class="text-xs text-muted-foreground">

@@ -1,10 +1,11 @@
 <script setup>
 import { ref, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FormDialog, FormField, Input } from '@starling/ui'
+import { FormDialog, FormField, IconPicker, Input } from '@starling/ui'
 import HuePicker from './HuePicker.vue'
 import SourceBadge from './SourceBadge.vue'
 import { useEntityDialog } from '../../../composables/useEntityDialog.js'
+import { useIconPicker } from '../../../composables/useIconPicker.js'
 
 const props = defineProps({
   open:   { type: Boolean, required: true },
@@ -16,10 +17,12 @@ const emit = defineEmits(['update:open', 'created', 'updated'])
 
 const { t } = useI18n()
 const data = inject('production-data')
+const iconPicker = useIconPicker()
 
 const name      = ref('')
 const shortName = ref('')
 const hue       = ref(200)
+const icon      = ref(null)
 
 const { isEdit, loading, error, submit } = useEntityDialog({
   open:   () => props.open,
@@ -30,14 +33,16 @@ const { isEdit, loading, error, submit } = useEntityDialog({
     name.value      = s.name
     shortName.value = s.shortName
     hue.value       = s.hue
+    icon.value      = s.icon ?? null
   },
   reset: () => {
-    name.value = ''; shortName.value = ''; hue.value = 200
+    name.value = ''; shortName.value = ''; hue.value = 200; icon.value = null
   },
   payload: () => ({
     name:      name.value.trim(),
     shortName: shortName.value.trim(),
     hue:       hue.value,
+    icon:      icon.value,
   }),
   validate:      () => !!name.value.trim() && !!shortName.value.trim(),
   failedMessage: () => t('sources.failedToSave'),
@@ -83,9 +88,13 @@ const { isEdit, loading, error, submit } = useEntityDialog({
       <HuePicker v-model="hue" />
     </FormField>
 
+    <FormField :label="$t('sources.icon')">
+      <IconPicker v-model="icon" v-bind="iconPicker" :hue="hue" allow-none />
+    </FormField>
+
     <!-- Preview -->
     <div class="flex items-center gap-2 text-sm text-muted-foreground">
-      <SourceBadge :short-name="shortName" :hue="hue" />
+      <SourceBadge :short-name="shortName" :hue="hue" :icon="icon" />
       <span>{{ name || $t('sources.namePlaceholder') }}</span>
     </div>
   </FormDialog>

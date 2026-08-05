@@ -2,7 +2,7 @@
 import { ref, computed, inject, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { Avatar, FormDialog, FormField, ImageCropper, Input, SelectMenu } from '@starling/ui'
+import { Avatar, FormField, ImageCropper, Input, SelectMenu, SplitDialog } from '@starling/ui'
 import { useEntityDialog } from '../../../composables/useEntityDialog.js'
 import { useApi } from '../../../composables/useApi.js'
 
@@ -106,7 +106,7 @@ const { isEdit, loading, error, submit } = useEntityDialog({
 </script>
 
 <template>
-  <FormDialog
+  <SplitDialog
     :open="open"
     :title="isEdit ? $t('timelines.editDialog.title') : $t('timelines.addDialog.title')"
     :submit-label="isEdit ? $t('timelines.save') : $t('timelines.create')"
@@ -117,53 +117,52 @@ const { isEdit, loading, error, submit } = useEntityDialog({
     @update:open="$emit('update:open', $event)"
     @submit="submit"
   >
-    <div class="flex items-center gap-4">
-      <label class="group relative size-16 shrink-0 cursor-pointer">
-        <img v-if="preview" :src="preview" alt="" class="size-16 rounded-xl object-cover" />
-        <Avatar v-else :id="profileImageId" class="size-16 rounded-xl">
-          <Icon icon="mdi:movie-open-outline" class="size-7 text-muted-foreground/75" />
-        </Avatar>
-        <div class="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 transition-colors group-hover:bg-black/45">
-          <Icon icon="mdi:camera-outline" class="text-white opacity-0 transition-opacity group-hover:opacity-100" />
-        </div>
-        <input type="file" accept="image/*" class="sr-only" @change="onImagePick" />
-      </label>
+    <template #left>
+      <FormField for="tl-name" :label="$t('timelines.name')">
+        <Input id="tl-name" v-model="name" :placeholder="$t('timelines.namePlaceholder')" maxlength="128" autofocus required />
+      </FormField>
 
-      <div class="min-w-0">
-        <p class="text-sm font-medium">{{ $t('timelines.image') }}</p>
-        <p class="text-xs text-muted-foreground">{{ $t('timelines.imageHint') }}</p>
+      <FormField :label="$t('timelines.image')">
+        <label class="group relative size-20 shrink-0 cursor-pointer">
+          <img v-if="preview" :src="preview" alt="" class="size-20 rounded-xl object-cover" />
+          <Avatar v-else :id="profileImageId" class="size-20 rounded-xl">
+            <Icon icon="mdi:movie-open-outline" class="size-8 text-muted-foreground/75" />
+          </Avatar>
+          <div class="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 transition-colors group-hover:bg-black/45">
+            <Icon icon="mdi:camera-outline" class="text-white opacity-0 transition-opacity group-hover:opacity-100" />
+          </div>
+          <input type="file" accept="image/*" class="sr-only" @change="onImagePick" />
+        </label>
+      </FormField>
+    </template>
+
+    <template #right>
+      <FormField :label="$t('timelines.frameRate')">
+        <SelectMenu v-model="frameRate" :options="frameRateOptions" />
+      </FormField>
+
+      <div class="flex gap-3">
+        <FormField for="tl-start" :label="$t('timelines.startFrame')" class="flex-1">
+          <Input id="tl-start" v-model.number="startFrame" type="number" min="0" step="1" />
+        </FormField>
+        <FormField for="tl-end" :label="$t('timelines.endFrame')" class="flex-1">
+          <Input
+            id="tl-end"
+            v-model.number="endFrame"
+            type="number"
+            min="1"
+            step="1"
+            :class="endFrameError ? 'border-destructive' : ''"
+          />
+        </FormField>
       </div>
-    </div>
+      <p v-if="endFrameError" class="-mt-2 text-xs text-destructive">{{ endFrameError }}</p>
 
-    <FormField for="tl-name" :label="$t('timelines.name')">
-      <Input id="tl-name" v-model="name" :placeholder="$t('timelines.namePlaceholder')" maxlength="128" autofocus required />
-    </FormField>
-
-    <FormField :label="$t('timelines.frameRate')">
-      <SelectMenu v-model="frameRate" :options="frameRateOptions" />
-    </FormField>
-
-    <div class="flex gap-3">
-      <FormField for="tl-start" :label="$t('timelines.startFrame')" class="flex-1">
-        <Input id="tl-start" v-model.number="startFrame" type="number" min="0" step="1" />
+      <FormField for="tl-ltc" :label="$t('timelines.ltcOffset')">
+        <Input id="tl-ltc" v-model.number="ltcOffsetFrames" type="number" step="1" />
       </FormField>
-      <FormField for="tl-end" :label="$t('timelines.endFrame')" class="flex-1">
-        <Input
-          id="tl-end"
-          v-model.number="endFrame"
-          type="number"
-          min="1"
-          step="1"
-          :class="endFrameError ? 'border-destructive' : ''"
-        />
-      </FormField>
-    </div>
-    <p v-if="endFrameError" class="text-xs text-destructive -mt-1">{{ endFrameError }}</p>
+    </template>
+  </SplitDialog>
 
-    <FormField for="tl-ltc" :label="$t('timelines.ltcOffset')">
-      <Input id="tl-ltc" v-model.number="ltcOffsetFrames" type="number" step="1" />
-    </FormField>
-
-    <ImageCropper :file="cropFile" :aspect-ratio="1" :max-output="600" @crop="onCropped" @cancel="cropFile = null" />
-  </FormDialog>
+  <ImageCropper :file="cropFile" :aspect-ratio="1" :max-output="600" @crop="onCropped" @cancel="cropFile = null" />
 </template>

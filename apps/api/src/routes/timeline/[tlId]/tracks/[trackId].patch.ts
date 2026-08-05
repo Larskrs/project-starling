@@ -3,10 +3,12 @@ import { eq, and } from 'drizzle-orm';
 import { db, tracks } from '@starling/db';
 import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/handler.js';
 import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
+import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
   name:      z.string().min(1).max(128).optional(),
+  icon:      iconField,
   isMuted:   z.boolean().optional(),
   isLocked:  z.boolean().optional(),
   sourceId:  z.string().uuid().nullable().optional(),

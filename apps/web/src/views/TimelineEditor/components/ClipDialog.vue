@@ -2,13 +2,9 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import Dialog        from '@starling/ui/Dialog'
-import DialogContent from '@starling/ui/DialogContent'
-import DialogHeader  from '@starling/ui/DialogHeader'
-import DialogTitle   from '@starling/ui/DialogTitle'
-import DialogFooter  from '@starling/ui/DialogFooter'
-import { Input, Label, Button, Skeleton } from '@starling/ui'
+import { Button, FormField, Input, SplitDialog } from '@starling/ui'
 import HuePicker from '../../Production/components/HuePicker.vue'
+import SelectFileDialog from '../../../components/storage/SelectFileDialog.vue'
 import { useApi } from '../../../composables/useApi.js'
 
 const props = defineProps({
@@ -41,14 +37,24 @@ const hueProxy = computed({
   set: (v) => { hue.value = v },
 })
 
-// Audio file list (loaded when clip-mode dialog opens)
-const audioFiles    = ref([])
-const loadingFiles  = ref(false)
+// A clip renders either the audio or the image behind its fileId, so both are
+// offered. The picked file is browsed for in SelectFileDialog; `pickedFile`
+// only holds enough to label the button. On edit the clip arrives with a
+// fileId and no name, so the name is looked up once.
+const CLIP_FILE_TYPES = ['audio', 'image']
+
+const pickedFile   = ref(null)
+const filePickerOpen = ref(false)
 
 const isEdit      = computed(() => props.clip !== null)
 const isEventMode = computed(() => props.track?.mode === 'event')
 // Source grid only applies to event-mode tracks with sources.
 const hasSources  = computed(() => isEventMode.value && props.trackSources.length > 0)
+
+// The right column holds whatever is specific to this track's kind: its
+// sources, or its audio. An event track with no source set has neither, and
+// the dialog narrows to the general fields alone.
+const hasDetail = computed(() => hasSources.value || !isEventMode.value)
 
 const endFrameError = computed(() =>
   !isEventMode.value && !fileId.value && mediaEnd.value <= mediaStart.value
@@ -79,20 +85,29 @@ watch(() => props.open, async (open) => {
     hue.value        = null
   }
 
-  if (!isEventMode.value && audioFiles.value.length === 0) {
-    await loadAudioFiles()
-  }
+  pickedFile.value = null
+  if (fileId.value) resolveFileName(fileId.value)
 })
 
-async function loadAudioFiles() {
-  loadingFiles.value = true
+async function resolveFileName(id) {
   const { ok, data } = await $fetch(
-    `/api/production/${props.timeline?.productionId}/files?type=audio`,
+    `/api/production/${props.timeline?.productionId}/files`,
     { silent: true },
   )
-  loadingFiles.value = false
-  if (ok) audioFiles.value = data ?? []
+  // Only apply if the dialog is still showing the clip we asked about.
+  if (ok && fileId.value === id) pickedFile.value = (data ?? []).find(f => f.id === id) ?? null
 }
+
+function onFilePicked(file) {
+  fileId.value         = file?.id ?? null
+  pickedFile.value     = file
+  filePickerOpen.value = false
+}
+
+const fileIcon = computed(() => {
+  if (!fileId.value) return 'mdi:music-note-off'
+  return pickedFile.value?.type === 'image' ? 'mdi:image-outline' : 'mdi:music-note'
+})
 
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`
@@ -151,164 +166,138 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog :open="open" @update:open="!$event && close()">
-    <DialogContent class="max-w-sm p-6 flex flex-col gap-4">
-      <DialogHeader>
-        <DialogTitle>
-          {{ isEdit ? $t('editor.editClipDialog.title') : $t('editor.addClipDialog.title') }}
-          <span v-if="track" class="font-normal text-muted-foreground text-sm ml-1">— {{ track.name }}</span>
-        </DialogTitle>
-      </DialogHeader>
+  <SplitDialog
+    :open="open"
+    :title="isEdit ? $t('editor.editClipDialog.title') : $t('editor.addClipDialog.title')"
+    :description="track?.name"
+    :submit-label="isEdit ? $t('editor.save') : $t('editor.addClip')"
+    :cancel-label="$t('editor.cancel')"
+    :loading="loading"
+    :disabled="!!endFrameError"
+    :error="error"
+    :split="hasDetail"
+    @update:open="!$event && close()"
+    @submit="submit"
+  >
+    <template #left>
+      <FormField for="cd-label" :label="$t('editor.clipLabel')">
+        <Input id="cd-label" v-model="label" :placeholder="$t('editor.clipLabelPlaceholder')" maxlength="256" autofocus />
+      </FormField>
 
-      <form class="flex flex-col gap-3" @submit.prevent="submit">
+      <FormField for="cd-pos" :label="$t('editor.clipPosition')">
+        <Input id="cd-pos" v-model.number="position" type="number" min="0" step="1" />
+      </FormField>
 
-        <!-- Label -->
-        <div class="flex flex-col gap-1.5">
-          <Label for="cd-label">{{ $t('editor.clipLabel') }}</Label>
-          <Input
-            id="cd-label"
-            v-model="label"
-            :placeholder="$t('editor.clipLabelPlaceholder')"
-            maxlength="256"
-            autofocus
-          />
+      <!-- Hue override (null = inherit the track type's hue) -->
+      <FormField :label="$t('editor.clipColor')">
+        <div class="flex items-center gap-2">
+          <HuePicker v-model="hueProxy" class="w-full" :class="hue === null ? 'opacity-50' : ''" />
+          <Button
+            v-if="hue !== null"
+            type="button"
+            variant="ghost"
+            size="xs"
+            class="shrink-0 text-muted-foreground"
+            @click="hue = null"
+          >
+            {{ $t('editor.resetColor') }}
+          </Button>
         </div>
+      </FormField>
+    </template>
 
-        <!-- Position -->
-        <div class="flex flex-col gap-1.5">
-          <Label for="cd-pos">{{ $t('editor.clipPosition') }}</Label>
-          <Input id="cd-pos" v-model.number="position" type="number" min="0" step="1" />
+    <template #right>
+      <!-- Source grid: event-mode tracks with sources in their set -->
+      <FormField v-if="hasSources" :label="$t('editor.clipSource')">
+        <div class="grid grid-cols-4 gap-2">
+          <button
+            v-for="src in trackSources"
+            :key="src.id"
+            type="button"
+            class="flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border px-1.5 py-2.5 text-center transition-all"
+            :class="sourceId === src.id
+              ? 'border-primary bg-primary/5 ring-1 ring-primary'
+              : 'border-border hover:border-muted-foreground/50 hover:bg-accent'"
+            @click="selectSource(src)"
+          >
+            <div
+              class="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
+              :style="{ backgroundColor: sourceColor(src) }"
+            >
+              {{ src.shortName }}
+            </div>
+            <span class="mt-0.5 line-clamp-2 w-full text-center text-[10px] leading-tight text-foreground">
+              {{ src.name }}
+            </span>
+          </button>
         </div>
+      </FormField>
 
-        <!-- Source grid: event-mode tracks with sources in their set -->
-        <template v-if="hasSources">
-          <div class="flex flex-col gap-2">
-            <Label>{{ $t('editor.clipSource') }}</Label>
-            <div class="grid grid-cols-4 gap-2">
-              <button
-                v-for="src in trackSources"
-                :key="src.id"
-                type="button"
-                class="flex flex-col items-center gap-1.5 rounded-lg border px-1.5 py-2.5 text-center transition-all cursor-pointer"
-                :class="sourceId === src.id
-                  ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                  : 'border-border hover:border-muted-foreground/50 hover:bg-accent'"
-                @click="selectSource(src)"
-              >
-                <div
-                  class="size-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-sm"
-                  :style="{ backgroundColor: sourceColor(src) }"
-                >
-                  {{ src.shortName }}
-                </div>
-                <span class="text-[10px] leading-tight text-foreground text-center line-clamp-2 w-full mt-0.5">
-                  {{ src.name }}
-                </span>
-              </button>
-            </div>
-          </div>
-        </template>
-
-        <!-- Clip mode: file + media range -->
-        <template v-else-if="!isEventMode">
-
-          <!-- Audio file picker -->
-          <div class="flex flex-col gap-1.5">
-            <Label>{{ $t('editor.file') }}</Label>
-
-            <div v-if="loadingFiles" class="flex flex-col gap-1">
-              <Skeleton v-for="i in 3" :key="i" class="h-9 rounded-md" />
-            </div>
-
-            <p v-else-if="audioFiles.length === 0" class="text-xs text-muted-foreground">
-              {{ $t('editor.noAudioFiles') }}
-            </p>
-
-            <div v-else class="flex flex-col max-h-36 overflow-y-auto rounded-md border border-border divide-y divide-border">
-              <!-- No file option -->
-              <button
-                type="button"
-                class="flex items-center gap-2 px-3 py-2 text-sm transition-colors text-left"
-                :class="fileId === null ? 'bg-muted text-muted-foreground' : 'hover:bg-accent text-muted-foreground'"
-                @click="fileId = null"
-              >
-                <Icon icon="mdi:music-note-off" class="size-3.5 shrink-0 opacity-50" />
-                <span class="italic">{{ $t('editor.noFile') }}</span>
-              </button>
-              <button
-                v-for="f in audioFiles"
-                :key="f.id"
-                type="button"
-                class="flex items-center gap-2 px-3 py-2 text-sm transition-colors text-left"
-                :class="fileId === f.id
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'hover:bg-accent'"
-                @click="fileId = f.id"
-              >
-                <Icon icon="mdi:music-note" class="size-3.5 shrink-0" />
-                <span class="truncate flex-1">{{ f.name }}</span>
-                <span class="text-xs text-muted-foreground shrink-0">{{ formatSize(f.size) }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Media range -->
-          <div class="flex gap-3">
-            <div class="flex flex-col gap-1.5 flex-1">
-              <Label for="cd-ms">{{ $t('editor.mediaStart') }}</Label>
-              <Input id="cd-ms" v-model.number="mediaStart" type="number" min="0" step="1" />
-            </div>
-            <div class="flex flex-col gap-1.5 flex-1">
-              <Label for="cd-end">{{ $t('editor.mediaEnd') }}</Label>
-              <Input
-                id="cd-end"
-                v-model.number="mediaEnd"
-                type="number"
-                min="1"
-                step="1"
-                :class="endFrameError ? 'border-destructive' : ''"
-              />
-            </div>
-          </div>
-          <p v-if="endFrameError" class="text-xs text-destructive -mt-1">{{ endFrameError }}</p>
-
-        </template>
-
-        <!-- Hue override (null = inherit the track type's hue) -->
-        <div class="flex flex-col gap-1.5">
-          <div class="flex items-center justify-between">
-            <Label>{{ $t('editor.clipColor') }}</Label>
+      <!-- Clip mode: file + media range -->
+      <template v-else-if="!isEventMode">
+        <FormField :label="$t('editor.file')">
+          <div class="flex items-center gap-2">
             <button
-              v-if="hue !== null"
               type="button"
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              @click="hue = null"
-            >{{ $t('editor.resetColor') }}</button>
+              class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-sm
+                     transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              @click="filePickerOpen = true"
+            >
+              <Icon :icon="fileIcon" class="size-4 shrink-0 text-muted-foreground" />
+              <span class="flex-1 truncate text-left" :class="fileId ? 'text-foreground' : 'text-muted-foreground'">
+                {{ pickedFile?.name ?? (fileId ? $t('editor.file') : $t('editor.noFile')) }}
+              </span>
+              <span v-if="pickedFile" class="shrink-0 text-xs text-muted-foreground">
+                {{ formatSize(pickedFile.size) }}
+              </span>
+              <Icon icon="mdi:folder-open-outline" class="size-4 shrink-0 text-muted-foreground" />
+            </button>
+
+            <Button
+              v-if="fileId"
+              type="button"
+              variant="ghost"
+              size="xs"
+              class="shrink-0 text-muted-foreground"
+              :title="$t('editor.noFile')"
+              @click="onFilePicked(null)"
+            >
+              <Icon icon="mdi:close" class="size-4" />
+            </Button>
           </div>
-          <HuePicker v-model="hueProxy" :class="hue === null ? 'opacity-50' : ''" />
+        </FormField>
+
+        <div class="flex gap-3">
+          <FormField for="cd-ms" :label="$t('editor.mediaStart')" class="flex-1">
+            <Input id="cd-ms" v-model.number="mediaStart" type="number" min="0" step="1" />
+          </FormField>
+          <FormField for="cd-end" :label="$t('editor.mediaEnd')" class="flex-1">
+            <Input
+              id="cd-end"
+              v-model.number="mediaEnd"
+              type="number"
+              min="1"
+              step="1"
+              :class="endFrameError ? 'border-destructive' : ''"
+            />
+          </FormField>
         </div>
+        <p v-if="endFrameError" class="-mt-2 text-xs text-destructive">{{ endFrameError }}</p>
+      </template>
+    </template>
+  </SplitDialog>
 
-        <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
-
-        <DialogFooter class="pt-1">
-          <Button type="button" variant="outline" @click="close">{{ $t('editor.cancel') }}</Button>
-          <Button
-            v-if="!hasSources"
-            type="submit"
-            :disabled="!!endFrameError || loading"
-          >
-            {{ loading ? '…' : (isEdit ? $t('editor.save') : $t('editor.addClip')) }}
-          </Button>
-          <Button
-            v-else
-            type="submit"
-            variant="outline"
-            :disabled="loading"
-          >
-            {{ loading ? '…' : $t('editor.save') }}
-          </Button>
-        </DialogFooter>
-      </form>
-    </DialogContent>
-  </Dialog>
+  <!-- v-if: the picker needs a production to browse, and the timeline
+       arrives asynchronously. -->
+  <SelectFileDialog
+    v-if="timeline"
+    :open="filePickerOpen"
+    :production-id="timeline.productionId"
+    :title="$t('editor.file')"
+    :file-types="CLIP_FILE_TYPES"
+    allow-none
+    :none-label="$t('editor.noFile')"
+    @select="onFilePicked"
+    @close="filePickerOpen = false"
+  />
 </template>

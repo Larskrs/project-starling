@@ -2,9 +2,12 @@
 import { ref, computed, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { FormDialog, FormField, Input, SelectMenu, SwitchTab } from '@starling/ui'
+import {
+  IconPicker, Input, SelectMenu, SettingsDialog, SettingsPage, SettingsRow, Switch, SwitchTab,
+} from '@starling/ui'
 import HuePicker from './HuePicker.vue'
 import { useEntityDialog } from '../../../composables/useEntityDialog.js'
+import { useIconPicker } from '../../../composables/useIconPicker.js'
 
 const props = defineProps({
   open:       { type: Boolean, required: true },
@@ -16,9 +19,11 @@ const emit = defineEmits(['update:open', 'created', 'updated'])
 
 const data = inject('production-data')
 const { t } = useI18n()
+const iconPicker = useIconPicker()
 
 const name        = ref('')
 const hue         = ref(250)
+const icon        = ref(null)
 const mode        = ref('clip')
 const sourceSetId = ref(null)
 
@@ -34,7 +39,7 @@ const modeOptions = computed(() => [
   { value: 'event', label: t('trackTypes.modeEvent') },
 ])
 const sourceSetOptions = computed(() =>
-  props.sourceSets.map(s => ({ value: s.id, label: s.name }))
+  props.sourceSets.map(s => ({ value: s.id, label: s.name, icon: s.icon || 'mdi:layers-outline' }))
 )
 const trackDisplayOptions = computed(() => [
   { value: 'normal', label: t('trackTypes.settings.displayNormal') },
@@ -52,6 +57,14 @@ const clipDisplayOptions = computed(() => [
   { value: 'transparent', label: t('trackTypes.settings.clipTransparent') },
 ])
 
+// `invalid` marks the page holding the field that blocks submitting, so the
+// disabled save button is explained even from another page.
+const pages = computed(() => [
+  { id: 'general',    label: t('trackTypes.pages.general'),    icon: 'mdi:tune',                invalid: !name.value.trim() },
+  { id: 'appearance', label: t('trackTypes.pages.appearance'), icon: 'mdi:palette-outline' },
+  { id: 'behavior',   label: t('trackTypes.pages.behavior'),   icon: 'mdi:play-circle-outline' },
+])
+
 const { isEdit, loading, error, submit } = useEntityDialog({
   open:   () => props.open,
   entity: () => props.trackType,
@@ -60,6 +73,7 @@ const { isEdit, loading, error, submit } = useEntityDialog({
   fill: (tt) => {
     name.value        = tt.name
     hue.value         = tt.hue ?? 250
+    icon.value        = tt.icon ?? null
     mode.value        = tt.trackMode
     sourceSetId.value = tt.sourceSetId ?? null
     trackDisplay.value = tt.trackDisplay ?? 'normal'
@@ -69,13 +83,14 @@ const { isEdit, loading, error, submit } = useEntityDialog({
     tts.value          = tt.tts ?? false
   },
   reset: () => {
-    name.value = ''; hue.value = 250; mode.value = 'clip'; sourceSetId.value = null
+    name.value = ''; hue.value = 250; icon.value = null; mode.value = 'clip'; sourceSetId.value = null
     trackDisplay.value = 'normal'; nameDisplay.value = 'normal'; clipDisplay.value = 'normal'
     metronome.value = false; tts.value = false
   },
   payload: () => ({
     name:         name.value.trim(),
     hue:          hue.value,
+    icon:         icon.value,
     trackMode:    mode.value,
     sourceSetId:  sourceSetId.value,
     trackDisplay: trackDisplay.value,
@@ -90,9 +105,10 @@ const { isEdit, loading, error, submit } = useEntityDialog({
 </script>
 
 <template>
-  <FormDialog
+  <SettingsDialog
     :open="open"
     :title="isEdit ? $t('trackTypes.editDialog.title') : $t('trackTypes.addDialog.title')"
+    :pages="pages"
     :submit-label="isEdit ? $t('trackTypes.save') : $t('trackTypes.create')"
     :cancel-label="$t('trackTypes.cancel')"
     :loading="loading"
@@ -101,60 +117,70 @@ const { isEdit, loading, error, submit } = useEntityDialog({
     @update:open="$emit('update:open', $event)"
     @submit="submit"
   >
-    <FormField for="tt-name" :label="$t('trackTypes.name')">
-      <Input id="tt-name" v-model="name" :placeholder="$t('trackTypes.namePlaceholder')" maxlength="64" autofocus required />
-    </FormField>
+    <SettingsPage id="general">
+      <SettingsRow for="tt-name" :label="$t('trackTypes.name')">
+        <Input id="tt-name" v-model="name" :placeholder="$t('trackTypes.namePlaceholder')" maxlength="64" autofocus required />
+      </SettingsRow>
 
-    <FormField :label="$t('trackTypes.color')">
-      <HuePicker v-model="hue" />
-    </FormField>
+      <SettingsRow :label="$t('trackTypes.color')">
+        <HuePicker v-model="hue" class="w-full" />
+      </SettingsRow>
 
-    <FormField :label="$t('trackTypes.mode')">
-      <SwitchTab v-model="mode" :options="modeOptions" />
-    </FormField>
+      <SettingsRow :label="$t('trackTypes.icon')">
+        <IconPicker v-model="icon" v-bind="iconPicker" :hue="hue" allow-none />
+      </SettingsRow>
 
-    <FormField :label="$t('trackTypes.sourceSet')">
-      <SelectMenu
-        v-model="sourceSetId"
-        :options="sourceSetOptions"
-        :null-label="$t('trackTypes.noSourceSet')"
+      <SettingsRow :label="$t('trackTypes.mode')">
+        <SwitchTab v-model="mode" :options="modeOptions" />
+      </SettingsRow>
+
+      <SettingsRow :label="$t('trackTypes.sourceSet')">
+        <SelectMenu
+          v-model="sourceSetId"
+          :options="sourceSetOptions"
+          :null-label="$t('trackTypes.noSourceSet')"
+        >
+          <template #selected="{ option }">
+            <Icon v-if="option?.icon" :icon="option.icon" class="size-4 shrink-0 text-muted-foreground" />
+          </template>
+          <template #icon="{ option }">
+            <Icon v-if="option?.icon" :icon="option.icon" class="size-4 text-muted-foreground" />
+          </template>
+        </SelectMenu>
+      </SettingsRow>
+    </SettingsPage>
+
+    <SettingsPage id="appearance">
+      <!-- Metronome fixes the display, so the row states the effective value
+           and says why rather than offering a control that does nothing. -->
+      <SettingsRow
+        :label="$t('trackTypes.settings.trackDisplay')"
+        :description="metronome ? $t('trackTypes.settings.metronomeOverridesDisplay') : ''"
       >
-        <template #icon="{ option }">
-          <Icon v-if="option" icon="mdi:layers-outline" class="size-4 text-muted-foreground" />
-        </template>
-      </SelectMenu>
-    </FormField>
-
-    <!-- Editor behaviors -->
-    <div class="border-t border-border pt-3 mt-1 flex flex-col gap-3">
-      <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-        {{ $t('trackTypes.settings.title') }}
-      </p>
-
-      <FormField :label="$t('trackTypes.settings.trackDisplay')">
         <SwitchTab v-if="!metronome" v-model="trackDisplay" :options="trackDisplayOptions" />
-        <p v-else class="text-xs text-muted-foreground py-1.5">
-          {{ $t('trackTypes.settings.metronomeOverridesDisplay') }}
-        </p>
-      </FormField>
+        <span v-else class="text-sm text-muted-foreground">
+          {{ $t('trackTypes.settings.displayRuler') }}
+        </span>
+      </SettingsRow>
 
-      <FormField :label="$t('trackTypes.settings.nameDisplay')">
-        <SwitchTab v-model="nameDisplay" :options="nameDisplayOptions" />
-      </FormField>
+      <SettingsRow :label="$t('trackTypes.settings.nameDisplay')">
+        <SelectMenu v-model="nameDisplay" :options="nameDisplayOptions" />
+      </SettingsRow>
 
-      <FormField :label="$t('trackTypes.settings.clipDisplay')">
-        <SwitchTab v-model="clipDisplay" :options="clipDisplayOptions" />
-      </FormField>
+      <SettingsRow :label="$t('trackTypes.settings.clipDisplay')">
+        <SelectMenu v-model="clipDisplay" :options="clipDisplayOptions" />
+      </SettingsRow>
+    </SettingsPage>
 
-      <label class="flex items-center gap-2 cursor-pointer select-none">
-        <input v-model="metronome" type="checkbox" class="accent-primary size-4" />
-        <span class="text-sm text-foreground">{{ $t('trackTypes.settings.metronome') }}</span>
-      </label>
+    <SettingsPage id="behavior">
+      <SettingsRow :label="$t('trackTypes.settings.metronome')">
+        <Switch v-model="metronome" />
+      </SettingsRow>
 
-      <label class="flex items-center gap-2 cursor-pointer select-none">
-        <input v-model="tts" type="checkbox" class="accent-primary size-4" />
-        <span class="text-sm text-foreground">{{ $t('trackTypes.settings.tts') }}</span>
-      </label>
-    </div>
-  </FormDialog>
+      <SettingsRow :label="$t('trackTypes.settings.tts')">
+        <Switch v-model="tts" />
+      </SettingsRow>
+    </SettingsPage>
+
+  </SettingsDialog>
 </template>

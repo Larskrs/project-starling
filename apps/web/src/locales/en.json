@@ -160,6 +160,11 @@
     "type": {
       "image": "Images",
       "audio": "Audio"
+    },
+    "picker": {
+      "title": "Select file",
+      "none": "No file",
+      "cancel": "Cancel"
     }
   },
   "profile": {
@@ -313,7 +318,6 @@
     "noSource": "None",
     "file": "Audio file",
     "noFile": "No file",
-    "noAudioFiles": "No audio files uploaded yet.",
     "clipColor": "Clip colour",
     "resetColor": "Reset",
     "endMustBeAfterStart": "End must be after media start",
@@ -339,6 +343,18 @@
       "decoding": "Decoding…",
       "failed": "Failed",
       "unnamed": "Media file"
+    },
+    "trackSettings": "Track settings",
+    "trackDialog": {
+      "title": "Track Settings"
+    },
+    "trackIcon": "Icon",
+    "trackIconDescription": "Overrides the icon this track inherits from its type.",
+    "trackIconInherit": "Same as track type",
+    "trackIconInheritNamed": "Same as track type ({name})",
+    "loading": {
+      "opening": "Opening timeline…",
+      "untitled": "Timeline"
     }
   },
   "trackTypes": {
@@ -380,7 +396,6 @@
       "failedToCreate": "Failed to create track type from preset"
     },
     "settings": {
-      "title": "Editor behaviors",
       "trackDisplay": "Track display",
       "displayNormal": "Normal",
       "displayRuler": "Ruler strip",
@@ -388,15 +403,21 @@
       "nameNormal": "Normal",
       "nameStretch": "Stretch",
       "nameEmphasize": "Emphasize",
-      "metronome": "Metronome — clips set the BPM",
+      "metronome": "Metronome",
       "metronomeOverridesDisplay": "Metronome is on — tracks of this type always use the BPM strip (beat & bar lines)",
-      "tts": "Read clip text aloud during playback",
+      "tts": "Read clip text aloud",
       "clipDisplay": "Clip display",
       "clipNormal": "Normal",
       "clipZebra": "Zebra",
       "clipBorder": "Border",
       "clipTransparent": "Transparent"
-    }
+    },
+    "pages": {
+      "general": "General",
+      "appearance": "Appearance",
+      "behavior": "Behaviour"
+    },
+    "icon": "Icon"
   },
   "sourceSets": {
     "title": "Source Sets",
@@ -420,7 +441,8 @@
     "rename": "Rename",
     "delete": "Delete",
     "confirmDeleteTitle": "Delete source set?",
-    "confirmDelete": "Delete \"{name}\"? Sources inside will become unassigned."
+    "confirmDelete": "Delete \"{name}\"? Sources inside will become unassigned.",
+    "icon": "Icon"
   },
   "sources": {
     "title": "Sources",
@@ -447,7 +469,8 @@
     "edit": "Edit source",
     "delete": "Delete",
     "confirmDeleteTitle": "Delete source?",
-    "confirmDelete": "Delete \"{name}\"? This cannot be undone."
+    "confirmDelete": "Delete \"{name}\"? This cannot be undone.",
+    "icon": "Icon"
   },
   "time": {
     "justNow": "just now",
@@ -484,6 +507,21 @@
         "title": "Built for teams",
         "text": "Companies, productions, roles and permissions — everyone sees exactly what they need, nothing they don't."
       }
+    }
+  },
+  "icons": {
+    "pick": "Pick an icon",
+    "search": "Search icons…",
+    "none": "No icon",
+    "empty": "No icons match that search.",
+    "groups": {
+      "production": "Production",
+      "audio": "Audio",
+      "graphics": "Graphics & text",
+      "people": "People",
+      "time": "Time & markers",
+      "status": "Shapes & status",
+      "objects": "Objects"
     }
   }
 }

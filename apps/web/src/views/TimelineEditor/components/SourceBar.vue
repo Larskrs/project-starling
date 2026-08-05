@@ -73,7 +73,7 @@ const chips = computed(() =>
             class="flex items-center justify-center size-[18px] rounded border border-border bg-muted
                    text-[10px] font-mono font-semibold text-muted-foreground shrink-0"
           >{{ hotkey }}</kbd>
-          <SourceBadge :short-name="source.shortName" :hue="source.hue" />
+          <SourceBadge :short-name="source.shortName" :hue="source.hue" :icon="source.icon" />
           <span class="text-xs font-medium text-foreground whitespace-nowrap">{{ source.name }}</span>
         </button>
       </div>

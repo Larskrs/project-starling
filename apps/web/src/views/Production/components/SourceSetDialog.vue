@@ -1,8 +1,9 @@
 <script setup>
 import { ref, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FormDialog, FormField, Input } from '@starling/ui'
+import { FormDialog, FormField, IconPicker, Input } from '@starling/ui'
 import { useEntityDialog } from '../../../composables/useEntityDialog.js'
+import { useIconPicker } from '../../../composables/useIconPicker.js'
 
 const props = defineProps({
   open:      { type: Boolean, required: true },
@@ -13,17 +14,19 @@ const emit = defineEmits(['update:open', 'created', 'updated'])
 
 const data = inject('production-data')
 const { t } = useI18n()
+const iconPicker = useIconPicker()
 
 const name = ref('')
+const icon = ref(null)
 
 const { isEdit, loading, error, submit } = useEntityDialog({
   open:   () => props.open,
   entity: () => props.sourceSet,
   emit,
   url: () => `/api/production/${data.value?.production?.id}/source-sets`,
-  fill:  (s) => { name.value = s.name },
-  reset: ()  => { name.value = '' },
-  payload:       () => ({ name: name.value.trim() }),
+  fill:  (s) => { name.value = s.name; icon.value = s.icon ?? null },
+  reset: ()  => { name.value = ''; icon.value = null },
+  payload:       () => ({ name: name.value.trim(), icon: icon.value }),
   validate:      () => !!name.value.trim(),
   failedMessage: () => t('sourceSets.failedToSave'),
 })
@@ -50,6 +53,10 @@ const { isEdit, loading, error, submit } = useEntityDialog({
         autofocus
         required
       />
+    </FormField>
+
+    <FormField :label="$t('sourceSets.icon')">
+      <IconPicker v-model="icon" v-bind="iconPicker" allow-none />
     </FormField>
   </FormDialog>
 </template>

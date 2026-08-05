@@ -5,10 +5,12 @@ import { RouterLink }        from 'vue-router'
 import { Icon }              from '@iconify/vue'
 import { Avatar, Skeleton }  from '@starling/ui'
 import { useRecentActivity } from '../../composables/useRecentActivity.js'
+import { useTimelineOpening } from '../../composables/useTimelineOpening.js'
 import { relativeTime }      from '../../lib/utils.js'
 
 const { t } = useI18n()
 const { timelines, loading, load } = useRecentActivity()
+const { startOpening } = useTimelineOpening()
 
 onMounted(load)
 
@@ -46,6 +48,7 @@ const editorLink = tl => `/c/${tl.companySlug}/p/${tl.productionSlug}/editor/${t
           :key="tl.id"
           :to="editorLink(tl)"
           class="group flex items-center gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-hover"
+          @click="startOpening(tl)"
         >
           <Avatar :id="tl.profileImageId" :alt="tl.name" class="size-11 rounded-lg shrink-0">
             <Icon icon="mdi:movie-open-outline" class="size-5 text-muted-foreground/60" />

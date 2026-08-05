@@ -4,11 +4,13 @@ import { db, trackTypes } from '@starling/db';
 import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/handler.js';
 import { requireProductionParam } from '../../../../lib/production.js';
 import { trackBehaviorPatchFields } from '../../../../lib/trackTypeSettings.js';
+import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
   name:        z.string().min(1).max(64).optional(),
   hue:         z.number().int().min(0).max(360).optional(),
+  icon:        iconField,
   trackMode:   z.enum(['event', 'clip']).optional(),
   sourceSetId: z.string().uuid().nullable().optional(),
   sortOrder:   z.number().int().min(0).optional(),

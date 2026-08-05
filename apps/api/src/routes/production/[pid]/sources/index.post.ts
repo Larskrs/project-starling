@@ -3,6 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import { db, sources, sourceSet } from '@starling/db';
 import { defineEventHandler, getValidatedQuery, readValidatedBody, createError } from '../../../../lib/handler.js';
 import { requireProductionParam } from '../../../../lib/production.js';
+import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const querySchema = z.object({
@@ -13,6 +14,7 @@ const bodySchema = z.object({
   name:      z.string().min(1).max(128),
   shortName: z.string().min(1).max(16),
   hue:       z.number().int().min(0).max(360),
+  icon:      iconField,
   data:      z.json().nullable().optional(),
 });
 
@@ -33,6 +35,7 @@ export default defineEventHandler(async (event) => {
     name:         body.name,
     shortName:    body.shortName,
     hue:          body.hue,
+    icon:         body.icon ?? null,
     data:         body.data ?? null,
   }).returning();
 

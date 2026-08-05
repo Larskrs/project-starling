@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, provide, toRef } from 'vue'
 import { Icon } from '@iconify/vue'
 import FileList              from './FileList.vue'
 import FilePreviewOverlay    from './FilePreviewOverlay.vue'
@@ -21,9 +21,21 @@ import { useApi }               from '../../composables/useApi.js'
 
 const props = defineProps({
   productionId: { type: String, required: true },
+  /**
+   * Picker mode: a file click emits `select` instead of opening the preview,
+   * and the per-file management affordances step out of the way. Everything
+   * else — browsing, upload, new folder — is the same explorer as the Files
+   * page, which is the point.
+   */
+  picker:    { type: Boolean, default: false },
+  /** Show only these storage types (e.g. ['audio', 'image']); null = all. */
+  fileTypes: { type: Array,   default: null },
+  tileWidth: { type: Number,  default: 230 },
 })
 
 const emit = defineEmits(['select'])
+
+provide('storage-picking', toRef(props, 'picker'))
 
 // ── Preview ────────────────────────────────────────────────────────────────
 const previewFile  = ref(null)
@@ -166,7 +178,7 @@ async function moveSelected(folderId) {
     <!-- Selection action bar -->
     <Transition name="sel-bar">
       <div
-        v-if="selectionActive"
+        v-if="selectionActive && !picker"
         class="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-card text-sm"
       >
         <span class="font-medium text-foreground">{{ selectedCount }} selected</span>
@@ -226,10 +238,13 @@ async function moveSelected(folderId) {
       <FileList
         ref="fileListRef"
         :production-id="productionId"
+        :file-types="fileTypes"
+        :tile-width="tileWidth"
         @navigate="onNavigate"
         @crumbs-change="fileCrumbs = $event"
         @nav-change="navState = $event"
         @preview="openPreview($event)"
+        @pick="emit('select', $event)"
       />
     </DropUpload>
 

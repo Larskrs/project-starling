@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { io } from 'socket.io-client'
+import { createTransportClock } from './transportClock.js'
 
 /**
  * Live-sync channel for the timeline editor (socket.io namespace `/timeline`).
@@ -33,40 +34,27 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport } = {
   // clock and ours (offset = serverNow − localNow). Transport anchors carry a
   // server stamp; with the offset we can place them precisely on our clock
   // regardless of either machine's wall time or one message's network delay.
+  // The clock also gates anchors that arrive before it is measured — see
+  // transportClock.js for why that matters to anyone joining mid-playback.
   const CLOCK_SAMPLES = 5
-  let _clockOffset = null   // ms; null until the first burst completes
+
+  const clock = createTransportClock({
+    deliver: (state) => onTransport?.({ ...state, anchorLocalMs: clock.localMsFor(state.at) }),
+  })
 
   function syncClock() {
-    const samples = []
-    let attempts  = 0
+    let attempts = 0
     const ping = () => {
       if (!socket?.connected) return
       const t0 = Date.now()
       socket.timeout(2000).emit('time:ping', (err, serverNow) => {
         attempts++
-        if (!err && typeof serverNow === 'number') {
-          const t2 = Date.now()
-          // Server clock at receipt ≈ serverNow + rtt/2 (symmetric-path assumption).
-          samples.push({ offset: serverNow + (t2 - t0) / 2 - t2, rtt: t2 - t0 })
-        }
-        if (attempts >= CLOCK_SAMPLES) {
-          if (samples.length) {
-            // The lowest-RTT sample carries the least queueing noise.
-            samples.sort((a, b) => a.rtt - b.rtt)
-            _clockOffset = samples[0].offset
-          }
-          return
-        }
+        if (!err) clock.addSample({ t0, t2: Date.now(), serverNow })
+        if (attempts >= CLOCK_SAMPLES) { clock.settle(); return }
         setTimeout(ping, 120)
       })
     }
     ping()
-  }
-
-  /** Server-stamp → local clock ms; falls back to "now" until the offset is measured. */
-  function anchorLocalMs(at) {
-    if (typeof at !== 'number' || _clockOffset === null) return Date.now()
-    return at - _clockOffset
   }
 
   function join(id) {
@@ -76,22 +64,24 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport } = {
 
       socket.on('connect', () => {
         connected.value = true
-        // (Re)join after connect and after every reconnect; re-measure the
-        // clock offset too — the transport path may have changed.
-        if (timelineId) socket.emit('timeline:join', { timelineId })
+        // Clock first: joining a playing room is answered with an anchor, and
+        // the first ping should already be in flight when it arrives. Re-run on
+        // every reconnect — the transport path may have changed.
         syncClock()
+        if (timelineId) socket.emit('timeline:join', { timelineId })
       })
       socket.on('disconnect', () => {
         connected.value = false
         peers.value = []
+        // An anchor held from before the drop describes a room we are no longer
+        // in step with; the rejoin brings a fresh one.
+        clock.reset()
       })
 
       socket.on('timeline:presence', (users) => { peers.value = users })
       if (onClipChange)  socket.on('clip:change', onClipChange)
       if (onTrackChange) socket.on('track:change', onTrackChange)
-      if (onTransport)   socket.on('transport:state', (state) => {
-        onTransport({ ...state, anchorLocalMs: anchorLocalMs(state.at) })
-      })
+      if (onTransport) socket.on('transport:state', (state) => clock.accept(state))
 
       socket.on('connect_error', (err) => {
         console.error('[timeline socket]', err.message)
@@ -102,6 +92,7 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport } = {
   }
 
   function leave() {
+    clock.reset()
     socket?.emit('timeline:leave')
     socket?.disconnect()
     socket          = null

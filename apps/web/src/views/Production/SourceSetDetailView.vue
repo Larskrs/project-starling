@@ -82,7 +82,7 @@ function goBack() {
       <template #empty>{{ $t('sources.noSources') }}</template>
 
       <ListItem v-for="s in sources" :key="s.id">
-        <SourceBadge :short-name="s.shortName" :hue="s.hue" />
+        <SourceBadge :short-name="s.shortName" :hue="s.hue" :icon="s.icon" />
         <span class="flex-1 text-sm font-medium text-foreground truncate">{{ s.name }}</span>
         <IconButton icon="mdi:pencil-outline" :title="$t('sources.edit')" @click="editTarget = s" />
         <IconButton icon="mdi:trash-can-outline" destructive :title="$t('sources.delete')" @click="deleteTarget = s" />

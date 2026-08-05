@@ -23,6 +23,10 @@ const props = defineProps({ file: { type: Object, required: true } })
 const emit  = defineEmits(['select', 'delete', 'renamed', 'moved'])
 
 const productionId = inject('storage-production-id', null)
+// Picking a file is the only thing a tile does inside a picker — no bulk
+// selection, no rename/move/delete.
+const picking = inject('storage-picking', false)
+const isPicking = computed(() => picking?.value ?? picking)
   const menuOpen  = ref(false)
 const { $fetch } = useApi()
 
@@ -32,7 +36,9 @@ const selected        = computed(() => selection?.isSelected(props.file.id) ?? f
 const selectionActive = computed(() => selection?.selectionActive.value ?? false)
 
 function handlePreviewClick() {
-  if (selectionActive.value) {
+  if (isPicking.value) {
+    emit('select', props.file)
+  } else if (selectionActive.value) {
     selection.toggle(props.file.id)
   } else {
     emit('select', props.file)
@@ -104,10 +110,11 @@ async function doDelete() {
     <div
       class="group relative rounded-lg overflow-hidden transition-all"
       :class="selected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''"
-      @contextmenu.prevent="menuOpen = true"
+      @contextmenu.prevent="!isPicking && (menuOpen = true)"
     >
       <!-- Selection checkbox (top-left, fades in on hover) -->
       <button
+        v-if="!isPicking"
         class="absolute top-1.5 left-1.5 z-10 p-0.5 transition-opacity"
         :class="selectionActive || selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         @click.stop="selection?.toggle(file.id)"
@@ -123,7 +130,7 @@ async function doDelete() {
       </button>
 
       <!-- Dots trigger (top-right) -->
-      <DropdownMenuTrigger as-child>
+      <DropdownMenuTrigger v-if="!isPicking" as-child>
         <button
           class="absolute top-1.5 right-1.5 z-10 p-1 rounded transition-opacity opacity-0 group-hover:opacity-100 bg-background/70 hover:bg-background/95 text-muted-foreground hover:text-foreground"
           :class="{ 'opacity-100': menuOpen }"

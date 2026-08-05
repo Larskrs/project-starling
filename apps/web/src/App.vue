@@ -5,10 +5,13 @@ import DefaultLayout from './layouts/DefaultLayout.vue'
 import { useLocale } from './composables/useLocale.js'
 import DebugProvider from '@starling/ui/DebugProvider'
 import Toast from '@starling/ui/Toast'
+import TimelineLoadingScreen from './components/TimelineLoadingScreen.vue'
+import { useTimelineOpening } from './composables/useTimelineOpening.js'
 
 const route  = useRoute()
 const router = useRouter()
 const { toggleLocale } = useLocale()
+const { opening: openingTimeline } = useTimelineOpening()
 
 const debugRoutes = router.getRoutes()
   .filter(r => !r.redirect && r.path !== '/:pathMatch(.*)*')
@@ -37,5 +40,16 @@ const layout = computed(() => {
       <RouterView />
     </component>
     <Toast />
+
+    <Transition name="tl-loading">
+      <TimelineLoadingScreen v-if="openingTimeline" :timeline="openingTimeline" />
+    </Transition>
   </DebugProvider>
 </template>
+
+<style>
+/* Fades out once the editor is ready; appears instantly so a slow open never
+   looks like a dead click. */
+.tl-loading-leave-active { transition: opacity 0.2s ease; }
+.tl-loading-leave-to     { opacity: 0; }
+</style>

@@ -57,6 +57,13 @@
       "when": 1785789867324,
       "tag": "0007_colossal_ted_forrester",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785928429547,
+      "tag": "0008_tranquil_mole_man",
+      "breakpoints": true
     }
   ]
 }

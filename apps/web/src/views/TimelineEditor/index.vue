@@ -3,7 +3,7 @@ import { ref, computed, provide, nextTick, watch, onMounted, onUnmounted } from 
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { Skeleton, ResizeHandle, ConfirmDialog, useToast } from '@starling/ui'
+import { ResizeHandle, ConfirmDialog, useToast } from '@starling/ui'
 import { useApi } from '../../composables/useApi.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
 import { useCookie } from '../../composables/useCookie.js'
@@ -25,6 +25,8 @@ import TrackLane       from './components/TrackLane.vue'
 import SourceBar       from './components/SourceBar.vue'
 import DownloadToast   from './components/DownloadToast.vue'
 import AddTrackDialog  from './components/AddTrackDialog.vue'
+import TrackDialog     from './components/TrackDialog.vue'
+import { useTimelineOpening } from '../../composables/useTimelineOpening.js'
 import ClipDialog      from './components/ClipDialog.vue'
 import BpmClipDialog   from './components/BpmClipDialog.vue'
 
@@ -36,6 +38,8 @@ const toast      = useToast()
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 const timeline   = ref(null)
+const { describeOpening, finishOpening } = useTimelineOpening()
+
 const trackList  = ref([])
 const trackTypes = ref([])
 const sources    = ref([])
@@ -51,8 +55,10 @@ async function load() {
   error.value   = ''
   const { ok, data } = await $fetch(timelineUrl.value, { silent: true })
   loading.value = false
-  if (!ok) { error.value = t('editor.couldNotLoad'); return }
+  if (!ok) { error.value = t('editor.couldNotLoad'); finishOpening(); return }
   timeline.value   = data.timeline
+  // Names the loading screen for anyone who arrived by pasted URL.
+  describeOpening(data.timeline)
   trackList.value  = data.tracks
   trackTypes.value = data.trackTypes
   sources.value    = data.sources
@@ -67,11 +73,19 @@ async function load() {
     nextTick(() => {
       if (saved?.s && canvasRef.value) canvasRef.value.scrollLeft = saved.s
       updateViewport()
+      // Held until the view is restored, so the editor is never revealed
+      // mid-scroll at the wrong zoom.
+      finishOpening()
     })
   })
 }
 
 onMounted(load)
+
+// Switching timeline without leaving the route reuses this component, so
+// onMounted won't fire again. Without this the editor would keep the previous
+// timeline's data and — worse — the loading screen would never be cleared.
+watch(() => route.params.tlId, (id, prev) => { if (id && prev && id !== prev) load() })
 
 /**
  * Names every clip's media file up front. The playback scheduler pulls audio in
@@ -663,8 +677,28 @@ function blockedByLock(track) {
 // ── Track mutations ───────────────────────────────────────────────────────────
 const addTrackOpen = ref(false)
 
+// A freshly created track comes back as the bare row, while the timeline
+// payload joins its type's display fields onto every track. Decorating here
+// keeps the list one shape, so a new track shows its colour and icon straight
+// away instead of only after a reload.
+function withTypeFields(track) {
+  const tt = trackTypes.value.find(x => x.id === track.typeId)
+  if (!tt) return track
+  return {
+    ...track,
+    typeName:         tt.name,
+    typeHue:          tt.hue,
+    typeIcon:         tt.icon,
+    typeTrackDisplay: tt.trackDisplay,
+    typeNameDisplay:  tt.nameDisplay,
+    typeClipDisplay:  tt.clipDisplay,
+    typeMetronome:    tt.metronome,
+    typeTts:          tt.tts,
+  }
+}
+
 function onTrackAdded(track) {
-  const added = upsertTrackLocal(track)
+  const added = upsertTrackLocal(withTypeFields(track))
   sync.sendTrackChange({ type: 'upsert', track: added })
 }
 
@@ -676,6 +710,20 @@ async function patchTrack(track, json) {
 }
 
 const toggleLock = (track) => patchTrack(track, { isLocked: !track.isLocked })
+
+// Per-track settings (name + icon override). The PATCH response carries only
+// the track row, so it merges onto the joined type/source fields already held.
+const trackDialog = ref({ open: false, track: null })
+
+function openTrackSettings(track) {
+  if (blockedByLock(track)) return
+  trackDialog.value = { open: true, track }
+}
+
+function onTrackSaved(track) {
+  const merged = upsertTrackLocal(track)
+  sync.sendTrackChange({ type: 'upsert', track: merged })
+}
 
 // Deleting a track takes every clip with it — always confirm first.
 const deleteTrackTarget = ref(null)
@@ -786,28 +834,9 @@ provide('editor-viewport',   viewport)
 <template>
   <div class="relative flex flex-col h-dvh bg-background overflow-hidden">
 
-    <!-- Loading skeleton -->
-    <template v-if="loading">
-      <div class="h-12 border-b border-border flex items-center px-4 gap-3">
-        <Skeleton class="h-5 w-20 rounded" />
-        <Skeleton class="h-5 w-40 rounded" />
-        <div class="flex-1" />
-        <Skeleton class="h-7 w-24 rounded-md" />
-      </div>
-      <div class="flex-1 flex">
-        <div class="w-[264px] border-r border-border flex flex-col gap-0">
-          <Skeleton class="h-8 rounded-none" />
-          <Skeleton v-for="i in 3" :key="i" class="h-14 rounded-none border-b border-border" />
-        </div>
-        <div class="flex-1 p-6 flex flex-col gap-2">
-          <Skeleton class="h-8 w-full rounded" />
-          <Skeleton v-for="i in 3" :key="i" class="h-14 w-full rounded" />
-        </div>
-      </div>
-    </template>
-
-    <!-- Error -->
-    <div v-else-if="error" class="flex-1 flex items-center justify-center">
+    <!-- Loading is covered by TimelineLoadingScreen, raised in App.vue from the
+         moment the route is entered — it outlives this component's chunk. -->
+    <div v-if="error" class="flex-1 flex items-center justify-center">
       <p class="text-sm text-destructive">{{ error }}</p>
     </div>
 
@@ -873,6 +902,7 @@ provide('editor-viewport',   viewport)
               @toggle-mute="toggleMute(track)"
               @toggle-lock="toggleLock(track)"
               @add-clip="openAddClip(track)"
+              @settings="openTrackSettings(track)"
               @delete="deleteTrackTarget = track"
             />
             <div v-if="trackList.length === 0" class="px-4 py-6 text-xs text-muted-foreground text-center">
@@ -992,6 +1022,13 @@ provide('editor-viewport',   viewport)
       :timeline-id="route.params.tlId"
       @update:open="addTrackOpen = $event"
       @created="onTrackAdded"
+    />
+
+    <TrackDialog
+      :open="trackDialog.open"
+      :track="trackDialog.track"
+      @update:open="trackDialog.open = $event"
+      @saved="onTrackSaved"
     />
 
     <ClipDialog

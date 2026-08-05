@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, provide } from 'vue'
+import { ref, computed, watch, onMounted, provide, inject } from 'vue'
 import { Icon } from '@iconify/vue'
 import Folder      from './Folder.vue'
 import FileImage   from './FileImage.vue'
@@ -10,11 +10,19 @@ import { useApi }  from '../../composables/useApi.js'
 const props = defineProps({
   productionId: { type: String, required: true },
   rootFolderId: { type: String, default: null },
+  /** Show only these storage types (e.g. ['audio', 'image']); null = all. */
+  fileTypes:    { type: Array,  default: null },
+  /** Grid column floor in px — narrower tiles when the list is in a dialog. */
+  tileWidth:    { type: Number, default: 230 },
 })
 
-const emit = defineEmits(['navigate', 'preview', 'deleted', 'crumbs-change', 'nav-change'])
+const emit = defineEmits(['navigate', 'preview', 'pick', 'deleted', 'crumbs-change', 'nav-change'])
 
 provide('storage-production-id', props.productionId)
+
+// Set by FileExplorer when it is standing in as a file picker: a click picks
+// the file instead of previewing it.
+const picking = inject('storage-picking', false)
 
 const { $fetch } = useApi()
 
@@ -136,6 +144,20 @@ watch(() => props.rootFolderId, (id) => {
   load(id)
 })
 
+// Folders are never filtered — a filtered browse still has to be navigable.
+const visibleFiles = computed(() =>
+  props.fileTypes ? files.value.filter(f => props.fileTypes.includes(f.type)) : files.value,
+)
+
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(auto-fill, minmax(${props.tileWidth}px, 1fr))`,
+}))
+
+function onFileClick(file) {
+  if (picking?.value ?? picking) emit('pick', file)
+  else emit('preview', { file, files: visibleFiles.value })
+}
+
 const breadcrumbItems = computed(() => [
   { id: null, label: 'Root' },
   ...crumbs.value.map(c => ({ id: c.id, label: c.name })),
@@ -144,7 +166,7 @@ const breadcrumbItems = computed(() => [
 watch(breadcrumbItems, (items) => emit('crumbs-change', items), { immediate: true })
 watch([canGoBack, canGoForward], ([back, forward]) => emit('nav-change', { canGoBack: back, canGoForward: forward }), { immediate: true })
 
-defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, goForward, getFileIds: () => files.value.map(f => f.id), getFiles: () => files.value })
+defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, goForward, getFileIds: () => visibleFiles.value.map(f => f.id), getFiles: () => visibleFiles.value })
 </script>
 
 <template>
@@ -160,7 +182,7 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
 
     <!-- Empty -->
     <div
-      v-else-if="folders.length === 0 && files.length === 0"
+      v-else-if="folders.length === 0 && visibleFiles.length === 0"
       class="rounded-lg border border-dashed border-border py-12 text-center"
     >
       <Icon icon="mdi:folder-open-outline" class="text-4xl text-muted-foreground/30 mx-auto mb-2" />
@@ -172,7 +194,7 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
       <!-- Folders section -->
       <div v-if="folders.length > 0" class="flex flex-col gap-2">
         <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Folders</p>
-        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(230px, 1fr))">
+        <div class="grid gap-2" :style="gridStyle">
           <Folder
             v-for="folder in folders"
             :key="folder.id"
@@ -186,14 +208,14 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
       </div>
 
       <!-- Files section -->
-      <div v-if="files.length > 0" class="flex flex-col gap-2">
+      <div v-if="visibleFiles.length > 0" class="flex flex-col gap-2">
         <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Files</p>
-        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(230px, 1fr))">
-          <template v-for="file in files" :key="file.id">
+        <div class="grid gap-2" :style="gridStyle">
+          <template v-for="file in visibleFiles" :key="file.id">
             <FileImage
               v-if="file.type === 'image'"
               :file="file"
-              @select="emit('preview', { file, files })"
+              @select="onFileClick(file)"
               @delete="deleteFile"
               @renamed="onFileRenamed"
               @moved="onFileMoved"
@@ -201,7 +223,7 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
             <FileAudio
               v-else-if="file.type === 'audio'"
               :file="file"
-              @select="emit('preview', { file, files })"
+              @select="onFileClick(file)"
               @delete="deleteFile"
               @renamed="onFileRenamed"
               @moved="onFileMoved"
@@ -209,7 +231,7 @@ defineExpose({ refresh: () => load(currentFolderId.value), goToCrumb, goBack, go
             <FileDefault
               v-else
               :file="file"
-              @select="emit('preview', { file, files })"
+              @select="onFileClick(file)"
               @delete="deleteFile"
               @renamed="onFileRenamed"
               @moved="onFileMoved"

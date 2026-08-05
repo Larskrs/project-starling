@@ -124,6 +124,7 @@ export const trackTypes = pgTable(
       .references(() => productions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     hue: integer("hue").notNull().default(250), // oklch hue 0-360; theme decides lightness/chroma
+    icon: text("icon"), // 'mdi:*' name; null = no icon. Tracks may override it.
     trackMode: trackModeEnum("track_mode").notNull().default("clip"),
     sourceSetId: uuid("source_set_id")
       .references(() => sourceSet.id, { onDelete: "set null" }),
@@ -152,6 +153,8 @@ export const tracks = pgTable("tracks", {
     sourceId: uuid("source_id")
       .references(() => sources.id, { onDelete: "set null" }),
     name: text("name").notNull(),
+    // Overrides the track type's icon for this track alone; null = inherit.
+    icon: text("icon"),
     mode: trackModeEnum("mode").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     isMuted: boolean("is_muted").notNull().default(false),
@@ -190,6 +193,7 @@ export const sourceSet = pgTable("source_set", {
     .notNull()
     .references(() => productions.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  icon: text("icon"), // 'mdi:*' name shown wherever the set is listed
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -204,6 +208,7 @@ export const sources = pgTable("sources", {
   name: text("name").notNull(),
   shortName: text("short_name").notNull(),
   hue: integer("hue").notNull(),
+  icon: text("icon"), // 'mdi:*' name; each source in a set can differ
   data: jsonb("data"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

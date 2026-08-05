@@ -2,10 +2,12 @@ import z from 'zod';
 import { db, sourceSet } from '@starling/db';
 import { defineEventHandler, readValidatedBody } from '../../../../lib/handler.js';
 import { requireProductionParam } from '../../../../lib/production.js';
+import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
   name: z.string().min(1).max(128),
+  icon: iconField,
 });
 
 export default defineEventHandler(async (event) => {
@@ -15,6 +17,7 @@ export default defineEventHandler(async (event) => {
   const [set] = await db.insert(sourceSet).values({
     productionId: production.id,
     name:         body.name,
+    icon:         body.icon ?? null,
   }).returning();
 
   return set!;

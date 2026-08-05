@@ -3,12 +3,14 @@ import { eq, and } from 'drizzle-orm';
 import { db, sources } from '@starling/db';
 import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/handler.js';
 import { requireProductionParam } from '../../../../lib/production.js';
+import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
   name:      z.string().min(1).max(128).optional(),
   shortName: z.string().min(1).max(16).optional(),
   hue:       z.number().int().min(0).max(360).optional(),
+  icon:      iconField,
   data:      z.json().nullable().optional(),
 });
 

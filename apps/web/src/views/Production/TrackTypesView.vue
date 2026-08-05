@@ -77,8 +77,15 @@ function setName(id) {
       <template #empty>{{ $t('trackTypes.noTypes') }}</template>
 
       <ListItem v-for="tt in trackTypes" :key="tt.id">
-        <!-- Color dot -->
+        <!-- Icon in the type's colour, or a plain dot when it has none -->
+        <Icon
+          v-if="tt.icon"
+          :icon="tt.icon"
+          class="size-4 shrink-0"
+          :style="{ color: `oklch(65% 0.18 ${tt.hue ?? 250})` }"
+        />
         <span
+          v-else
           class="size-2.5 rounded-full shrink-0"
           :style="{ backgroundColor: `oklch(65% 0.18 ${tt.hue ?? 250})` }"
         />

@@ -34,6 +34,7 @@ export default defineEventHandler(async (event) => {
       const [set] = await tx.insert(sourceSet).values({
         productionId: production.id,
         name:         body.cameraSet.name,
+        icon:         preset.settings.icon,
       }).returning();
       createdSet = set!;
 
@@ -46,6 +47,7 @@ export default defineEventHandler(async (event) => {
           sourceSetId:  createdSet!.id,
           name:         `Camera ${i + 1}`,
           shortName:    `C${i + 1}`,
+          icon:         preset.settings.icon,
           hue:          (preset.settings.hue + Math.round((i * 360) / count)) % 360,
         })),
       ).returning();
@@ -55,6 +57,7 @@ export default defineEventHandler(async (event) => {
       productionId: production.id,
       name:         body.name ?? preset.name,
       hue:          preset.settings.hue,
+      icon:         preset.settings.icon,
       trackMode:    preset.settings.trackMode,
       sourceSetId:  createdSet?.id ?? null,
       sortOrder:    body.sortOrder,

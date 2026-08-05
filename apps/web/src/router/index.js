@@ -2,6 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 import DefaultLayout from '../layouts/DefaultLayout.vue'
 import AuthLayout    from '../layouts/AuthLayout.vue'
 import EmptyLayout   from '../layouts/EmptyLayout.vue'
+import { useTimelineOpening } from '../composables/useTimelineOpening.js'
+
+const { startOpening, finishOpening } = useTimelineOpening()
+
+const EDITOR_ROUTE = 'timeline-editor'
+const isEditorRoute = (route) => route.matched.some(r => r.name === EDITOR_ROUTE)
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -38,6 +44,7 @@ const router = createRouter({
 
     {
       path:      '/c/:cslug/p/:pslug/editor/:tlId',
+      name:      'timeline-editor',
       component: () => import('../views/TimelineEditor/index.vue'),
       meta:      { requiresAuth: true, layout: EmptyLayout },
     },
@@ -49,6 +56,10 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  // Before the auth fetch, not after: everything from here to the editor
+  // having its data is wait the user should see covered.
+  if (isEditorRoute(to)) startOpening({ id: to.params.tlId })
+
   const needsAuth  = to.meta.requiresAuth
   // Pages only a signed-out visitor should see — a session sends them home.
   const guestOnly  = to.meta.guestOnly || to.path === '/login' || to.path === '/register'
@@ -72,8 +83,16 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
+  // A guard redirect or a back button mid-load leaves the screen with nothing
+  // to wait for; the editor itself clears it on the happy path.
+  if (!isEditorRoute(to)) finishOpening()
+
   const title = to.meta.title
   if (title) document.title = `${title} — Cino`
 })
+
+// A failed navigation (chunk fetch error, aborted guard) must not strand the
+// loading screen over a page the user can still use.
+router.onError(finishOpening)
 
 export default router

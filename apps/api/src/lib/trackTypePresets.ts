@@ -9,6 +9,7 @@
 
 export interface TrackTypePresetSettings {
   hue: number;
+  icon: string;
   trackMode: 'event' | 'clip';
   trackDisplay: 'normal' | 'ruler';
   nameDisplay: 'normal' | 'stretch' | 'emphasize';
@@ -32,7 +33,7 @@ export const trackTypePresets: TrackTypePreset[] = [
     description: 'Camera cut tracks. Can create a camera source set with evenly spread colours.',
     supportsCameraSet: true,
     settings: {
-      hue: 220, trackMode: 'clip',
+      hue: 220, icon: 'mdi:video-outline', trackMode: 'clip',
       trackDisplay: 'normal', nameDisplay: 'normal', clipDisplay: 'normal',
       metronome: false, tts: false,
     },
@@ -42,7 +43,7 @@ export const trackTypePresets: TrackTypePreset[] = [
     name: 'Script',
     description: 'Dialogue and manuscript clips, read aloud during playback.',
     settings: {
-      hue: 40, trackMode: 'clip',
+      hue: 40, icon: 'mdi:script-text-outline', trackMode: 'clip',
       trackDisplay: 'normal', nameDisplay: 'stretch', clipDisplay: 'normal',
       metronome: false, tts: true,
     },
@@ -52,7 +53,7 @@ export const trackTypePresets: TrackTypePreset[] = [
     name: 'Music',
     description: 'Music cues with metronome support — clips carry the BPM.',
     settings: {
-      hue: 140, trackMode: 'clip',
+      hue: 140, icon: 'mdi:music-note', trackMode: 'clip',
       trackDisplay: 'normal', nameDisplay: 'normal', clipDisplay: 'zebra',
       metronome: true, tts: false,
     },
@@ -62,7 +63,7 @@ export const trackTypePresets: TrackTypePreset[] = [
     name: 'Ruler',
     description: 'Slim pinned strip for rundown markers and section boundaries.',
     settings: {
-      hue: 250, trackMode: 'event',
+      hue: 250, icon: 'mdi:ruler', trackMode: 'event',
       trackDisplay: 'ruler', nameDisplay: 'emphasize', clipDisplay: 'normal',
       metronome: false, tts: false,
     },
@@ -72,7 +73,7 @@ export const trackTypePresets: TrackTypePreset[] = [
     name: 'Graphics',
     description: 'Overlay and graphics events rendered with an outlined clip body.',
     settings: {
-      hue: 300, trackMode: 'event',
+      hue: 300, icon: 'mdi:shape-outline', trackMode: 'event',
       trackDisplay: 'normal', nameDisplay: 'normal', clipDisplay: 'border',
       metronome: false, tts: false,
     },
