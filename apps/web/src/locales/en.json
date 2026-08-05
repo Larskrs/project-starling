@@ -163,8 +163,90 @@
     },
     "picker": {
       "title": "Select file",
-      "none": "No file",
-      "cancel": "Cancel"
+      "none": "No file"
+    },
+    "root": "Root",
+    "folders": "Folders",
+    "files": "Files",
+    "empty": "This folder is empty.",
+    "couldNotLoad": "Could not load files",
+    "back": "Back",
+    "forward": "Forward",
+    "newFolder": "New folder",
+    "dropToUpload": "Drop to upload",
+    "rename": "Rename",
+    "renameFailed": "Rename failed",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "count": {
+      "files": "{n} file | {n} files",
+      "folders": "{n} subfolder | {n} subfolders"
+    },
+    "upload": {
+      "label": "Upload",
+      "uploading": "Uploading",
+      "done": "Done",
+      "error": "Failed"
+    },
+    "selection": {
+      "count": "{n} selected",
+      "selectAll": "Select all",
+      "clear": "Clear selection",
+      "move": "Move",
+      "delete": "Delete"
+    },
+    "preview": {
+      "previous": "Previous (←)",
+      "next": "Next (→)",
+      "close": "Close (Esc)",
+      "download": "Download",
+      "unavailable": "No preview available"
+    },
+    "file": {
+      "menu": "File",
+      "open": "Open file",
+      "move": "Move to folder",
+      "moveTitle": "Move file to folder",
+      "bulkMoveTitle": "Move files to folder",
+      "nameLabel": "File name",
+      "renameTitle": "Rename file",
+      "deleteTitle": "Delete file",
+      "deleteBody": "Delete \"{name}\"? This cannot be undone.",
+      "bulkDeleteTitle": "Delete selected files",
+      "bulkDeleteBody": "Delete {files}? This cannot be undone."
+    },
+    "folder": {
+      "menu": "Folder",
+      "open": "Open folder",
+      "options": "Folder options",
+      "color": "Colour",
+      "hue": "Hue",
+      "create": "Create",
+      "createTitle": "New folder",
+      "createFailed": "Failed to create folder",
+      "nameLabel": "Folder name",
+      "namePlaceholder": "Assets",
+      "rename": "Rename folder",
+      "renameTitle": "Rename folder",
+      "delete": "Delete folder",
+      "deleteTitle": "Delete folder",
+      "deleteBody": "Are you sure you wish to delete this folder?",
+      "deleteBodyFiles": "Delete this folder and the {files} inside it? This cannot be undone.",
+      "deleteBodyAll": "Delete this folder, its {folders} and the {files} inside it? This cannot be undone.",
+      "selectTitle": "Select folder",
+      "moveHere": "Move here",
+      "noSubfolders": "No subfolders here"
+    },
+    "hues": {
+      "default": "Default",
+      "red": "Red",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "teal": "Teal",
+      "blue": "Blue",
+      "purple": "Purple",
+      "pink": "Pink"
     }
   },
   "profile": {

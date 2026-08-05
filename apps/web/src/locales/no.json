@@ -163,8 +163,90 @@
     },
     "picker": {
       "title": "Velg fil",
-      "none": "Ingen fil",
-      "cancel": "Avbryt"
+      "none": "Ingen fil"
+    },
+    "root": "Hjem",
+    "folders": "Mapper",
+    "files": "Filer",
+    "empty": "Denne mappen er tom.",
+    "couldNotLoad": "Kunne ikke laste filene",
+    "back": "Tilbake",
+    "forward": "Fram",
+    "newFolder": "Ny mappe",
+    "dropToUpload": "Slipp for å laste opp",
+    "rename": "Gi nytt navn",
+    "renameFailed": "Kunne ikke endre navn",
+    "delete": "Slett",
+    "cancel": "Avbryt",
+    "count": {
+      "files": "{n} fil | {n} filer",
+      "folders": "{n} undermappe | {n} undermapper"
+    },
+    "upload": {
+      "label": "Last opp",
+      "uploading": "Laster opp",
+      "done": "Ferdig",
+      "error": "Mislyktes"
+    },
+    "selection": {
+      "count": "{n} valgt",
+      "selectAll": "Velg alle",
+      "clear": "Tøm utvalget",
+      "move": "Flytt",
+      "delete": "Slett"
+    },
+    "preview": {
+      "previous": "Forrige (←)",
+      "next": "Neste (→)",
+      "close": "Lukk (Esc)",
+      "download": "Last ned",
+      "unavailable": "Ingen forhåndsvisning tilgjengelig"
+    },
+    "file": {
+      "menu": "Fil",
+      "open": "Åpne fil",
+      "move": "Flytt til mappe",
+      "moveTitle": "Flytt filen til mappe",
+      "bulkMoveTitle": "Flytt filene til mappe",
+      "nameLabel": "Filnavn",
+      "renameTitle": "Gi filen nytt navn",
+      "deleteTitle": "Slett fil",
+      "deleteBody": "Slette «{name}»? Dette kan ikke angres.",
+      "bulkDeleteTitle": "Slett valgte filer",
+      "bulkDeleteBody": "Slette {files}? Dette kan ikke angres."
+    },
+    "folder": {
+      "menu": "Mappe",
+      "open": "Åpne mappe",
+      "options": "Mappevalg",
+      "color": "Farge",
+      "hue": "Fargetone",
+      "create": "Opprett",
+      "createTitle": "Ny mappe",
+      "createFailed": "Kunne ikke opprette mappen",
+      "nameLabel": "Mappenavn",
+      "namePlaceholder": "Ressurser",
+      "rename": "Gi mappen nytt navn",
+      "renameTitle": "Gi mappen nytt navn",
+      "delete": "Slett mappe",
+      "deleteTitle": "Slett mappe",
+      "deleteBody": "Er du sikker på at du vil slette denne mappen?",
+      "deleteBodyFiles": "Slette denne mappen og {files} i den? Dette kan ikke angres.",
+      "deleteBodyAll": "Slette denne mappen, {folders} og {files} i den? Dette kan ikke angres.",
+      "selectTitle": "Velg mappe",
+      "moveHere": "Flytt hit",
+      "noSubfolders": "Ingen undermapper her"
+    },
+    "hues": {
+      "default": "Standard",
+      "red": "Rød",
+      "orange": "Oransje",
+      "yellow": "Gul",
+      "green": "Grønn",
+      "teal": "Blågrønn",
+      "blue": "Blå",
+      "purple": "Lilla",
+      "pink": "Rosa"
     }
   },
   "profile": {

@@ -11,6 +11,7 @@ import { ContextMenuRoot, ContextMenuTrigger } from 'radix-vue'
 import ContextMenuContent   from '@starling/ui/ContextMenuContent'
 import ContextMenuItem      from '@starling/ui/ContextMenuItem'
 import ContextMenuSeparator from '@starling/ui/ContextMenuSeparator'
+import Spinner              from '@starling/ui/Spinner'
 
 const props = defineProps({
   clip:         { type: Object, required: true },
@@ -420,10 +421,9 @@ watch(
           class="absolute inset-0 z-10 pointer-events-none overflow-hidden rounded"
         >
           <div class="absolute inset-0 tl-clip-shimmer" :class="faintBody ? 'tl-clip-shimmer-faint' : ''" />
-          <Icon
+          <Spinner
             v-if="displayedWidth > 56"
-            icon="mdi:loading"
-            class="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 animate-spin"
+            class="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5"
             :class="faintBody ? 'text-foreground/70' : 'text-white/85'"
           />
           <div class="absolute bottom-0 inset-x-0 h-[3px]" :class="faintBody ? 'bg-foreground/10' : 'bg-black/25'">

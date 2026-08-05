@@ -9,6 +9,7 @@ import DialogFooter  from '@starling/ui/DialogFooter'
 import Button        from '@starling/ui/Button'
 import Input         from '@starling/ui/Input'
 import Label         from '@starling/ui/Label'
+import Spinner       from '@starling/ui/Spinner'
 
 const props = defineProps({
   open:          { type: Boolean, required: true },
@@ -61,7 +62,7 @@ const matches = computed(() => typed.value === props.confirmValue)
           :disabled="!matches || loading || extraDisabled"
           @click="emit('confirm')"
         >
-          <Icon v-if="loading" icon="mdi:loading" class="animate-spin mr-1.5 text-base" />
+          <Spinner v-if="loading" class="mr-1.5 text-base" />
           {{ loading ? t('danger.pleaseWait') : confirmLabel }}
         </Button>
       </DialogFooter>

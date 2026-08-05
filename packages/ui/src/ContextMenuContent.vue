@@ -36,7 +36,7 @@ defineProps({
   <ContextMenuPortal>
     <ContextMenuContent
       :collision-padding="collisionPadding"
-      class="cm-content z-[200] bg-background min-w-44 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl py-1 outline-none"
+      class="cm-content z-[200] min-w-44 overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-xl py-1 outline-none"
     >
       <slot />
     </ContextMenuContent>

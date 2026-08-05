@@ -16,6 +16,7 @@ const props = defineProps({
     :title="title"
     :class="cn(
       'p-1.5 rounded-md text-muted-foreground hover:bg-accent transition-colors shrink-0',
+      'disabled:opacity-30 disabled:pointer-events-none',
       destructive ? 'hover:text-destructive' : 'hover:text-foreground',
       props.class,
     )"

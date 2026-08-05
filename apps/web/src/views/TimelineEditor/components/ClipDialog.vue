@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { Button, FormField, Input, SplitDialog } from '@starling/ui'
 import HuePicker from '../../Production/components/HuePicker.vue'
-import SelectFileDialog from '../../../components/storage/SelectFileDialog.vue'
+import { SelectFileDialog } from '../../../components/storage'
 import { useApi } from '../../../composables/useApi.js'
 
 const props = defineProps({

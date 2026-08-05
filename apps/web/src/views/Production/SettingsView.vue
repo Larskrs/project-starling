@@ -6,6 +6,7 @@ import { Icon } from '@iconify/vue'
 import Button from '@starling/ui/Button'
 import Input from '@starling/ui/Input'
 import Label from '@starling/ui/Label'
+import Spinner from '@starling/ui/Spinner'
 import { useApi } from '../../composables/useApi.js'
 import ProductionProfileEditor from './components/ProductionProfileEditor.vue'
 import ConfirmValueDialog from '../../components/ui/ConfirmValueDialog.vue'
@@ -179,7 +180,7 @@ async function submitDelete() {
           @keydown.enter="saveName"
         />
         <Button size="sm" :disabled="!nameChanged || nameSaving" class="shrink-0 gap-1.5" @click="saveName">
-          <Icon v-if="nameSaving" icon="mdi:loading" class="animate-spin" />
+          <Spinner v-if="nameSaving" />
           <Icon v-else-if="nameSuccess" icon="mdi:check" />
           {{ nameSaving ? $t('settings.saving') : nameSuccess ? $t('settings.saved') : $t('settings.save') }}
         </Button>
@@ -210,7 +211,7 @@ async function submitDelete() {
           <option value="gb">GB</option>
         </select>
         <Button size="sm" :disabled="!storageChanged || storageSaving" class="shrink-0 gap-1.5" @click="saveStorage">
-          <Icon v-if="storageSaving" icon="mdi:loading" class="animate-spin" />
+          <Spinner v-if="storageSaving" />
           <Icon v-else-if="storageSuccess" icon="mdi:check" />
           {{ storageSaving ? $t('settings.saving') : storageSuccess ? $t('settings.saved') : $t('settings.save') }}
         </Button>

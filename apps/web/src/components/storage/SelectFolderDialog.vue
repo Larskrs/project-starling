@@ -1,178 +1,131 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import Dialog        from '@starling/ui/Dialog'
-import DialogContent from '@starling/ui/DialogContent'
-import DialogHeader  from '@starling/ui/DialogHeader'
-import DialogTitle   from '@starling/ui/DialogTitle'
-import Button     from '@starling/ui/Button'
-import Input      from '@starling/ui/Input'
-import Label      from '@starling/ui/Label'
-import Breadcrumb from '@starling/ui/Breadcrumb'
-import { useApi } from '../../composables/useApi.js'
+import {
+  Button, Dialog, DialogContent, DialogHeader, DialogTitle, EmptyState, Input, Label, Spinner,
+} from '@starling/ui'
+import StorageBreadcrumb from './StorageBreadcrumb.vue'
+import { useStorageBrowser } from './useStorageBrowser.js'
+import { useStorageApi } from './useStorageApi.js'
 
+/**
+ * Pick a destination folder. Runs on the same browser as the file explorer,
+ * showing only the folder half of it — so navigation behaves identically, and
+ * a new folder can be made without leaving the dialog.
+ */
 const props = defineProps({
   open:         { type: Boolean, required: true },
   productionId: { type: String,  required: true },
-  title:        { type: String,  default: 'Select folder' },
+  title:        { type: String,  default: '' },
 })
 
 const emit = defineEmits(['select', 'close'])
 
-const { $fetch } = useApi()
+const { t }   = useI18n()
+const api     = useStorageApi()
+const browser = useStorageBrowser({ productionId: () => props.productionId })
+const { folders, loading, crumbs, folderId, openFolder, goToCrumb, reset, refresh } = browser
 
-const folders       = ref([])
-const loading       = ref(false)
-const crumbs        = ref([])
-const currentId     = ref(null)
-
+// ── Inline new folder ─────────────────────────────────────────────────────
 const creating      = ref(false)
 const newName       = ref('')
 const createError   = ref('')
 const createLoading = ref(false)
 
-const breadcrumbItems = computed(() => [
-  { id: null, label: 'Root' },
-  ...crumbs.value.map(c => ({ id: c.id, label: c.name })),
-])
-
-async function load(id) {
-  loading.value = true
-  const params = new URLSearchParams({ pid: props.productionId })
-  if (id) params.set('folder_id', id)
-  const { ok, data } = await $fetch(`/api/storage?${params}`, { silent: true })
-  folders.value = ok ? data.folders : []
-  loading.value = false
-}
-
-function enterFolder(folder) {
-  crumbs.value    = [...crumbs.value, { id: folder.id, name: folder.name }]
-  currentId.value = folder.id
-  creating.value  = false
-  load(folder.id)
-}
-
-function goToCrumb(idx) {
-  if (idx === -1) {
-    crumbs.value    = []
-    currentId.value = null
-  } else {
-    crumbs.value    = crumbs.value.slice(0, idx + 1)
-    currentId.value = crumbs.value[idx].id
-  }
-  creating.value = false
-  load(currentId.value)
-}
-
-function reset() {
-  currentId.value   = null
-  crumbs.value      = []
-  creating.value    = false
+function toggleCreating() {
+  creating.value    = !creating.value
   newName.value     = ''
   createError.value = ''
 }
 
-watch(() => props.open, (val) => {
-  if (val) { reset(); load(null) }
-})
-
 async function submitCreate() {
   createError.value   = ''
   createLoading.value = true
-  const { ok, error } = await $fetch('/api/storage', {
-    method: 'POST',
-    json:   { production_id: props.productionId, name: newName.value.trim(), parent_id: currentId.value },
-    silent: true,
-  })
+  const { ok, error } = await api.createFolder(props.productionId, newName.value.trim(), folderId.value)
   createLoading.value = false
-  if (!ok) { createError.value = error ?? 'Failed to create folder'; return }
+  if (!ok) { createError.value = error ?? t('storage.folder.createFailed'); return }
   creating.value = false
   newName.value  = ''
-  load(currentId.value)
+  refresh()
 }
+
+// Always reopens at the root: the destination is chosen fresh each time.
+watch(() => props.open, (isOpen) => {
+  if (!isOpen) return
+  creating.value = false
+  reset(null)
+})
 </script>
 
 <template>
   <Dialog :open="open" @update:open="!$event && emit('close')">
     <DialogContent class="max-w-sm flex flex-col p-0">
-
       <DialogHeader class="px-5 py-4 border-b border-border">
-        <DialogTitle>{{ title }}</DialogTitle>
+        <DialogTitle>{{ title || $t('storage.folder.selectTitle') }}</DialogTitle>
       </DialogHeader>
 
-      <!-- Breadcrumb -->
       <div class="px-4 py-2.5 border-b border-border">
-        <Breadcrumb :items="breadcrumbItems">
-          <template #separator>
-            <Icon icon="mdi:chevron-right" class="text-muted-foreground/40 text-sm shrink-0" />
-          </template>
-          <template #default="{ item, index, isLast }">
-            <button
-              class="text-sm transition-colors hover:text-foreground truncate max-w-[120px]"
-              :class="isLast ? 'text-foreground font-medium' : 'text-muted-foreground'"
-              @click="goToCrumb(index - 1)"
-            >{{ item.label }}</button>
-          </template>
-        </Breadcrumb>
+        <StorageBreadcrumb size="sm" :crumbs="crumbs" @navigate="goToCrumb($event)" />
       </div>
 
-      <!-- Folder list -->
       <div class="flex flex-col gap-0.5 px-2 py-2 min-h-[150px] max-h-[260px] overflow-y-auto">
         <div v-if="loading" class="flex items-center justify-center py-10">
-          <Icon icon="mdi:loading" class="animate-spin text-2xl text-muted-foreground/50" />
+          <Spinner class="text-2xl text-muted-foreground/50" />
         </div>
 
-        <p v-else-if="folders.length === 0 && !creating" class="py-8 text-center text-sm text-muted-foreground">
-          No subfolders here
-        </p>
+        <EmptyState v-else-if="!folders.length" class="py-8">
+          {{ $t('storage.folder.noSubfolders') }}
+        </EmptyState>
 
         <template v-else>
           <button
             v-for="folder in folders"
             :key="folder.id"
             class="flex items-center gap-3 px-3 py-2 rounded-md text-left hover:bg-muted transition-colors"
-            @click="enterFolder(folder)"
+            @click="openFolder(folder)"
           >
             <Icon icon="mdi:folder" class="text-primary text-lg shrink-0" />
             <span class="flex-1 truncate text-foreground text-sm">{{ folder.name }}</span>
             <Icon icon="mdi:chevron-right" class="text-muted-foreground/40 text-base shrink-0" />
           </button>
         </template>
-
-        <!-- Inline create form -->
       </div>
+
       <form
         v-if="creating"
         class="flex flex-col gap-2 px-3 py-2.5 border-t border-border bg-card mt-1"
         @submit.prevent="submitCreate"
       >
-        <Label for="sfd-name" class="text-sm">Folder name</Label>
+        <Label for="sfd-name" class="text-sm">{{ $t('storage.folder.nameLabel') }}</Label>
         <div class="flex gap-1">
-          <Input id="sfd-name" v-model="newName" placeholder="My folder" autofocus class="h-9 text-sm" />
-          <Button type="button" size="sm" variant="ghost" @click="creating = false; newName = ''"><Icon icon="mdi:close" /></Button>
+          <Input
+            id="sfd-name"
+            v-model="newName"
+            :placeholder="$t('storage.folder.namePlaceholder')"
+            autofocus
+            class="h-9 text-sm"
+          />
+          <Button type="button" size="sm" variant="ghost" @click="toggleCreating">
+            <Icon icon="mdi:close" />
+          </Button>
           <Button type="submit" size="sm" :disabled="!newName.trim() || createLoading">
-            {{ createLoading ? 'Creating…' : 'Create' }}
+            {{ createLoading ? '…' : $t('storage.folder.create') }}
           </Button>
         </div>
         <p v-if="createError" class="text-sm text-destructive">{{ createError }}</p>
       </form>
 
-      <!-- Footer -->
       <div class="flex items-center justify-between px-4 py-3 border-t border-border">
-        <Button
-          size="sm"
-          variant="ghost"
-          @click="creating = !creating; newName = ''; createError = ''"
-        >
+        <Button size="sm" variant="ghost" @click="toggleCreating">
           <Icon icon="mdi:folder-plus-outline" class="mr-1.5 text-base" />
-          New folder
+          {{ $t('storage.newFolder') }}
         </Button>
         <div class="flex gap-2">
-          <Button size="sm" variant="outline" @click="emit('close')">Cancel</Button>
-          <Button size="sm" @click="emit('select', currentId)">Move here</Button>
+          <Button size="sm" variant="outline" @click="emit('close')">{{ $t('storage.cancel') }}</Button>
+          <Button size="sm" @click="emit('select', folderId)">{{ $t('storage.folder.moveHere') }}</Button>
         </div>
       </div>
-
     </DialogContent>
   </Dialog>
 </template>

@@ -1,12 +1,12 @@
 <script setup>
 import { inject } from 'vue'
-import FileExplorer from '../../components/storage/FileExplorer.vue'
+import { StorageBrowser } from '../../components/storage'
 
 const data = inject('production-data')
 </script>
 
 <template>
   <div class="p-6">
-    <FileExplorer :production-id="data.production.id" />
+    <StorageBrowser :production-id="data.production.id" />
   </div>
 </template>

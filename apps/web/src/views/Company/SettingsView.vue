@@ -9,6 +9,7 @@ import ImageCropper from '@starling/ui/ImageCropper'
 import Button from '@starling/ui/Button'
 import Input from '@starling/ui/Input'
 import Label from '@starling/ui/Label'
+import Spinner from '@starling/ui/Spinner'
 import { useApi } from '../../composables/useApi.js'
 import { useAuth } from '../../composables/useAuth.js'
 import { usePageTitle } from '../../composables/usePageTitle.js'
@@ -333,7 +334,7 @@ async function removeMember(member) {
             class="shrink-0"
             @click="addMember"
           >
-            <Icon v-if="addLoading" icon="mdi:loading" class="animate-spin size-4" />
+            <Spinner v-if="addLoading" class="size-4" />
             <span v-else>Add</span>
           </Button>
         </div>

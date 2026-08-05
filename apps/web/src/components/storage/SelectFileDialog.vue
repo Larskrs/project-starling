@@ -1,16 +1,16 @@
 <script setup>
 import { Icon } from '@iconify/vue'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@starling/ui'
-import FileExplorer from './FileExplorer.vue'
+import StorageBrowser from './StorageBrowser.vue'
 
 /**
  * Pick a file from the production's storage.
  *
- * The body is the Files page's own FileExplorer in picker mode — same browsing,
- * same upload, same new-folder — only with narrower tiles and the listing
+ * The body is the Files page's own browser in picker mode — same browsing,
+ * same upload, same new folder — only with narrower tiles and the listing
  * filtered to the types the field accepts.
  */
-const props = defineProps({
+defineProps({
   open:         { type: Boolean, required: true },
   productionId: { type: String,  required: true },
   title:        { type: String,  default: '' },
@@ -33,12 +33,12 @@ defineEmits(['select', 'close'])
       </DialogHeader>
 
       <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <FileExplorer
+        <StorageBrowser
           picker
           :production-id="productionId"
           :file-types="fileTypes"
           :tile-width="tileWidth"
-          @select="$emit('select', $event)"
+          @pick="$emit('select', $event)"
         />
       </div>
 
@@ -48,7 +48,7 @@ defineEmits(['select', 'close'])
           {{ noneLabel || $t('storage.picker.none') }}
         </Button>
         <Button size="sm" variant="outline" class="ml-auto" @click="$emit('close')">
-          {{ $t('storage.picker.cancel') }}
+          {{ $t('storage.cancel') }}
         </Button>
       </div>
     </DialogContent>

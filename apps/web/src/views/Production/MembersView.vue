@@ -9,7 +9,7 @@ import RoleSelector from './components/RoleSelector.vue'
 import MemberRow   from './components/MemberRow.vue'
 import ListCard    from '@starling/ui/ListCard'
 import ListHeader  from '@starling/ui/ListHeader'
-import { Skeleton } from '@starling/ui'
+import { Skeleton, Spinner } from '@starling/ui'
 
 const { t }      = useI18n()
 const { $fetch } = useApi()
@@ -120,7 +120,7 @@ async function removeMember(member) {
           :disabled="!addEmail.trim() || addSaving"
           @click="addMember"
         >
-          <Icon v-if="addSaving" icon="mdi:loading" class="animate-spin text-sm" />
+          <Spinner v-if="addSaving" class="text-sm" />
           {{ $t('members.add') }}
         </button>
       </div>

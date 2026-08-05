@@ -1,7 +1,7 @@
 <script setup>
 import { ref, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Icon } from '@iconify/vue'
+import { Spinner } from '@starling/ui'
 import { useApi } from '../../../composables/useApi.js'
 
 const emit = defineEmits(['created'])
@@ -52,7 +52,7 @@ async function createRole() {
         :disabled="!newName.trim() || creating"
         @click="createRole"
       >
-        <Icon v-if="creating" icon="mdi:loading" class="animate-spin" />
+        <Spinner v-if="creating" />
         {{ $t('roles.create') }}
       </button>
     </div>
