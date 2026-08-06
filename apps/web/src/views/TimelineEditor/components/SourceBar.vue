@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
-import { SOURCE_HOTKEYS } from '../useEditorUtils'
+import { SOURCE_HOTKEYS } from '../lib/editorUtils'
 import SourceBadge from '../../Production/components/SourceBadge.vue'
 
 // Compact switcher shown while a track whose type has a source set is selected.

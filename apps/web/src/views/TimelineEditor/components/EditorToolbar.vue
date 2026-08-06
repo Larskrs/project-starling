@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { Avatar, Button } from '@starling/ui'
-import { framesToTC } from '../useEditorUtils'
+import { framesToTC } from '../lib/editorUtils'
 
 const props = defineProps({
   timeline:      { type: Object,  required: true },

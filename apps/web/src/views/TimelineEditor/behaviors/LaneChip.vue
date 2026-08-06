@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
-import { createDrag } from '../usePointerDrag'
+import { createDrag } from '../lib/pointerDrag'
 
 // One draggable value chip on a strip lane (ruler labels, BPM changes).
 // Drag horizontally to move the clip, click to edit, hover for delete.

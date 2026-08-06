@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
-import { clipLeft } from '../useEditorUtils'
-import { useViewportRange } from '../useViewportRange'
+import { clipLeft } from '../lib/editorUtils'
+import { useViewportRange } from '../view/useViewportRange'
 import LaneChip from './LaneChip.vue'
 
 // Slim strip lane for track types with trackDisplay: 'ruler'.

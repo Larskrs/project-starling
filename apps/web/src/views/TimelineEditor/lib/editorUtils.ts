@@ -1,4 +1,4 @@
-import type { Clip } from '../../types/timeline'
+import type { Clip } from '../../../types/timeline'
 
 // Converts an absolute frame number to a HH:MM:SS:FF timecode string.
 export function framesToTC(frame: number, frameRate: string | number): string {

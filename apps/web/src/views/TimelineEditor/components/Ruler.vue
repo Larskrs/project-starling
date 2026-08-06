@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
-import { framesToTC, rulerInterval } from '../useEditorUtils'
-import { useViewportRange } from '../useViewportRange'
+import { framesToTC, rulerInterval } from '../lib/editorUtils'
+import { useViewportRange } from '../view/useViewportRange'
 
 const props = defineProps({
   timeline:      { type: Object, required: true },

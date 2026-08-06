@@ -7,15 +7,18 @@ import { ResizeHandle, ConfirmDialog, useToast } from '@starling/ui'
 import { useApi } from '../../composables/useApi'
 import { usePageTitle } from '../../composables/usePageTitle'
 import { useCookie } from '../../composables/useCookie'
-import { useResizable } from '../../composables/useResizable'
-import { clamp, framesToTC, sourceIndexFromKey, RULER_TICK_TARGET_PX } from './useEditorUtils'
-import { createDrag } from './usePointerDrag'
-import { useTimelineSync } from './useTimelineSync'
-import { usePlayback } from './usePlayback'
-import { destroyAudioEngine } from './useAudioEngine'
-import { clearWaveformCache } from './useWaveform'
-import { describeDownload, resetDownloads } from './mediaDownloads'
-import { resolveTrackSettings, RULER_TRACK_HEIGHT, BPM_TRACK_HEIGHT, bpmAtFrame } from './behaviors/trackSettings'
+import { clamp, framesToTC, sourceIndexFromKey } from './lib/editorUtils'
+import { useEditorViewport } from './view/useEditorViewport'
+import { useEditorZoom } from './view/useEditorZoom'
+import { useEditorLayout } from './view/useEditorLayout'
+import { useEditorViewMemory } from './view/useEditorViewMemory'
+import { createDrag } from './lib/pointerDrag'
+import { useTimelineSync } from './data/useTimelineSync'
+import { usePlayback } from './audio/usePlayback'
+import { destroyAudioEngine } from './audio/useAudioEngine'
+import { clearWaveformCache } from './audio/useWaveform'
+import { describeDownload, resetDownloads } from './media/mediaDownloads'
+import { resolveTrackSettings, bpmAtFrame } from './behaviors/trackSettings'
 import RulerLane       from './behaviors/RulerLane.vue'
 import BpmLane         from './behaviors/BpmLane.vue'
 import EditorToolbar   from './components/EditorToolbar.vue'
@@ -66,9 +69,9 @@ async function load() {
   sync.join(route.params.tlId)
   nextTick(() => {
     // Restore the saved view for this timeline; otherwise the 5-minute default.
-    const saved = savedViews.value[timeline.value.id]
+    const saved = viewMemory.viewFor(timeline.value.id)
     pxPerFrame.value = saved?.z
-      ? clamp(saved.z, minPxPerFrame(), MAX_PX_PER_FRAME)
+      ? clamp(saved.z, minPxPerFrame(), 16)
       : defaultPxPerFrame()
     nextTick(() => {
       if (saved?.s && canvasRef.value) canvasRef.value.scrollLeft = saved.s
@@ -154,196 +157,16 @@ const sync = useTimelineSync({
   },
 })
 
-// ── Zoom ──────────────────────────────────────────────────────────────────────
-// Two input styles over one range (fit-whole-timeline … MAX_PX_PER_FRAME, so
-// the range adapts to the timeline's length):
-//  - wheel / pinch: CONTINUOUS exponential scaling, normalized per device and
-//    coalesced to one zoom per frame — smooth on trackpads, sane per mouse notch
-//  - toolbar buttons / keyboard: a ladder of ZOOM_STOPS geometric stops
-// The default zoom puts ruler ticks at 5-minute intervals; the readout is the
-// position in the range (0–100%), so the visible number stays small no matter
-// how long the timeline is.
-const MAX_PX_PER_FRAME = 16
-const ZOOM_STOPS       = 50
-const WHEEL_ZOOM_RATE  = 0.003   // exp factor per normalized wheel px
+// ── View: viewport, zoom, layout ─────────────────────────────────────────────
+const { canvasRef, trackHeadersRef, viewport, updateViewport, onCanvasScroll } = useEditorViewport()
 
-const pxPerFrame    = ref(1)      // set to the 5-minute-tick default once loaded
-const timelineWidth = computed(() =>
-  timeline.value ? (timeline.value.endFrame - timeline.value.startFrame) * pxPerFrame.value : 0,
-)
+const {
+  pxPerFrame, timelineWidth, zoomLabel,
+  minPxPerFrame, defaultPxPerFrame,
+  setZoom, zoomIn, zoomOut, zoomFit, zoomReset,
+} = useEditorZoom({ timeline, canvasRef, playheadFrame, isPlaying, updateViewport })
 
-function minPxPerFrame() {
-  const frames = timeline.value ? timeline.value.endFrame - timeline.value.startFrame : 0
-  const width  = canvasRef.value?.clientWidth || 1200
-  return frames > 0 ? Math.min(width / frames, MAX_PX_PER_FRAME) : 0.01
-}
-
-// Default zoom: one ruler tick ≈ 5 minutes.
-function defaultPxPerFrame() {
-  const fps = parseFloat(timeline.value?.frameRate) || 25
-  return clamp(RULER_TICK_TARGET_PX / (fps * 300), minPxPerFrame(), MAX_PX_PER_FRAME)
-}
-
-function setZoom(px, anchorClientX = null) {
-  if (!timeline.value) return
-  px = clamp(px, minPxPerFrame(), MAX_PX_PER_FRAME)
-  if (px === pxPerFrame.value) return
-
-  const canvas = canvasRef.value
-  if (!canvas) { pxPerFrame.value = px; return }
-
-  // Keep the frame under the anchor stationary: the cursor when given; else
-  // the playhead while playing (auto-follow chases it anyway — centre-anchored
-  // zoom would yank it off screen); else the viewport centre.
-  let anchorX
-  if (anchorClientX != null) {
-    anchorX = anchorClientX - canvas.getBoundingClientRect().left
-  } else {
-    const playheadPx = (playheadFrame.value - timeline.value.startFrame) * pxPerFrame.value - canvas.scrollLeft
-    anchorX = (isPlaying.value && playheadPx >= 0 && playheadPx <= canvas.clientWidth)
-      ? playheadPx
-      : canvas.clientWidth / 2
-  }
-  const anchorFrame = timeline.value.startFrame + (canvas.scrollLeft + anchorX) / pxPerFrame.value
-
-  pxPerFrame.value = px
-
-  nextTick(() => {
-    canvas.scrollLeft = (anchorFrame - timeline.value.startFrame) * px - anchorX
-    updateViewport()
-  })
-}
-
-// The stop ladder, rebuilt on demand (its floor moves with the canvas width).
-function zoomStops() {
-  const min   = minPxPerFrame()
-  const ratio = MAX_PX_PER_FRAME / min
-  if (ratio <= 1) return [min]
-  const stops = []
-  for (let i = 0; i < ZOOM_STOPS; i++) stops.push(min * Math.pow(ratio, i / (ZOOM_STOPS - 1)))
-  return stops
-}
-
-function nearestStopIndex(stops, px) {
-  let best = 0, bestD = Infinity
-  for (let i = 0; i < stops.length; i++) {
-    const d = Math.abs(Math.log(stops[i] / px))
-    if (d < bestD) { bestD = d; best = i }
-  }
-  return best
-}
-
-function stepZoom(steps, anchorClientX = null) {
-  const stops = zoomStops()
-  const i     = nearestStopIndex(stops, pxPerFrame.value)
-  setZoom(stops[clamp(i + steps, 0, stops.length - 1)], anchorClientX)
-}
-
-const zoomIn    = () => stepZoom(1)
-const zoomOut   = () => stepZoom(-1)
-const zoomFit   = () => setZoom(minPxPerFrame())
-const zoomReset = () => setZoom(defaultPxPerFrame())
-
-// Toolbar readout: position on the zoom ladder — 0% = whole timeline, 100% = max.
-const zoomLabel = computed(() => {
-  if (!timeline.value) return ''
-  const min   = minPxPerFrame()
-  const ratio = MAX_PX_PER_FRAME / min
-  if (ratio <= 1) return '100%'
-  const pct = Math.round(100 * Math.log(pxPerFrame.value / min) / Math.log(ratio))
-  return `${clamp(pct, 0, 100)}%`
-})
-
-// Browser zoom is disabled on the editor page: Ctrl/⌘+wheel (incl. trackpad
-// pinch) zooms the timeline instead, anchored at the cursor when it's over the
-// canvas. Continuous exponential scaling — deltas are normalized (line/page
-// deltaModes → px, so mouse notches and pinches feel equivalent) and coalesced
-// to one setZoom per animation frame, so a pinch burst costs one re-render.
-// Safari's proprietary gesture events are swallowed for the same reason.
-let _wheelFactor = 1
-let _wheelAnchor = null
-let _wheelRaf    = null
-
-function onGlobalWheel(e) {
-  if (!e.ctrlKey && !e.metaKey) return
-  e.preventDefault()
-  const deltaPx = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1)
-  _wheelFactor *= Math.exp(-deltaPx * WHEEL_ZOOM_RATE)
-  if (canvasRef.value?.contains(e.target)) _wheelAnchor = e.clientX
-
-  if (_wheelRaf) return
-  _wheelRaf = requestAnimationFrame(() => {
-    _wheelRaf = null
-    const factor = _wheelFactor
-    const anchor = _wheelAnchor
-    _wheelFactor = 1
-    _wheelAnchor = null
-    setZoom(pxPerFrame.value * factor, anchor)
-  })
-}
-const preventGesture = (e) => e.preventDefault()
-
-onMounted(() => {
-  document.addEventListener('wheel', onGlobalWheel, { passive: false })
-  document.addEventListener('gesturestart', preventGesture)
-  document.addEventListener('gesturechange', preventGesture)
-})
-onUnmounted(() => {
-  document.removeEventListener('wheel', onGlobalWheel)
-  document.removeEventListener('gesturestart', preventGesture)
-  document.removeEventListener('gesturechange', preventGesture)
-  if (_wheelRaf) { cancelAnimationFrame(_wheelRaf); _wheelRaf = null }
-})
-
-// ── Scroll sync + viewport ────────────────────────────────────────────────────
-const canvasRef       = ref(null)
-const trackHeadersRef = ref(null)
-
-// Shared with EditorClip so each clip only rasterises the visible slice of its
-// waveform. rAF-coalesced so a burst of scroll events yields one update/frame.
-const viewport = ref({ scrollLeft: 0, width: 0 })
-let _viewportRaf = null
-function updateViewport() {
-  if (_viewportRaf) return
-  _viewportRaf = requestAnimationFrame(() => {
-    _viewportRaf = null
-    const el = canvasRef.value
-    if (el) viewport.value = { scrollLeft: el.scrollLeft, width: el.clientWidth }
-  })
-}
-
-function onCanvasScroll() {
-  if (trackHeadersRef.value && canvasRef.value) {
-    trackHeadersRef.value.scrollTop = canvasRef.value.scrollTop
-  }
-  updateViewport()
-}
-
-onMounted(() => window.addEventListener('resize', updateViewport))
-onUnmounted(() => window.removeEventListener('resize', updateViewport))
-
-// ── Per-timeline view memory (zoom + scroll) ─────────────────────────────────
-// Reopening a timeline restores where you were instead of the 5-minute default.
-const savedViews = useCookie('editor-views', {})   // tlId → { z: pxPerFrame, s: scrollLeft }
-
-function saveView() {
-  if (!timeline.value) return
-  const entries = {
-    ...savedViews.value,
-    [timeline.value.id]: { z: pxPerFrame.value, s: Math.round(canvasRef.value?.scrollLeft ?? 0) },
-  }
-  // Keep the cookie small — drop the oldest entries beyond 20 timelines.
-  const keys = Object.keys(entries)
-  while (keys.length > 20) delete entries[keys.shift()]
-  savedViews.value = entries
-}
-
-let _viewSaveTimer = null
-watch([pxPerFrame, viewport], () => {
-  if (loading.value || !timeline.value) return
-  if (_viewSaveTimer) clearTimeout(_viewSaveTimer)
-  _viewSaveTimer = setTimeout(saveView, 800)
-})
+const viewMemory = useEditorViewMemory({ timeline, loading, pxPerFrame, viewport, canvasRef })
 
 // ── Track behavior settings (from track types) ────────────────────────────────
 const settingsFor = (track) => resolveTrackSettings(track, trackTypes.value)
@@ -415,43 +238,11 @@ const {
   setPlayhead, seekStart, seekEnd, stopPlayback, togglePlayback,
 } = playback
 
-// ── Layout: sidebar width + per-track heights (persisted in cookies) ─────────
-const TRACK_HEIGHT_DEFAULT = 56
-const TRACK_HEIGHT_MIN     = 32
-const TRACK_HEIGHT_MAX     = 256
-
-const sidebarWidth = useCookie('editor-sidebar-width', 264)
-const trackHeights = useCookie('editor-track-heights', {})   // trackId → px
-
-function trackHeight(track) {
-  const display = settingsFor(track).trackDisplay
-  if (display === 'ruler') return RULER_TRACK_HEIGHT
-  if (display === 'bpm')   return BPM_TRACK_HEIGHT
-  return clamp(trackHeights.value[track.id] ?? TRACK_HEIGHT_DEFAULT, TRACK_HEIGHT_MIN, TRACK_HEIGHT_MAX)
-}
-
-const totalTracksHeight = computed(() =>
-  trackList.value.reduce((sum, tr) => sum + trackHeight(tr), 0),
-)
-
-const sidebarResizer = useResizable({ axis: 'x', min: 200, max: 480 })
-const rowResizer     = useResizable({ axis: 'y', min: TRACK_HEIGHT_MIN, max: TRACK_HEIGHT_MAX })
-
-function startSidebarResize(e) {
-  sidebarResizer.start(e, {
-    value: sidebarWidth,
-    // Canvas width changes with the sidebar — keep the waveform viewport fresh.
-    set:   v => { sidebarWidth.value = v; updateViewport() },
-    get:   () => sidebarWidth.value,
-  })
-}
-
-function startRowResize(track, e) {
-  rowResizer.start(e, {
-    get: () => trackHeight(track),
-    set: h => { trackHeights.value = { ...trackHeights.value, [track.id]: h } },
-  })
-}
+// ── Layout ────────────────────────────────────────────────────────────────────
+const {
+  sidebarWidth, trackHeight, totalTracksHeight,
+  sidebarResizer, rowResizer, startSidebarResize, startRowResize,
+} = useEditorLayout({ tracks: trackList, settingsFor, onSidebarResize: updateViewport })
 
 // ── Track selection + source bar ──────────────────────────────────────────────
 const selectedTrackId = ref(null)

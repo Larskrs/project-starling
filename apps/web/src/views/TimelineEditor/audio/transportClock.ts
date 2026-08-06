@@ -18,7 +18,7 @@
  * Vue-free and socket-free so the timing rules can be tested in bare node —
  * see transportClock.test.ts.
  */
-import type { PlayheadAnchor } from '../../types/timeline'
+import type { PlayheadAnchor } from '../../../types/timeline'
 
 /** One completed round trip against the server clock. */
 export interface ClockPing {

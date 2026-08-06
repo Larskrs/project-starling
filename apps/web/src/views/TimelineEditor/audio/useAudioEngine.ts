@@ -37,8 +37,8 @@
 // Explicit extension: useAudioEngine.test.ts loads this module in bare node,
 // whose type stripping resolves specifiers literally rather than probing
 // extensions the way the bundler does.
-import { fetchTracked, markDownloadStage, markDownloadDone, markDownloadFailed } from './mediaDownloads.ts'
-import type { Clip } from '../../types/timeline'
+import { fetchTracked, markDownloadStage, markDownloadDone, markDownloadFailed } from '../media/mediaDownloads.ts'
+import type { Clip } from '../../../types/timeline'
 
 /** One sounding source node plus the gain that fades it in and out. */
 interface Voice {

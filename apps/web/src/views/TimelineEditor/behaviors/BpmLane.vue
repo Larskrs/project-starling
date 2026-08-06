@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
-import { clipLeft } from '../useEditorUtils'
-import { useViewportRange } from '../useViewportRange'
+import { clipLeft } from '../lib/editorUtils'
+import { useViewportRange } from '../view/useViewportRange'
 import LaneChip from './LaneChip.vue'
 
 // Dedicated strip for metronome tracks (metronome overrides trackDisplay).

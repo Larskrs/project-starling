@@ -1,5 +1,5 @@
 import { computed, inject, ref, type ComputedRef, type Ref } from 'vue'
-import type { EditorViewport, ViewportRange } from '../../types/timeline'
+import type { EditorViewport, ViewportRange } from '../../../types/timeline'
 
 /**
  * Visible horizontal px range of the editor canvas, widened by a margin.

@@ -1,15 +1,15 @@
 import { ref, computed, watch, onScopeDispose, type Ref } from 'vue'
-import { clamp } from './useEditorUtils'
+import { clamp } from '../lib/editorUtils'
 import {
   startAudioPlayback, seekAudioPlayback, resyncAudioPlayback, stopAudioPlayback,
   getPlaybackFrame, nudgePlaybackAnchor, onAudioBlockedChange,
 } from './useAudioEngine'
-import { resolveTrackSettings } from './behaviors/trackSettings'
-import { createMetronome } from './behaviors/metronome'
-import { createCueSpeaker } from './behaviors/tts'
-import type { Clip, TrackType, TrackWithType } from '../../types/timeline'
-import type { Timeline } from '../../types/api'
-import type { TransportAction, TransportState } from './useTimelineSync'
+import { resolveTrackSettings } from '../behaviors/trackSettings'
+import { createMetronome } from './metronome'
+import { createCueSpeaker } from './tts'
+import type { Clip, TrackType, TrackWithType } from '../../../types/timeline'
+import type { Timeline } from '../../../types/api'
+import type { TransportAction, TransportState } from '../data/useTimelineSync'
 
 // The SERVER owns the transport clock: clients send commands (play/pause/seek)
 // and continuously converge on the server's anchor — position now =

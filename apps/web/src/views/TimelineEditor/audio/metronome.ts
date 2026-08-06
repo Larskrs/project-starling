@@ -1,4 +1,4 @@
-import { getAudioContext, getMasterGain } from '../useAudioEngine'
+import { getAudioContext, getMasterGain } from './useAudioEngine'
 import type { Clip } from '../../../types/timeline'
 
 const TICK_MS     = 100

@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
-import { clipWidth } from '../useEditorUtils'
-import { useViewportRange } from '../useViewportRange'
+import { clipWidth } from '../lib/editorUtils'
+import { useViewportRange } from '../view/useViewportRange'
 import EditorClip from './EditorClip.vue'
 
 const props = defineProps({

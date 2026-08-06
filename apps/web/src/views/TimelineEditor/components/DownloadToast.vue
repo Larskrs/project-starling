@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
-import { useDownloadQueue } from '../useMediaDownloads'
-import { formatBytes, dismissFinishedDownloads, dismissDownload } from '../mediaDownloads'
+import { useDownloadQueue } from '../media/useMediaDownloads'
+import { formatBytes, dismissFinishedDownloads, dismissDownload } from '../media/mediaDownloads'
 
 // Toast-style island for the media the editor is pulling in: a collapsed
 // summary with the overall bar, expandable into a row per file. It appears on

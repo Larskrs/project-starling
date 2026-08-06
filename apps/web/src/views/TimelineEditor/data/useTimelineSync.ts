@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
-import { createTransportClock } from './transportClock'
-import type { Clip, PlayheadAnchor, Track } from '../../types/timeline'
+import { createTransportClock } from '../audio/transportClock'
+import type { Clip, PlayheadAnchor, Track } from '../../../types/timeline'
 
 export interface ClipChange {
   type: 'upsert' | 'remove'
