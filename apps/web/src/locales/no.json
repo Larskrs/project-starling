@@ -437,7 +437,9 @@
     "loading": {
       "opening": "Åpner tidslinje…",
       "untitled": "Tidslinje"
-    }
+    },
+    "audioBlocked": "Lyd blokkert",
+    "audioBlockedHint": "Nettleseren blokkerte lyd til du samhandler med siden. Klikk hvor som helst for å slå den på."
   },
   "trackTypes": {
     "title": "Sportyper",

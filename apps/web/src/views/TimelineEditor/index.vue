@@ -411,7 +411,7 @@ const playback = usePlayback({
   sendTransport: (...args) => sync.sendTransport(...args),
 })
 const {
-  playheadFrame, playheadX, isPlaying,
+  playheadFrame, playheadX, isPlaying, audioBlocked,
   setPlayhead, seekStart, seekEnd, stopPlayback, togglePlayback,
 } = playback
 
@@ -848,6 +848,7 @@ provide('editor-viewport',   viewport)
         :zoom-label="zoomLabel"
         :playhead-frame="playheadFrame"
         :is-playing="isPlaying"
+        :audio-blocked="audioBlocked"
         :peers="sync.peers.value"
         :sync-connected="sync.connected.value"
         @go-back="goBack"

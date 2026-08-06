@@ -437,7 +437,9 @@
     "loading": {
       "opening": "Opening timeline…",
       "untitled": "Timeline"
-    }
+    },
+    "audioBlocked": "Sound blocked",
+    "audioBlockedHint": "Your browser blocked audio until you interact with the page. Click anywhere to enable it."
   },
   "trackTypes": {
     "title": "Track Types",

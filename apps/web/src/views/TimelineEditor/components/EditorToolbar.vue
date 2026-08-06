@@ -12,6 +12,8 @@ const props = defineProps({
   isPlaying:     { type: Boolean, default: false },
   peers:         { type: Array,   default: () => [] },
   syncConnected: { type: Boolean, default: false },
+  /** Joined a playing room before the browser would let us make sound. */
+  audioBlocked:  { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['go-back', 'zoom-in', 'zoom-out', 'zoom-fit', 'zoom-reset', 'add-track', 'toggle-play', 'seek-start', 'seek-end'])
@@ -119,6 +121,22 @@ function initials(name) {
     <div class="font-mono text-sm tabular-nums text-foreground bg-muted/60 px-2.5 py-1 rounded-md shrink-0">
       {{ tc }}
     </div>
+
+    <!--
+      The transport is running but the browser is holding the audio silent
+      (joined mid-playback with no interaction yet). Any click unlocks it, so
+      this only has to explain the silence — clicking it is just the handiest
+      gesture to do that with.
+    -->
+    <button
+      v-if="audioBlocked"
+      class="flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-md text-xs font-medium
+             bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 transition-colors"
+      :title="$t('editor.audioBlockedHint')"
+    >
+      <Icon icon="mdi:volume-off" class="size-4" />
+      {{ $t('editor.audioBlocked') }}
+    </button>
 
     <div class="w-px h-5 bg-border shrink-0 mx-1" />
 

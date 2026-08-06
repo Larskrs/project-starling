@@ -1,6 +1,9 @@
-import { ref, computed, watch, type Ref } from 'vue'
+import { ref, computed, watch, onScopeDispose, type Ref } from 'vue'
 import { clamp } from './useEditorUtils'
-import { startAudioPlayback, seekAudioPlayback, resyncAudioPlayback, stopAudioPlayback, getPlaybackFrame, nudgePlaybackAnchor } from './useAudioEngine'
+import {
+  startAudioPlayback, seekAudioPlayback, resyncAudioPlayback, stopAudioPlayback,
+  getPlaybackFrame, nudgePlaybackAnchor, onAudioBlockedChange,
+} from './useAudioEngine'
 import { resolveTrackSettings } from './behaviors/trackSettings'
 import { createMetronome } from './behaviors/metronome'
 import { createCueSpeaker } from './behaviors/tts'
@@ -73,6 +76,13 @@ export function usePlayback({
   // Stored as float for smooth animation; TC display rounds it.
   const playheadFrame = ref(0)
   const isPlaying     = ref(false)
+  /**
+   * We are meant to be making sound and the browser won't let us yet. Only
+   * reachable by joining a room that is already playing — a local play IS the
+   * gesture that unlocks audio. The toolbar surfaces this so the silence is
+   * explained rather than looking broken.
+   */
+  const audioBlocked  = ref(false)
 
   watch(timeline, tl => { if (tl) playheadFrame.value = tl.startFrame }, { immediate: true })
 
@@ -274,6 +284,9 @@ export function usePlayback({
   function stopPlayback(broadcast = true) {
     const wasPlaying = isPlaying.value
     isPlaying.value = false
+    // Nothing is meant to be sounding now, so a blocked context isn't a problem
+    // worth reporting until we try to play again.
+    audioBlocked.value = false
     if (_rafId !== null) { cancelAnimationFrame(_rafId); _rafId = null }
     scheduleResync.cancel()
     scheduleClipSync.cancel()
@@ -399,8 +412,35 @@ export function usePlayback({
     }
   }
 
+  /**
+   * While the browser held the context silent the run was anchored to a clock
+   * that stood still, so on release we jump to where the room actually is and
+   * re-attack from there — resuming from the frozen anchor would play the
+   * passage we already missed, minutes behind everyone else.
+   *
+   * Only a release that follows a real block does that. The ordinary press-play
+   * path reports `false` without ever reporting `true`, and must not re-anchor
+   * a run that just started.
+   */
+  const stopBlockedWatch = onAudioBlockedChange((blocked) => {
+    const wasBlocked = audioBlocked.value
+    audioBlocked.value = blocked
+    if (blocked || !wasBlocked) return
+    if (!isPlaying.value || !timeline.value) return
+
+    const anchor = _serverAnchor
+    if (anchor) {
+      const serverFrame = anchor.frame + ((Date.now() - anchor.localMs) / 1000) * anchor.fps
+      if (serverFrame >= timeline.value.endFrame) { stopPlayback(false); return }
+      setPlayhead(serverFrame, { broadcast: false })
+    }
+    resyncAudioFull()
+  })
+
+  onScopeDispose(stopBlockedWatch)
+
   return {
-    playheadFrame, playheadX, isPlaying,
+    playheadFrame, playheadX, isPlaying, audioBlocked,
     setPlayhead, seekStart, seekEnd,
     startPlayback, stopPlayback, togglePlayback,
     applyTransportState,

@@ -11,7 +11,10 @@
  * there is exactly one live run gain connected to master at a time, and starting
  * a new run tears the previous one down first.
  *
- * - Lazy AudioContext (created on first startPlayback — after a user gesture)
+ * - Lazy AudioContext, created on first playback. That is NOT always a user
+ *   gesture — joining a room mid-playback starts from a socket message — so
+ *   the context can come up suspended and is unlocked on the next gesture.
+ *   See the autoplay-unlock section below.
  * - Decoded AudioBuffer cache keyed by fileId (shared with the waveform module)
  * - Rolling look-ahead scheduler: clips decode + schedule only as they approach
  *
@@ -109,12 +112,102 @@ const TICK_MS          = 200   // scheduler poll interval
 const SCHEDULE_AHEAD_S = 1.5   // create + start sources this far ahead of playtime
 const DECODE_AHEAD_S   = 6     // warm the decode cache this far ahead
 
+// ── Autoplay unlock ────────────────────────────────────────────────────────
+//
+// Pressing play is a user gesture, so a context created there starts running.
+// Joining a room that is ALREADY playing is not: the transport arrives over the
+// socket, and a context created (or resumed) from that callback stays
+// `suspended` under every browser's autoplay policy. The run schedules
+// normally, the playhead moves, and nothing is audible — which is the whole
+// "joined mid-playback and got no sound" bug.
+//
+// `resume()` is still attempted, because it succeeds whenever the page already
+// has sticky user activation (the usual click-a-timeline navigation). When it
+// doesn't, the next gesture anywhere on the page unlocks it and subscribers
+// re-anchor — see onAudioUnlocked.
+const UNLOCK_EVENTS = ['pointerdown', 'keydown', 'touchend'] as const
+
+type BlockedListener = (blocked: boolean) => void
+
+const _blockedListeners = new Set<BlockedListener>()
+/** Removes the armed gesture listeners; null when nothing is armed. */
+let _disarmUnlock: (() => void) | null = null
+let _lastReportedBlocked = false
+
+/** True when a context exists but the browser is still holding it silent. */
+export function isAudioBlocked(): boolean {
+  return !!_ctx && _ctx.state === 'suspended'
+}
+
+/**
+ * Notified whenever the browser's hold on our audio changes — `true` when a
+ * context comes up (or stays) suspended, `false` once it actually runs.
+ *
+ * A false edge after a true one means the transport ran on without us, so
+ * listeners should re-anchor rather than resume from where the run froze.
+ * Returns an unsubscribe.
+ */
+export function onAudioBlockedChange(fn: BlockedListener): () => void {
+  _blockedListeners.add(fn)
+  return () => { _blockedListeners.delete(fn) }
+}
+
+/** Announce the current state, but only when it actually changed. */
+function _reportBlocked(): void {
+  const blocked = isAudioBlocked()
+  if (blocked === _lastReportedBlocked) return
+  _lastReportedBlocked = blocked
+  for (const fn of _blockedListeners) fn(blocked)
+}
+
+/**
+ * Ask the context to run. `state` is the answer, not the promise: a rejected
+ * resume and one that leaves the context suspended mean the same thing here.
+ */
+function _tryResume(): void {
+  const ctx = _ctx
+  if (!ctx) { _disarmUnlock?.(); return }
+  const settle = (): void => {
+    if (ctx.state === 'running') _disarmUnlock?.()
+    _reportBlocked()
+  }
+  ctx.resume().then(settle).catch(settle)
+}
+
+function _armUnlock(): void {
+  if (_disarmUnlock || typeof window === 'undefined') return
+
+  _disarmUnlock = (): void => {
+    _disarmUnlock = null
+    for (const type of UNLOCK_EVENTS) window.removeEventListener(type, _tryResume, true)
+  }
+  // Capture phase: the unlock must not depend on the click reaching a handler.
+  for (const type of UNLOCK_EVENTS) window.addEventListener(type, _tryResume, true)
+}
+
+/**
+ * Try to run the context now, and fall back to unlocking on the next gesture.
+ *
+ * Both happen: `resume()` succeeds outright when the page already has sticky
+ * user activation, and the armed listener is torn down again the moment it
+ * does — so the ordinary "press play" path never leaves anything attached and
+ * never reports a block it didn't have.
+ */
+function _resumeOrArm(ctx: AudioContext): void {
+  if (ctx.state !== 'suspended') { _reportBlocked(); return }
+  _armUnlock()
+  _tryResume()
+}
+
 function getContext() {
   if (!_ctx) {
     _ctx = new AudioContext()
     _master = _ctx.createGain()
     _master.gain.value = _masterVolume
     _master.connect(_ctx.destination)
+    // A context born outside a gesture starts suspended; arm the unlock now
+    // rather than waiting for something to try to play through it.
+    _resumeOrArm(_ctx)
   }
   return _ctx
 }
@@ -213,7 +306,7 @@ function _schedulableFrom(clips: Clip[], playheadFrame: number): Clip[] {
 export function startAudioPlayback(clips: Clip[], playheadFrame: number, frameRate: number): void {
   stopAudioPlayback()
   const ctx = getContext()
-  if (ctx.state === 'suspended') void ctx.resume()
+  _resumeOrArm(ctx)
 
   const gain = ctx.createGain()
   gain.connect(getMasterGain())
@@ -396,7 +489,7 @@ export function seekAudioPlayback(clips: Clip[], playheadFrame: number, frameRat
     startAudioPlayback(clips, playheadFrame, frameRate)
     return
   }
-  if (_ctx.state === 'suspended') _ctx.resume()
+  _resumeOrArm(_ctx)
 
   const t = _ctx.currentTime
   for (const voice of run.voices) _retireVoice(voice, t)
@@ -489,7 +582,12 @@ export function stopAudioPlayback() {
 /** Close and dispose the audio context. Call on component unmount. */
 export function destroyAudioEngine() {
   stopAudioPlayback()
-  try { _ctx?.close() } catch {}
+  // Leaving the listeners attached would keep them on window for the life of
+  // the page AND block re-arming, so the next join-mid-playback could never
+  // unlock. Subscribers are the callers' to remove, via their unsubscribe.
+  _disarmUnlock?.()
+  _lastReportedBlocked = false
+  try { _ctx?.close() } catch { /* already closed */ }
   _ctx    = null
   _master = null
   _bufferPromises.clear()

@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
-    "test": "node src/views/TimelineEditor/transportClock.test.ts && node src/views/TimelineEditor/mediaDownloads.test.ts && node src/views/TimelineEditor/useAudioEngine.test.ts"
+    "test": "node src/views/TimelineEditor/transportClock.test.ts && node src/views/TimelineEditor/mediaDownloads.test.ts && node src/views/TimelineEditor/useAudioEngine.test.ts && node src/views/TimelineEditor/audioUnlock.test.ts"
   },
   "dependencies": {
     "@iconify/vue": "^5.0.1",
