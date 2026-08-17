@@ -154,7 +154,10 @@
     "recentMembers": "Nye medlemmer",
     "noRecentFiles": "Ingen filer lastet opp ennå",
     "noRecentMembers": "Ingen medlemmer ennå",
-    "uploadedBy": "av {name}"
+    "uploadedBy": "av {name}",
+    "storageUsed": "Lagring brukt",
+    "viewAll": "Se alle",
+    "tracks": "spor"
   },
   "storage": {
     "type": {
@@ -374,7 +377,8 @@
     "sourceBar": {
       "addsAt": "Klikk en kilde for å legge til et klipp ved {tc}",
       "noSources": "Dette kildesettet har ingen kilder ennå",
-      "close": "Fjern valg av spor"
+      "close": "Fjern valg av spor",
+      "onAir": "På lufta ved spillehodet"
     },
     "bpmClip": {
       "addTitle": "Legg til BPM-endring",

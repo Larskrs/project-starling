@@ -18,7 +18,7 @@ import { usePlayback } from './audio/usePlayback'
 import { destroyAudioEngine } from './audio/useAudioEngine'
 import { clearWaveformCache } from './audio/useWaveform'
 import { describeDownload, resetDownloads } from './media/mediaDownloads'
-import { resolveTrackSettings, bpmAtFrame } from './behaviors/trackSettings'
+import { resolveTrackSettings } from './behaviors/trackSettings'
 import RulerLane       from './behaviors/RulerLane.vue'
 import BpmLane         from './behaviors/BpmLane.vue'
 import EditorToolbar   from './components/EditorToolbar.vue'
@@ -164,7 +164,13 @@ const {
   pxPerFrame, timelineWidth, zoomLabel,
   minPxPerFrame, defaultPxPerFrame,
   setZoom, zoomIn, zoomOut, zoomFit, zoomReset,
-} = useEditorZoom({ timeline, canvasRef, playheadFrame, isPlaying, updateViewport })
+} = useEditorZoom({
+  timeline, canvasRef, updateViewport,
+  // Playback owns the transport state but is created below — it needs
+  // pxPerFrame from here. Passed as getters so nothing is read during setup.
+  playheadFrame: () => playheadFrame.value,
+  isPlaying:     () => isPlaying.value,
+})
 
 const viewMemory = useEditorViewMemory({ timeline, loading, pxPerFrame, viewport, canvasRef })
 
@@ -182,15 +188,6 @@ const byOrder = (a, b) =>
 
 const orderedTracks = computed(() => [...trackList.value].sort(byOrder))
 
-// Header badge: live BPM for metronome tracks; the active clip's label otherwise.
-function headerBadge(track) {
-  if (settingsFor(track).metronome) {
-    const bpm = bpmAtFrame(track.clips, playheadFrame.value)
-    return bpm ? `♩ ${bpm}` : '♩ —'
-  }
-  return activeClipLabel(track)
-}
-
 // The clip under the playhead: last clip at/before it, still running if it has
 // a length (clip mode); event-mode clips stay active until the next clip.
 function activeClip(track) {
@@ -206,15 +203,6 @@ function activeClip(track) {
     if (frame >= active.position + len) return null
   }
   return active
-}
-
-function activeClipLabel(track) {
-  const active = activeClip(track)
-  if (!active) return ''
-  // Matches the clip display: source short name prefixes a custom label.
-  const short = active.sourceId ? sources.value.find(s => s.id === active.sourceId)?.shortName : null
-  if (short && active.label) return `${short} - ${active.label}`
-  return active.label || ''
 }
 
 // ── Client-local mute (cookie — never saved to the server) ────────────────────
@@ -375,12 +363,16 @@ async function addSourceClip(source) {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 function onKeydown(e) {
-  // Ctrl/⌘ +/−/0 zoom the timeline, never the page — even while an input has
-  // focus, so browser zoom stays disabled everywhere on the editor page.
-  if (e.ctrlKey || e.metaKey) {
-    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return }
-    if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
-    if (e.key === '0')                  { e.preventDefault(); zoomReset(); return }
+  // Alt +/−/0 zoom the timeline — claimed even while an input has focus, so the
+  // shortcut behaves the same everywhere in the editor. Ctrl/⌘ +/−/0 are left
+  // alone: they scale the page here exactly as they do on any other site.
+  //
+  // Keyed off e.code because Option rewrites the printed character on macOS
+  // (Option+= is '≠'), which is what e.key would report.
+  if (e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (e.code === 'Equal'  || e.code === 'NumpadAdd')      { e.preventDefault(); zoomIn();    return }
+    if (e.code === 'Minus'  || e.code === 'NumpadSubtract') { e.preventDefault(); zoomOut();   return }
+    if (e.code === 'Digit0' || e.code === 'Numpad0')        { e.preventDefault(); zoomReset(); return }
   }
   const tag = e.target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
@@ -394,8 +386,11 @@ function onKeydown(e) {
   }
 
   // Bare +/− step the zoom ladder too — no modifier needed outside inputs.
-  if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return }
-  if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
+  // Ctrl/⌘ is excluded so the browser's own page zoom still gets the key.
+  if (!e.ctrlKey && !e.metaKey) {
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return }
+    if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
+  }
   // Ignore auto-repeat: holding space would otherwise machine-gun play/stop,
   // tearing down and restarting the run many times a second.
   if (e.code === 'Space')  { e.preventDefault(); if (!e.repeat) togglePlayback() }
@@ -411,9 +406,8 @@ function onKeydown(e) {
 onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
-  if (_viewSaveTimer) clearTimeout(_viewSaveTimer)
-  if (_flashTimer)    clearTimeout(_flashTimer)
-  saveView()   // flush the debounced view save so the last zoom/scroll sticks
+  if (_flashTimer) clearTimeout(_flashTimer)
+  // The pending view save is flushed by useEditorViewMemory's own teardown.
   stopPlayback(false)
   destroyAudioEngine()
   clearWaveformCache()
@@ -684,7 +678,6 @@ provide('editor-viewport',   viewport)
               :track="track"
               :height="trackHeight(track)"
               :selected="track.id === selectedTrackId"
-              :badge="headerBadge(track)"
               :resizable="!isStripTrack(track)"
               :muted="isTrackMuted(track)"
               :class="reorderDrag?.trackId === track.id ? 'opacity-60' : ''"

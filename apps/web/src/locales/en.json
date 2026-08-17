@@ -154,7 +154,10 @@
     "recentMembers": "New members",
     "noRecentFiles": "No files uploaded yet",
     "noRecentMembers": "No members yet",
-    "uploadedBy": "by {name}"
+    "uploadedBy": "by {name}",
+    "storageUsed": "Storage used",
+    "viewAll": "View all",
+    "tracks": "tracks"
   },
   "storage": {
     "type": {
@@ -374,7 +377,8 @@
     "sourceBar": {
       "addsAt": "Click a source to add a clip at {tc}",
       "noSources": "This source set has no sources yet",
-      "close": "Deselect track"
+      "close": "Deselect track",
+      "onAir": "On air at the playhead"
     },
     "bpmClip": {
       "addTitle": "Add BPM change",

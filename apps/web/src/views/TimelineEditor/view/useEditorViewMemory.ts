@@ -1,4 +1,4 @@
-import { watch, type Ref } from 'vue'
+import { onScopeDispose, watch, type Ref } from 'vue'
 import { useCookie } from '../../../composables/useCookie'
 import type { EditorViewport } from '../../../types/timeline'
 import type { Timeline } from '../../../types/api'
@@ -57,6 +57,17 @@ export function useEditorViewMemory(
     if (loading.value || !timeline.value) return
     if (timer) clearTimeout(timer)
     timer = setTimeout(save, SAVE_DEBOUNCE_MS)
+  })
+
+  // Leaving the editor mid-debounce would otherwise drop the last zoom/scroll,
+  // so a queued save is flushed rather than cancelled. A pending timer is
+  // exactly the signal that something changed and hasn't been persisted, and
+  // the scope stops before the canvas unmounts — scrollLeft is still readable.
+  onScopeDispose(() => {
+    if (!timer) return
+    clearTimeout(timer)
+    timer = null
+    save()
   })
 
   return { viewFor, save }
