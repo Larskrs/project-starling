@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts" generic="T extends SelectOption">
 import { computed } from 'vue'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 import { Icon } from '@iconify/vue'
@@ -7,16 +7,41 @@ import DropdownMenuContent   from './DropdownMenuContent.vue'
 import DropdownMenuItem      from './DropdownMenuItem.vue'
 import DropdownMenuSeparator from './DropdownMenuSeparator.vue'
 
-const props = defineProps({
-  modelValue:  { default: null },
-  options:     { type: Array,  default: () => [] }, // { value, label }
-  nullLabel:   { type: String, default: null },     // adds a "none" first item
-  placeholder: { type: String, default: 'Select…' },
-  align:       { type: String, default: 'start' },
-  class:       { type: String, default: '' },
+/**
+ * The minimum an option must carry. Consumers pass richer objects (an icon, a
+ * hue, …) and the generic keeps those fields visible in the slot props — which
+ * is the whole reason this is generic rather than typed to a fixed shape.
+ */
+export interface SelectOption {
+  value: string | number | null
+  label: string
+}
+
+const props = withDefaults(defineProps<{
+  modelValue?: T['value'] | null
+  options?: T[]
+  /** Adds a "none" first item; null omits it entirely. */
+  nullLabel?: string | null
+  placeholder?: string
+  align?: 'start' | 'center' | 'end'
+  class?: string
+}>(), {
+  // No modelValue default — an absent value is `undefined`, and every
+  // comparison here is null-loose, so it reads the same as null.
+  options: () => [] as never[],
+  nullLabel: null,
+  placeholder: 'Select…',
+  align: 'start',
+  class: '',
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits<{ 'update:modelValue': [value: T['value'] | null] }>()
+
+defineSlots<{
+  selected?: (props: { option: T | null }) => unknown
+  icon?: (props: { option: T }) => unknown
+  option?: (props: { option: T }) => unknown
+}>()
 
 const current = computed(() => props.options.find(o => o.value === props.modelValue) ?? null)
 const label   = computed(() => current.value?.label ?? (props.nullLabel !== null ? props.nullLabel : null))

@@ -71,3 +71,17 @@ export interface RecentActivityResponse {
   timelines: RecentTimeline[]
   productions: RecentProduction[]
 }
+
+export interface ProductionRole {
+  id: string
+  productionId: string
+  name: string
+  /** oklch hue 0–360. */
+  hue: number
+  /**
+   * A bigint permission mask. Sent as a decimal string because JSON numbers
+   * can't hold it — parse with BigInt() before testing bits.
+   */
+  permissions: string
+  createdAt: string
+}

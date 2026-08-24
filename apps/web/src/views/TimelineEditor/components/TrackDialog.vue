@@ -1,26 +1,31 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FormDialog, FormField, IconPicker, Input } from '@starling/ui'
 import { useIconPicker } from '../../../composables/useIconPicker'
 import { useApi } from '../../../composables/useApi'
+import type { EditorTrack } from '../../../types/timeline'
 
 // Per-track settings. The icon is an override: leaving it empty keeps whatever
 // the track type provides, which is why the "none" choice names the type's icon
 // rather than promising no icon at all.
-const props = defineProps({
-  open:  { type: Boolean, required: true },
-  track: { type: Object,  default: null },
-})
+const props = withDefaults(defineProps<{
+  open: boolean
+  /** null while the dialog is closed — there is no track to edit yet. */
+  track?: EditorTrack | null
+}>(), { track: null })
 
-const emit = defineEmits(['update:open', 'saved'])
+const emit = defineEmits<{
+  'update:open': [open: boolean]
+  saved: [track: EditorTrack]
+}>()
 
 const { t }      = useI18n()
 const { $fetch } = useApi()
 const iconPicker = useIconPicker()
 
 const name    = ref('')
-const icon    = ref(null)
+const icon    = ref<string | null>(null)
 const loading = ref(false)
 const error   = ref('')
 
@@ -78,7 +83,7 @@ async function submit() {
       <IconPicker
         v-model="icon"
         v-bind="iconPicker"
-        :hue="track?.typeHue ?? null"
+        :hue="track?.typeHue ?? undefined"
         allow-none
         :none-label="inheritLabel"
       />

@@ -1,25 +1,29 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { SOURCE_HOTKEYS } from '../lib/editorUtils'
 import SourceBadge from '../../Production/components/SourceBadge.vue'
+import type { EditorTrack, Source } from '../../../types/timeline'
 
 // Compact switcher shown while a track whose type has a source set is selected.
 // Picking a source — by click or by its digit key — drops a clip at the
 // playhead. It is opaque on purpose: it sits over the timeline during a live
 // take, and a translucent panel with clips scrolling underneath makes the chips
 // hard to read at a glance.
-const props = defineProps({
-  track:          { type: Object, required: true },
-  sources:        { type: Array,  default: () => [] },
-  tc:             { type: String, default: '' },   // playhead timecode the clip lands on
+const props = withDefaults(defineProps<{
+  track: EditorTrack
+  sources?: Source[]
+  /** Playhead timecode the clip lands on. */
+  tc?: string
   /** Source under the playhead right now — the take currently on air. */
-  activeSourceId: { type: String, default: null },
+  activeSourceId?: string | null
   /** Briefly set after a source is picked, so a keypress visibly registers. */
-  flashSourceId:  { type: String, default: null },
+  flashSourceId?: string | null
+}>(), {
+  sources: () => [], tc: '', activeSourceId: null, flashSourceId: null,
 })
 
-defineEmits(['add', 'close'])
+defineEmits<{ add: [source: Source]; close: [] }>()
 
 // Only the first ten get a key — there are only ten digits. The rest stay
 // clickable, and lose the keycap rather than showing a lie.
@@ -73,7 +77,7 @@ const chips = computed(() =>
             class="flex items-center justify-center size-[18px] rounded border border-border bg-muted
                    text-[10px] font-mono font-semibold text-muted-foreground shrink-0"
           >{{ hotkey }}</kbd>
-          <SourceBadge :short-name="source.shortName" :hue="source.hue" :icon="source.icon" />
+          <SourceBadge :short-name="source.shortName" :hue="source.hue" :icon="source.icon ?? undefined" />
           <span class="text-xs font-medium text-foreground whitespace-nowrap">{{ source.name }}</span>
         </button>
       </div>

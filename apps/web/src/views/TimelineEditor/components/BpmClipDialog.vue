@@ -1,19 +1,24 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FormDialog, FormField, Input } from '@starling/ui'
 import { useApi } from '../../../composables/useApi'
+import type { EditorClip, EditorTrack } from '../../../types/timeline'
 
 // Compact clip dialog for metronome (ruler/BPM) tracks: a clip is just a
 // position + tempo; the tempo applies until the next BPM clip.
-const props = defineProps({
-  open:            { type: Boolean, required: true },
-  track:           { type: Object,  default: null },
-  clip:            { type: Object,  default: null },   // null → create
-  defaultPosition: { type: Number,  default: 0 },
-})
+const props = withDefaults(defineProps<{
+  open: boolean
+  track?: EditorTrack | null
+  /** null → create. */
+  clip?: EditorClip | null
+  defaultPosition?: number
+}>(), { track: null, clip: null, defaultPosition: 0 })
 
-const emit = defineEmits(['update:open', 'saved'])
+const emit = defineEmits<{
+  'update:open': [open: boolean]
+  saved: [clip: EditorClip]
+}>()
 
 const { t }      = useI18n()
 const { $fetch } = useApi()
@@ -42,7 +47,7 @@ async function submit() {
   loading.value = true
   error.value   = ''
   const tlId = props.track.timelineId
-  const url  = isEdit.value ? `/api/timeline/${tlId}/clips/${props.clip.id}` : `/api/timeline/${tlId}/clips`
+  const url  = props.clip ? `/api/timeline/${tlId}/clips/${props.clip.id}` : `/api/timeline/${tlId}/clips`
   const { ok, data, error: err } = await $fetch(url, {
     method: isEdit.value ? 'PATCH' : 'POST',
     json: {

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Dialog        from '@starling/ui/Dialog'
@@ -9,20 +9,24 @@ import DialogFooter  from '@starling/ui/DialogFooter'
 import { Icon } from '@iconify/vue'
 import { Input, Label, Button, SelectMenu } from '@starling/ui'
 import { useApi } from '../../../composables/useApi'
+import type { EditorTrack, TrackType } from '../../../types/timeline'
 
-const props = defineProps({
-  open:       { type: Boolean, required: true },
-  trackTypes: { type: Array,   default: () => [] },
-  timelineId: { type: String,  required: true },
-})
+const props = withDefaults(defineProps<{
+  open: boolean
+  trackTypes?: TrackType[]
+  timelineId: string
+}>(), { trackTypes: () => [] })
 
-const emit = defineEmits(['update:open', 'created'])
+const emit = defineEmits<{
+  'update:open': [open: boolean]
+  created: [track: EditorTrack]
+}>()
 
 const { t }      = useI18n()
 const { $fetch } = useApi()
 
 const name      = ref('')
-const typeId    = ref(null)
+const typeId    = ref<string | null>(null)
 const loading   = ref(false)
 const error     = ref('')
 

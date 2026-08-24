@@ -1,4 +1,7 @@
-import { ref, computed, nextTick, onMounted, onUnmounted, type Ref } from 'vue'
+import {
+  ref, computed, nextTick, onMounted, onUnmounted, toValue,
+  type MaybeRefOrGetter, type Ref,
+} from 'vue'
 import { clamp, RULER_TICK_TARGET_PX } from '../lib/editorUtils'
 import type { Timeline } from '../../../types/api'
 
@@ -22,8 +25,18 @@ const WHEEL_ZOOM_RATE  = 0.003   // exp factor per normalised wheel px
 export interface EditorZoomOptions {
   timeline: Ref<Timeline | null>
   canvasRef: Ref<HTMLElement | null>
-  playheadFrame: Ref<number>
-  isPlaying: Ref<boolean>
+  /**
+   * Playback state, read only when a zoom actually happens.
+   *
+   * Deliberately `MaybeRefOrGetter` and not `Ref`: usePlayback needs the
+   * `pxPerFrame` this composable creates, and this composable needs playback's
+   * position — a construction cycle, so one side has to be lazy. Accepting a
+   * getter lets zoom be built first and still read live playback state at zoom
+   * time. Handing over the refs directly means evaluating them before
+   * usePlayback has run, which is a temporal-dead-zone crash on mount.
+   */
+  playheadFrame: MaybeRefOrGetter<number>
+  isPlaying: MaybeRefOrGetter<boolean>
   updateViewport: () => void
 }
 
@@ -66,8 +79,8 @@ export function useEditorZoom(
       anchorX = anchorClientX - canvas.getBoundingClientRect().left
     } else {
       const playheadPx =
-        (playheadFrame.value - timeline.value.startFrame) * pxPerFrame.value - canvas.scrollLeft
-      anchorX = (isPlaying.value && playheadPx >= 0 && playheadPx <= canvas.clientWidth)
+        (toValue(playheadFrame) - timeline.value.startFrame) * pxPerFrame.value - canvas.scrollLeft
+      anchorX = (toValue(isPlaying) && playheadPx >= 0 && playheadPx <= canvas.clientWidth)
         ? playheadPx
         : canvas.clientWidth / 2
     }

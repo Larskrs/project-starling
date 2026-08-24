@@ -1,18 +1,21 @@
 import { ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 import { createTransportClock } from '../audio/transportClock'
-import type { Clip, PlayheadAnchor, Track } from '../../../types/timeline'
+import type { EditorClip, EditorTrack, PlayheadAnchor } from '../../../types/timeline'
 
+// The server relays these payloads verbatim (see timelineSockets.ts), so what
+// arrives is exactly what a peer's editor sent: the joined editor shapes, not
+// the bare DB rows.
 export interface ClipChange {
   type: 'upsert' | 'remove'
   trackId: string
-  clip?: Clip
+  clip?: EditorClip
   clipId?: string
 }
 
 export interface TrackChange {
   type: 'upsert' | 'remove' | 'reorder'
-  track?: Track
+  track?: EditorTrack
   trackId?: string
   order?: string[]
 }

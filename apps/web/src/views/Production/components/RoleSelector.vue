@@ -5,25 +5,30 @@ import { DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 import DropdownMenuContent   from '@starling/ui/DropdownMenuContent'
 import DropdownMenuItem      from '@starling/ui/DropdownMenuItem'
 import DropdownMenuSeparator from '@starling/ui/DropdownMenuSeparator'
+import type { ProductionRole } from '../../../types/api'
 
-const props = defineProps({
-  modelValue: { type: String, default: null },
-  roles:      { type: Array,  default: () => [] },
-  align:      { type: String, default: 'end' },
+const props = withDefaults(defineProps<{
+  modelValue?: string | null
+  roles?: ProductionRole[]
+  align?: 'start' | 'center' | 'end'
+}>(), {
+  modelValue: null,
+  roles: () => [],
+  align: 'end',
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits<{ 'update:modelValue': [roleId: string | null] }>()
 
 const currentRole = computed(() => props.roles.find(r => r.id === props.modelValue) ?? null)
 
-function badgeStyle(hue) {
+function badgeStyle(hue: number) {
   return {
     backgroundColor: `oklch(65% 0.18 ${hue} / 0.12)`,
     color:           `oklch(52% 0.2 ${hue})`,
   }
 }
 
-function select(roleId) {
+function select(roleId: string | null) {
   emit('update:modelValue', roleId || null)
 }
 </script>   

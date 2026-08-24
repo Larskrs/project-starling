@@ -2,7 +2,7 @@ import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { db, productions, storageFolders, storageFiles, storageImageVersions } from '@starling/db';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -181,91 +181,157 @@ export async function writeProfileImage(
   return processImage(data, getPath);
 }
 
+// ── Deletion ──────────────────────────────────────────────────────────────────
+//
+// Every delete below follows the same two-phase shape: all DB work happens
+// inside one transaction, and disk unlinks happen only after it commits.
+//
+// The order matters. Deleting rows and files as interleaved steps — which is
+// what these did before — leaves the two stores inconsistent whenever a step
+// throws partway: rows pointing at files that are gone, or files on disk that
+// no row accounts for, silently eating the production's storage quota.
+//
+// Neither store can be made to roll back with the other, so the choice is which
+// way to fail. Unlinking after the commit means a crash in between leaves an
+// orphaned file on disk: invisible to users, reclaimable by a sweep, and
+// harmless. The reverse ordering leaves a row whose file 404s on every read —
+// so this is the direction that degrades gracefully.
+
 /** Remove a file from disk, ignoring not-found errors. */
 export async function removeFile(physicalPath: string): Promise<void> {
   await unlink(physicalPath).catch((e) => { if (e?.code !== 'ENOENT') throw e; });
 }
 
-export async function collectFolderIds(rootId: string): Promise<string[]> {
-  const ids = [rootId];
-  const children = await db
-    .select({ id: storageFolders.id })
-    .from(storageFolders)
-    .where(eq(storageFolders.parentId, rootId));
-  for (const child of children) {
-    ids.push(...await collectFolderIds(child.id));
-  }
-  return ids;
+/** Unlink a batch, tolerating individual failures — see the note above. */
+async function removeFiles(paths: string[]): Promise<void> {
+  await Promise.all(paths.map(p => removeFile(p).catch((e) => {
+    console.error(`[storage] failed to unlink ${p}:`, e);
+  })));
 }
 
-export async function purgeFilesFromDisk(files: Array<{ id: string; type: string; physicalPath: string }>) {
-  await Promise.all(
-    files.map(async (file) => {
-      if (file.type === 'image') {
-        const versions = await db
-          .select()
-          .from(storageImageVersions)
-          .where(eq(storageImageVersions.fileId, file.id));
-        await Promise.all(versions.map((v) => removeFile(v.physicalPath)));
-        await db.delete(storageImageVersions).where(eq(storageImageVersions.fileId, file.id));
-      } else {
-        await removeFile(file.physicalPath);
-      }
-    }),
-  );
+/** A DB handle that may be the outer db or an open transaction. */
+type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Every physical path belonging to `files`, image versions included.
+ * Read-only — the caller decides when the rows themselves go.
+ */
+async function physicalPathsFor(
+  tx: Db,
+  files: Array<{ id: string; type: string; physicalPath: string }>,
+): Promise<string[]> {
+  const paths = files.map(f => f.physicalPath);
+
+  const imageIds = files.filter(f => f.type === 'image').map(f => f.id);
+  if (imageIds.length > 0) {
+    const versions = await tx
+      .select({ physicalPath: storageImageVersions.physicalPath })
+      .from(storageImageVersions)
+      .where(inArray(storageImageVersions.fileId, imageIds));
+    paths.push(...versions.map(v => v.physicalPath));
+  }
+
+  return paths;
+}
+
+/**
+ * A folder and everything nested under it, in one round-trip.
+ *
+ * The previous version issued a query per folder and recursed in JS, so a deep
+ * tree cost a query per node; a recursive CTE resolves the whole tree in one.
+ */
+async function descendantFolderIds(tx: Db, rootId: string): Promise<string[]> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    WITH RECURSIVE tree AS (
+      SELECT id FROM storage_folders WHERE id = ${rootId}
+      UNION ALL
+      SELECT f.id FROM storage_folders f JOIN tree t ON f.parent_id = t.id
+    )
+    SELECT id FROM tree
+  `);
+  return Array.from(rows as Iterable<{ id: string }>, r => r.id);
+}
+
+/**
+ * Delete the disk artefacts for files whose rows are going away by another
+ * route (a FK cascade, or an owner row being replaced). Image version rows
+ * cascade from storage_files, so only the paths need collecting here.
+ */
+export async function purgeFilesFromDisk(
+  files: Array<{ id: string; type: string; physicalPath: string }>,
+): Promise<void> {
+  if (files.length === 0) return;
+  const paths = await physicalPathsFor(db, files);
+  await db.delete(storageImageVersions)
+    .where(inArray(storageImageVersions.fileId, files.map(f => f.id)));
+  await removeFiles(paths);
 }
 
 export async function deleteFile(fileId: string): Promise<{ deleted: string }> {
-  const [file] = await db.select().from(storageFiles).where(eq(storageFiles.id, fileId)).limit(1);
-  if (!file) return { deleted: fileId };
+  const paths = await db.transaction(async (tx) => {
+    const [file] = await tx.select().from(storageFiles).where(eq(storageFiles.id, fileId)).limit(1);
+    if (!file) return [];
 
-  await purgeFilesFromDisk([file]);
-  await db.delete(storageFiles).where(eq(storageFiles.id, fileId));
+    const collected = await physicalPathsFor(tx, [file]);
+    // storage_image_versions.file_id cascades from this delete.
+    await tx.delete(storageFiles).where(eq(storageFiles.id, fileId));
+    return collected;
+  });
 
+  await removeFiles(paths);
   return { deleted: fileId };
 }
 
 export async function deleteFolder(folderId: string): Promise<{ deleted: string; filesRemoved: number }> {
-  const folderIds = await collectFolderIds(folderId);
+  const { paths, filesRemoved } = await db.transaction(async (tx) => {
+    const folderIds = await descendantFolderIds(tx, folderId);
 
-  const files = await db
-    .select()
-    .from(storageFiles)
-    .where(inArray(storageFiles.folderId, folderIds));
+    const files = folderIds.length === 0 ? [] : await tx
+      .select({ id: storageFiles.id, type: storageFiles.type, physicalPath: storageFiles.physicalPath })
+      .from(storageFiles)
+      .where(inArray(storageFiles.folderId, folderIds));
 
-  await purgeFilesFromDisk(files);
+    const collected = await physicalPathsFor(tx, files);
 
-  if (files.length) {
-    await db.delete(storageFiles).where(inArray(storageFiles.id, files.map((f) => f.id)));
-  }
+    // Files aren't cascaded by the folder delete — storage_files.folder_id is
+    // ON DELETE SET NULL, so without this they'd survive as loose root-level
+    // rows rather than being removed with the folder.
+    if (files.length > 0) {
+      await tx.delete(storageFiles).where(inArray(storageFiles.id, files.map(f => f.id)));
+    }
+    // Child folders cascade via storage_folders.parent_id.
+    await tx.delete(storageFolders).where(eq(storageFolders.id, folderId));
 
-  await db.delete(storageFolders).where(eq(storageFolders.id, folderId));
+    return { paths: collected, filesRemoved: files.length };
+  });
 
-  return { deleted: folderId, filesRemoved: files.length };
+  await removeFiles(paths);
+  return { deleted: folderId, filesRemoved };
 }
 
 export async function deleteProductionStorage(productionId: string): Promise<{ foldersRemoved: number; filesRemoved: number }> {
-  const files = await db
-    .select()
-    .from(storageFiles)
-    .where(eq(storageFiles.productionId, productionId));
+  const { paths, filesRemoved, foldersRemoved } = await db.transaction(async (tx) => {
+    const files = await tx
+      .select({ id: storageFiles.id, type: storageFiles.type, physicalPath: storageFiles.physicalPath })
+      .from(storageFiles)
+      .where(eq(storageFiles.productionId, productionId));
 
-  await purgeFilesFromDisk(files);
+    const collected = await physicalPathsFor(tx, files);
 
-  if (files.length) {
-    await db.delete(storageFiles).where(eq(storageFiles.productionId, productionId));
-  }
+    if (files.length > 0) {
+      await tx.delete(storageFiles).where(eq(storageFiles.productionId, productionId));
+    }
 
-  const folders = await db
-    .select({ id: storageFolders.id })
-    .from(storageFolders)
-    .where(eq(storageFolders.productionId, productionId));
+    const folders = await tx
+      .delete(storageFolders)
+      .where(eq(storageFolders.productionId, productionId))
+      .returning({ id: storageFolders.id });
 
-  if (folders.length) {
-    await db.delete(storageFolders).where(eq(storageFolders.productionId, productionId));
-  }
+    return { paths: collected, filesRemoved: files.length, foldersRemoved: folders.length };
+  });
 
-  return { foldersRemoved: folders.length, filesRemoved: files.length };
+  await removeFiles(paths);
+  return { foldersRemoved, filesRemoved };
 }
 
 export async function deleteCompanyStorage(companyId: string): Promise<{ foldersRemoved: number; filesRemoved: number }> {
@@ -277,6 +343,8 @@ export async function deleteCompanyStorage(companyId: string): Promise<{ folders
   let foldersRemoved = 0;
   let filesRemoved   = 0;
 
+  // Sequential rather than parallel: each production is its own transaction, so
+  // one failing leaves the others already committed instead of half-applied.
   for (const prod of prods) {
     const result = await deleteProductionStorage(prod.id);
     foldersRemoved += result.foldersRemoved;

@@ -189,7 +189,7 @@ export function iconLabel(name: string | null | undefined): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** `mdi:foo-bar` → `foo bar`, the words the search box matches against. */
+/** `mdi:video-outline` → `video outline`, the words the search box matches against. */
 function searchText(icon: IconEntry): string {
   return `${icon.name.slice(4).replace(/-/g, ' ')} ${icon.keywords ?? ''}`.toLowerCase()
 }

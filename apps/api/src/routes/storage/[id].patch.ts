@@ -6,7 +6,7 @@ import { requireProductionAccess, requirePermission } from '../../lib/production
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
-  folder_id: z.string().uuid().nullable().optional(),
+  folder_id: z.uuid().nullable().optional(),
   name:      z.string().min(1).max(255).optional(),
 });
 

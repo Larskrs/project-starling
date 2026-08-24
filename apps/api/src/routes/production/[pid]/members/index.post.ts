@@ -7,7 +7,7 @@ import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
   email:  z.string().email(),
-  roleId: z.string().uuid().optional(),
+  roleId: z.uuid().optional(),
 });
 
 export default defineEventHandler(async (event) => {

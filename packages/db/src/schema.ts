@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint, index, jsonb, numeric, check } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, uuid, text, boolean, timestamp, uniqueIndex, integer, type AnyPgColumn, bigint, index, jsonb, check } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 export const companyRoleEnum = pgEnum('company_role', ['owner', 'admin', 'member']);
@@ -33,7 +33,11 @@ export const sessions = pgTable('sessions', {
   id:        text('id').primaryKey(),
   userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   expiresAt: timestamp('expires_at').notNull(),
-});
+}, (t) => [
+  // The expiry sweep in lib/session.ts runs every 5 minutes forever; without
+  // this it seq-scans the whole table each time.
+  index('sessions_expires_idx').on(t.expiresAt),
+]);
 
 export const companies = pgTable('companies', {
   id:             uuid('id').primaryKey().defaultRandom(),
@@ -79,7 +83,12 @@ export const storageFiles = pgTable('storage_files', {
   physicalPath: text('physical_path').notNull(),
   hidden:       boolean('hidden').notNull().default(false),
   createdAt:    timestamp('created_at').notNull().defaultNow(),
-});
+}, (t) => [
+  // Both are hot: productionId drives the browser listing, storage stats and
+  // the production cascade delete; folderId drives every folder navigation.
+  index('storage_files_production_idx').on(t.productionId),
+  index('storage_files_folder_idx').on(t.folderId),
+]);
 
 export const storageImageVersions = pgTable('storage_image_versions', {
   id:           uuid('id').primaryKey().defaultRandom(),
@@ -88,7 +97,10 @@ export const storageImageVersions = pgTable('storage_image_versions', {
   physicalPath: text('physical_path').notNull(),
   size:         integer('size').notNull(),
   createdAt:    timestamp('created_at').notNull().defaultNow(),
-});
+}, (t) => [
+  // Looked up on every image serve that asks for a quality.
+  index('storage_image_versions_file_idx').on(t.fileId),
+]);
 
 export const productionRoles = pgTable('production_roles', {
   id:           uuid('id').primaryKey().defaultRandom(),
@@ -105,7 +117,12 @@ export const productionMembers = pgTable('production_members', {
   userId:       uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   roleId:       uuid('role_id').references(() => productionRoles.id, { onDelete: 'set null' }),
   createdAt:    timestamp('created_at').notNull().defaultNow(),
-}, (t) => [uniqueIndex('prod_member_uq').on(t.productionId, t.userId)]);
+}, (t) => [
+  uniqueIndex('prod_member_uq').on(t.productionId, t.userId),
+  // productionAccessFilter() filters by userId alone on every list request, and
+  // prod_member_uq leads with productionId — so it can't serve that query.
+  index('prod_member_user_idx').on(t.userId),
+]);
 
 export const companyMembers = pgTable('company_members', {
   id:           uuid('id').primaryKey().defaultRandom(),
@@ -113,7 +130,11 @@ export const companyMembers = pgTable('company_members', {
   userId:       uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   role:         companyRoleEnum('role').notNull().default('member'),
   createdAt:    timestamp('created_at').notNull().defaultNow(),
-}, (t) => [uniqueIndex('company_member_uq').on(t.companyId, t.userId)]);
+}, (t) => [
+  uniqueIndex('company_member_uq').on(t.companyId, t.userId),
+  // Same reason as prod_member_user_idx — company_member_uq leads with companyId.
+  index('company_member_user_idx').on(t.userId),
+]);
 
 export const trackTypes = pgTable(
   "track_types",
@@ -196,7 +217,9 @@ export const sourceSet = pgTable("source_set", {
   icon: text("icon"), // 'mdi:*' name shown wherever the set is listed
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("source_set_production_idx").on(t.productionId),
+]);
 
 export const sources = pgTable("sources", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -212,7 +235,11 @@ export const sources = pgTable("sources", {
   data: jsonb("data"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  // Leading productionId serves both the timeline bootstrap (productionId
+  // alone) and the per-set listing (productionId + sourceSetId).
+  index("sources_production_set_idx").on(t.productionId, t.sourceSetId),
+]);
 
 export const clips = pgTable(
   "clips",

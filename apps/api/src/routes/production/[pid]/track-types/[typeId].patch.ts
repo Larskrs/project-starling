@@ -12,7 +12,7 @@ const bodySchema = z.object({
   hue:         z.number().int().min(0).max(360).optional(),
   icon:        iconField,
   trackMode:   z.enum(['event', 'clip']).optional(),
-  sourceSetId: z.string().uuid().nullable().optional(),
+  sourceSetId: z.uuid().nullable().optional(),
   sortOrder:   z.number().int().min(0).optional(),
   ...trackBehaviorPatchFields,
 });

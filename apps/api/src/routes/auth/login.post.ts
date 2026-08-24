@@ -6,6 +6,7 @@ import { hashPassword, verifyPassword } from '../../lib/auth.js';
 import { createSession, sessionCookieHeader } from '../../lib/session.js';
 import { createRateLimiter } from '../../lib/rateLimit.js';
 import { getClientIp } from '../../lib/security.js';
+import { toPublicUser } from '../../lib/user.js';
 
 const schema = z.object({
   email:    z.string().email(),
@@ -36,13 +37,5 @@ export default defineEventHandler(async (event) => {
   const sessionId = await createSession(user.id);
   event.res.setHeader('Set-Cookie', sessionCookieHeader(sessionId));
 
-  return {
-    user: {
-      id:             user.id,
-      email:          user.email,
-      name:           user.name,
-      role:           user.role,
-      avatarImageId:  user.avatarImageId
-    },
-  };
+  return { user: toPublicUser(user) };
 });

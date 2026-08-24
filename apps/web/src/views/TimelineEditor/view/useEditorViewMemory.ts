@@ -1,4 +1,4 @@
-import { watch, type Ref } from 'vue'
+import { watch, onScopeDispose, type Ref } from 'vue'
 import { useCookie } from '../../../composables/useCookie'
 import type { EditorViewport } from '../../../types/timeline'
 import type { Timeline } from '../../../types/api'
@@ -53,11 +53,29 @@ export function useEditorViewMemory(
 
   let timer: ReturnType<typeof setTimeout> | null = null
 
+  function cancelPending(): void {
+    if (timer) { clearTimeout(timer); timer = null }
+  }
+
+  /**
+   * Save now, cancelling any debounced save. Call on the way out: without it a
+   * zoom or scroll in the last 800ms before leaving is lost.
+   */
+  function flush(): void {
+    cancelPending()
+    save()
+  }
+
   watch([pxPerFrame, viewport], () => {
     if (loading.value || !timeline.value) return
-    if (timer) clearTimeout(timer)
+    cancelPending()
     timer = setTimeout(save, SAVE_DEBOUNCE_MS)
   })
 
-  return { viewFor, save }
+  // The timer outlives the component otherwise, and would fire after unmount to
+  // write the view of a timeline the user has already left. The composable owns
+  // the timer, so it owns clearing it — callers shouldn't have to know it exists.
+  onScopeDispose(cancelPending)
+
+  return { viewFor, save, flush }
 }

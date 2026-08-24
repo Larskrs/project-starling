@@ -11,7 +11,7 @@ const bodySchema = z.object({
   icon:      iconField,
   isMuted:   z.boolean().optional(),
   isLocked:  z.boolean().optional(),
-  sourceId:  z.string().uuid().nullable().optional(),
+  sourceId:  z.uuid().nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
 });
 

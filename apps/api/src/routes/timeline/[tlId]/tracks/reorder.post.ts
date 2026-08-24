@@ -6,7 +6,7 @@ import { requireTimelineParam } from '../../../../lib/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
-  order: z.array(z.string().uuid()).min(1).max(500),
+  order: z.array(z.uuid()).min(1).max(500),
 });
 
 /**

@@ -7,14 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "test": "node src/views/TimelineEditor/audio/transportClock.test.ts && node src/views/TimelineEditor/media/mediaDownloads.test.ts && node src/views/TimelineEditor/audio/useAudioEngine.test.ts && node src/views/TimelineEditor/audio/audioUnlock.test.ts"
   },
   "dependencies": {
     "@iconify/vue": "^5.0.1",
     "@starling/auth": "*",
     "@starling/ui": "*",
-    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "easy-speech": "^2.4.0",
     "radix-vue": "^1.9.17",
@@ -31,6 +30,7 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vue-tsc": "^2.2.12"
   }
 }

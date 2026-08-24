@@ -6,7 +6,7 @@ import { requireProductionParam } from '../../../../lib/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
-  roleId: z.string().uuid().nullable(),
+  roleId: z.uuid().nullable(),
 });
 
 export default defineEventHandler(async (event) => {

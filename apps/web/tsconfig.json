@@ -8,18 +8,24 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "allowJs": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "types": ["vite/client"]
   },
-  // Only the TypeScript sources. The .vue files still carry plain-JS
-  // <script setup> blocks, so type-checking them would need vue-tsc and a
-  // separate `lang="ts"` migration — see env.d.ts.
+  // Checked with vue-tsc, so .vue files are covered too — see the `typecheck`
+  // script. SFCs are migrating to `lang="ts"` incrementally; `allowJs` lets the
+  // ones still on plain-JS <script setup> be inferred rather than error as
+  // untyped imports. Their templates are checked either way, which is what
+  // catches prop mismatches against @starling/ui.
+  //
+  // Do NOT add a blanket `declare module '*.vue'` back: with vue-tsc running it
+  // shadows the real types of every SFC that has been migrated.
   //
   // The standalone .test.ts scripts run in node, not the browser, and are
   // checked separately by tsconfig.test.json.
-  "include": ["src/**/*.ts", "env.d.ts"],
+  "include": ["src/**/*.ts", "src/**/*.vue", "env.d.ts"],
   "exclude": ["dist", "node_modules", "src/**/*.test.ts"]
 }

@@ -91,6 +91,51 @@ export interface TrackWithType extends Track {
   typeTts?: boolean | null
 }
 
+/** A source within a source set — the pickable takes on a bound track. */
+export interface Source {
+  id: string
+  productionId: string
+  sourceSetId: string | null
+  name: string
+  shortName: string
+  hue: number
+  icon: string | null
+  data: Record<string, unknown> | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** A clip with the storage file's kind resolved, as the bootstrap sends it. */
+export interface EditorClip extends Clip {
+  /** 'image' | 'audio', or null when the clip references no file. */
+  fileType?: string | null
+}
+
+/**
+ * A track as the editor holds it: the joined row, its display fields, and its
+ * clips. `GET /api/timeline/{id}` joins the type and source columns on; tracks
+ * created afterwards get the same treatment client-side (withTypeFields) so the
+ * list stays one shape.
+ */
+export interface EditorTrack extends TrackWithType {
+  typeName?: string | null
+  typeHue?: number | null
+  typeIcon?: string | null
+  sourceName?: string | null
+  sourceShortName?: string | null
+  sourceHue?: number | null
+  sourceIcon?: string | null
+  clips: EditorClip[]
+}
+
+/** The payload of `GET /api/timeline/{tlId}`. */
+export interface TimelineBootstrap {
+  timeline: import('./api').Timeline
+  tracks: EditorTrack[]
+  trackTypes: TrackType[]
+  sources: Source[]
+}
+
 /** The complete, resolved behaviour for one track. */
 export interface TrackSettings {
   trackDisplay: TrackDisplay

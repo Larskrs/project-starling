@@ -7,10 +7,10 @@ import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
-  typeId:    z.string().uuid(),
+  typeId:    z.uuid(),
   name:      z.string().min(1).max(128),
   icon:      iconField,
-  sourceId:  z.string().uuid().nullable().optional(),
+  sourceId:  z.uuid().nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
 });
 

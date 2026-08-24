@@ -12,8 +12,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import { useAuth } from '../../composables/useAuth'
-import Button from '@starling/ui/Button'
 import Avatar from '@starling/ui/Avatar'
 
-const { user, logout } = useAuth()
+const { user } = useAuth()
 </script>

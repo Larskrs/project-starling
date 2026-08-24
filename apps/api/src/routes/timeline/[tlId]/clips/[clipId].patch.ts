@@ -9,10 +9,10 @@ import { Permission } from '@starling/auth/permissions';
 const bodySchema = z.object({
   label:      z.string().max(256).optional(),
   position:   z.number().int().min(0).optional(),
-  fileId:     z.string().uuid().nullable().optional(),
+  fileId:     z.uuid().nullable().optional(),
   mediaStart: z.number().int().min(0).nullable().optional(),
   end:        z.number().int().min(0).nullable().optional(),
-  sourceId:   z.string().uuid().nullable().optional(),
+  sourceId:   z.uuid().nullable().optional(),
   hue:        z.number().int().min(0).max(360).nullable().optional(),
   data:       clipDataSchema.nullable().optional(),
 });

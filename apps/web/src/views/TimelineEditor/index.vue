@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, provide, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -32,6 +32,10 @@ import TrackDialog     from './components/TrackDialog.vue'
 import { useTimelineOpening } from '../../composables/useTimelineOpening'
 import ClipDialog      from './components/ClipDialog.vue'
 import BpmClipDialog   from './components/BpmClipDialog.vue'
+import type { Timeline } from '../../types/api'
+import type {
+  EditorClip, EditorTrack, Source, TimelineBootstrap, TrackType, TrackWithType,
+} from '../../types/timeline'
 
 const route      = useRoute()
 const router     = useRouter()
@@ -40,23 +44,23 @@ const { $fetch } = useApi()
 const toast      = useToast()
 
 // ── Data ─────────────────────────────────────────────────────────────────────
-const timeline   = ref(null)
+const timeline   = ref<Timeline | null>(null)
 const { describeOpening, finishOpening } = useTimelineOpening()
 
-const trackList  = ref([])
-const trackTypes = ref([])
-const sources    = ref([])
+const trackList  = ref<EditorTrack[]>([])
+const trackTypes = ref<TrackType[]>([])
+const sources    = ref<Source[]>([])
 const loading    = ref(true)
 const error      = ref('')
 
 const timelineUrl = computed(() => `/api/timeline/${route.params.tlId}`)
-const trackUrl = (trackId) => `${timelineUrl.value}/tracks/${trackId}`
-const clipUrl  = (clipId)  => `${timelineUrl.value}/clips/${clipId}`
+const trackUrl = (trackId: string) => `${timelineUrl.value}/tracks/${trackId}`
+const clipUrl  = (clipId: string)  => `${timelineUrl.value}/clips/${clipId}`
 
 async function load() {
   loading.value = true
   error.value   = ''
-  const { ok, data } = await $fetch(timelineUrl.value, { silent: true })
+  const { ok, data } = await $fetch<TimelineBootstrap>(timelineUrl.value, { silent: true })
   loading.value = false
   if (!ok) { error.value = t('editor.couldNotLoad'); finishOpening(); return }
   timeline.value   = data.timeline
@@ -66,10 +70,10 @@ async function load() {
   trackTypes.value = data.trackTypes
   sources.value    = data.sources
   describeClipMedia()
-  sync.join(route.params.tlId)
+  sync.join(String(route.params.tlId))
   nextTick(() => {
     // Restore the saved view for this timeline; otherwise the 5-minute default.
-    const saved = viewMemory.viewFor(timeline.value.id)
+    const saved = viewMemory.viewFor(timeline.value!.id)
     pxPerFrame.value = saved?.z
       ? clamp(saved.z, minPxPerFrame(), 16)
       : defaultPxPerFrame()
@@ -99,7 +103,10 @@ function describeClipMedia() {
   for (const track of trackList.value) {
     for (const clip of track.clips) {
       if (!clip.fileId) continue
-      describeDownload(clip.fileId, { name: clip.label || track.name, kind: clip.fileType || 'file' })
+      describeDownload(clip.fileId, {
+        name: clip.label || track.name,
+        kind: clip.fileType === 'image' || clip.fileType === 'audio' ? clip.fileType : 'file',
+      })
     }
   }
 }
@@ -109,7 +116,7 @@ usePageTitle(computed(() => timeline.value ? `${timeline.value.name} — ${t('ed
 // ── Shared list mutations ─────────────────────────────────────────────────────
 // Used by both local REST responses and remote socket events.
 
-function upsertTrackLocal(track) {
+function upsertTrackLocal(track: EditorTrack): EditorTrack {
   const i = trackList.value.findIndex(x => x.id === track.id)
   if (i !== -1) {
     const merged = { ...trackList.value[i], ...track, clips: track.clips ?? trackList.value[i].clips }
@@ -121,11 +128,11 @@ function upsertTrackLocal(track) {
   return added
 }
 
-function removeTrackLocal(trackId) {
+function removeTrackLocal(trackId: string): void {
   trackList.value = trackList.value.filter(x => x.id !== trackId)
 }
 
-function upsertClipLocal(trackId, clip) {
+function upsertClipLocal(trackId: string, clip: EditorClip): EditorClip | null {
   const track = trackList.value.find(x => x.id === trackId)
   if (!track) return null
   const i      = track.clips.findIndex(c => c.id === clip.id)
@@ -136,7 +143,7 @@ function upsertClipLocal(trackId, clip) {
   return merged
 }
 
-function removeClipLocal(trackId, clipId) {
+function removeClipLocal(trackId: string, clipId: string): void {
   const track = trackList.value.find(x => x.id === trackId)
   if (track) track.clips = track.clips.filter(c => c.id !== clipId)
 }
@@ -163,27 +170,33 @@ const { canvasRef, trackHeadersRef, viewport, updateViewport, onCanvasScroll } =
 const {
   pxPerFrame, timelineWidth, zoomLabel,
   minPxPerFrame, defaultPxPerFrame,
-  setZoom, zoomIn, zoomOut, zoomFit, zoomReset,
-} = useEditorZoom({ timeline, canvasRef, playheadFrame, isPlaying, updateViewport })
+  zoomIn, zoomOut, zoomFit, zoomReset,
+} = useEditorZoom({
+  timeline, canvasRef, updateViewport,
+  // Lazy on purpose — usePlayback is constructed below, out of the pxPerFrame
+  // this call returns. See EditorZoomOptions.
+  playheadFrame: () => playback.playheadFrame.value,
+  isPlaying:     () => playback.isPlaying.value,
+})
 
 const viewMemory = useEditorViewMemory({ timeline, loading, pxPerFrame, viewport, canvasRef })
 
 // ── Track behavior settings (from track types) ────────────────────────────────
-const settingsFor = (track) => resolveTrackSettings(track, trackTypes.value)
+const settingsFor = (track: TrackWithType) => resolveTrackSettings(track, trackTypes.value)
 
 // Strip-display tracks (BPM + ruler strips): fixed slim height, not resizable.
-const isStripTrack = (track) => ['ruler', 'bpm'].includes(settingsFor(track).trackDisplay)
+const isStripTrack = (track: EditorTrack) => ['ruler', 'bpm'].includes(settingsFor(track).trackDisplay)
 
 // Display order mirrors the API: sortOrder, then createdAt. Strips order like
 // any other track — no pinning.
-const byOrder = (a, b) =>
+const byOrder = (a: EditorTrack, b: EditorTrack) =>
   ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) ||
-  (new Date(a.createdAt) - new Date(b.createdAt))
+  (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
 const orderedTracks = computed(() => [...trackList.value].sort(byOrder))
 
 // Header badge: live BPM for metronome tracks; the active clip's label otherwise.
-function headerBadge(track) {
+function headerBadge(track: EditorTrack): string {
   if (settingsFor(track).metronome) {
     const bpm = bpmAtFrame(track.clips, playheadFrame.value)
     return bpm ? `♩ ${bpm}` : '♩ —'
@@ -193,9 +206,9 @@ function headerBadge(track) {
 
 // The clip under the playhead: last clip at/before it, still running if it has
 // a length (clip mode); event-mode clips stay active until the next clip.
-function activeClip(track) {
+function activeClip(track: EditorTrack): EditorClip | null {
   const frame = playheadFrame.value
-  let active = null
+  let active: EditorClip | null = null
   for (const clip of track.clips) {
     if (clip.position > frame) break
     active = clip
@@ -208,7 +221,7 @@ function activeClip(track) {
   return active
 }
 
-function activeClipLabel(track) {
+function activeClipLabel(track: EditorTrack): string {
   const active = activeClip(track)
   if (!active) return ''
   // Matches the clip display: source short name prefixes a custom label.
@@ -218,10 +231,10 @@ function activeClipLabel(track) {
 }
 
 // ── Client-local mute (cookie — never saved to the server) ────────────────────
-const mutedTracks  = useCookie('editor-muted-tracks', {})   // trackId → true
-const isTrackMuted = (track) => !!mutedTracks.value[track.id]
+const mutedTracks  = useCookie<Record<string, true>>('editor-muted-tracks', {})   // trackId → true
+const isTrackMuted = (track: EditorTrack) => !!mutedTracks.value[track.id]
 
-function toggleMute(track) {
+function toggleMute(track: EditorTrack): void {
   const next = { ...mutedTracks.value }
   if (next[track.id]) delete next[track.id]
   else next[track.id] = true
@@ -241,11 +254,11 @@ const {
 // ── Layout ────────────────────────────────────────────────────────────────────
 const {
   sidebarWidth, trackHeight, totalTracksHeight,
-  sidebarResizer, rowResizer, startSidebarResize, startRowResize,
+  sidebarResizer, startSidebarResize, startRowResize,
 } = useEditorLayout({ tracks: trackList, settingsFor, onSidebarResize: updateViewport })
 
 // ── Track selection + source bar ──────────────────────────────────────────────
-const selectedTrackId = ref(null)
+const selectedTrackId = ref<string | null>(null)
 const selectedTrack   = computed(() =>
   trackList.value.find(tr => tr.id === selectedTrackId.value) ?? null,
 )
@@ -253,7 +266,7 @@ const selectedTrack   = computed(() =>
 // The source bar shows when the selected track's type is bound to a source set.
 const selectedTrackHasSourceSet = computed(() => {
   if (!selectedTrack.value) return false
-  const tt = trackTypes.value.find(x => x.id === selectedTrack.value.typeId)
+  const tt = trackTypes.value.find(x => x.id === selectedTrack.value!.typeId)
   return !!tt?.sourceSetId
 })
 const selectedTrackSources = computed(() =>
@@ -265,7 +278,7 @@ const activeSourceId = computed(() =>
   selectedTrack.value ? activeClip(selectedTrack.value)?.sourceId ?? null : null,
 )
 
-function selectTrack(track) {
+function selectTrack(track: EditorTrack): void {
   if (_suppressSelect) return
   selectedTrackId.value = selectedTrackId.value === track.id ? null : track.id
 }
@@ -273,7 +286,7 @@ function selectTrack(track) {
 // ── Track reordering (drag headers vertically) ────────────────────────────────
 // Dragging a header ≥5px vertically enters reorder mode; an insertion line
 // tracks the pointer. Any track can be dropped at any position.
-const reorderDrag = ref(null)   // { trackId, index } — insertion boundary in orderedTracks
+const reorderDrag = ref<{ trackId: string; index: number } | null>(null)   // insertion boundary in orderedTracks
 
 const reorderIndicatorTop = computed(() => {
   if (!reorderDrag.value) return 0
@@ -282,8 +295,9 @@ const reorderIndicatorTop = computed(() => {
   return y
 })
 
-function reorderBoundaryFromPointer(clientY) {
+function reorderBoundaryFromPointer(clientY: number): number {
   const el  = trackHeadersRef.value
+  if (!el) return 0
   const y   = clientY - el.getBoundingClientRect().top + el.scrollTop
   let acc = 0, idx = 0
   for (const tr of orderedTracks.value) {
@@ -298,7 +312,7 @@ function reorderBoundaryFromPointer(clientY) {
 // Swallows the click that follows a reorder drag so the drop doesn't toggle selection.
 let _suppressSelect = false
 
-const _reorderDrag = createDrag({
+const _reorderDrag = createDrag<EditorTrack>({
   threshold: 5,
   onMove: ({ event }, track) => {
     reorderDrag.value = { trackId: track.id, index: reorderBoundaryFromPointer(event.clientY) }
@@ -313,12 +327,12 @@ const _reorderDrag = createDrag({
   },
 })
 
-function startTrackReorder(track, e) {
+function startTrackReorder(track: EditorTrack, e: PointerEvent): void {
   if (trackList.value.length < 2) return
   _reorderDrag(e, track)
 }
 
-function commitTrackReorder(track, boundary) {
+function commitTrackReorder(track: EditorTrack, boundary: number): void {
   const ids  = orderedTracks.value.map(tr => tr.id)
   const from = ids.indexOf(track.id)
   if (boundary === from || boundary === from + 1) return   // dropped back in place
@@ -328,7 +342,7 @@ function commitTrackReorder(track, boundary) {
 }
 
 /** Applies an ordered id list to the local tracks' sortOrder (index = order). */
-function applyTrackOrder(order) {
+function applyTrackOrder(order: string[]): void {
   const pos = new Map(order.map((id, i) => [id, i]))
   for (const tr of trackList.value) {
     const p = pos.get(tr.id)
@@ -336,9 +350,9 @@ function applyTrackOrder(order) {
   }
 }
 
-async function reorderTracks(order) {
+async function reorderTracks(order: string[]): Promise<void> {
   applyTrackOrder(order)   // optimistic; reload if the server disagrees
-  const { ok, data } = await $fetch(`${timelineUrl.value}/tracks/reorder`, {
+  const { ok, data } = await $fetch<{ order: string[] }>(`${timelineUrl.value}/tracks/reorder`, {
     method: 'POST', json: { order }, silent: true,
   })
   if (!ok) { load(); return }
@@ -349,21 +363,21 @@ async function reorderTracks(order) {
 // Picking a source is often a blind keypress during a take — the clip lands at
 // the playhead, which may be nowhere near the viewport. Flashing the chip is
 // the only acknowledgement the operator gets, so it fires before the request.
-const flashSourceId = ref(null)
-let _flashTimer = null
+const flashSourceId = ref<string | null>(null)
+let _flashTimer: ReturnType<typeof setTimeout> | null = null
 
-function flashSource(sourceId) {
+function flashSource(sourceId: string): void {
   flashSourceId.value = sourceId
   if (_flashTimer) clearTimeout(_flashTimer)
   _flashTimer = setTimeout(() => { flashSourceId.value = null }, 260)
 }
 
 /** Create a clip for `source` on the selected track at the playhead. */
-async function addSourceClip(source) {
+async function addSourceClip(source: Source): Promise<void> {
   const track = selectedTrack.value
   if (!track || blockedByLock(track)) return
   flashSource(source.id)
-  const { ok, data } = await $fetch(`${timelineUrl.value}/clips`, {
+  const { ok, data } = await $fetch<EditorClip>(`${timelineUrl.value}/clips`, {
     method: 'POST',
     json:   { trackId: track.id, position: Math.max(0, Math.round(playheadFrame.value)), sourceId: source.id },
     silent: true,
@@ -374,7 +388,7 @@ async function addSourceClip(source) {
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
-function onKeydown(e) {
+function onKeydown(e: KeyboardEvent): void {
   // Ctrl/⌘ +/−/0 zoom the timeline, never the page — even while an input has
   // focus, so browser zoom stays disabled everywhere on the editor page.
   if (e.ctrlKey || e.metaKey) {
@@ -382,8 +396,9 @@ function onKeydown(e) {
     if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
     if (e.key === '0')                  { e.preventDefault(); zoomReset(); return }
   }
-  const tag = e.target.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+  const target = e.target as HTMLElement | null
+  const tag = target?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
 
   // Source switcher: 1…9 then 0 add a clip for the Nth source of the selected
   // track (number row or numpad). Bare digits only — Ctrl/⌘+digit belongs to
@@ -411,9 +426,8 @@ function onKeydown(e) {
 onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
-  if (_viewSaveTimer) clearTimeout(_viewSaveTimer)
-  if (_flashTimer)    clearTimeout(_flashTimer)
-  saveView()   // flush the debounced view save so the last zoom/scroll sticks
+  if (_flashTimer) clearTimeout(_flashTimer)
+  viewMemory.flush()   // flush the debounced view save so the last zoom/scroll sticks
   stopPlayback(false)
   destroyAudioEngine()
   clearWaveformCache()
@@ -422,27 +436,29 @@ onUnmounted(() => {
 })
 
 // ── Ruler scrubbing ───────────────────────────────────────────────────────────
-function frameFromPointer(e) {
-  const rect = canvasRef.value.getBoundingClientRect()
-  const x    = e.clientX - rect.left + canvasRef.value.scrollLeft
+function frameFromPointer(e: PointerEvent): number {
+  const el = canvasRef.value
+  if (!el || !timeline.value) return 0
+  const rect = el.getBoundingClientRect()
+  const x    = e.clientX - rect.left + el.scrollLeft
   return timeline.value.startFrame + x / pxPerFrame.value
 }
 
-function onScrubStart(e) {
+function onScrubStart(e: PointerEvent): void {
   if (!canvasRef.value || !timeline.value) return
   setPlayhead(frameFromPointer(e))
   window.addEventListener('pointermove', onScrubMove)
   window.addEventListener('pointerup', onScrubEnd)
 }
-function onScrubMove(e) { setPlayhead(frameFromPointer(e)) }
-function onScrubEnd() {
+function onScrubMove(e: PointerEvent) { setPlayhead(frameFromPointer(e)) }
+function onScrubEnd(): void {
   window.removeEventListener('pointermove', onScrubMove)
   window.removeEventListener('pointerup', onScrubEnd)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // Returns the sources belonging to a track's sourceSet (via its trackType).
-function getTrackSources(track) {
+function getTrackSources(track: EditorTrack): Source[] {
   const tt = trackTypes.value.find(x => x.id === track.typeId)
   if (!tt?.sourceSetId) return []
   return sources.value.filter(s => s.sourceSetId === tt.sourceSetId)
@@ -459,7 +475,7 @@ function getTrackSources(track) {
  * hasn't received the lock yet would otherwise push an edit that live sync
  * relays to everyone.
  */
-function blockedByLock(track) {
+function blockedByLock(track: EditorTrack | null | undefined): boolean {
   if (!track?.isLocked) return false
   toast.warning(t('editor.trackLocked', { name: track.name }))
   return true
@@ -472,7 +488,7 @@ const addTrackOpen = ref(false)
 // payload joins its type's display fields onto every track. Decorating here
 // keeps the list one shape, so a new track shows its colour and icon straight
 // away instead of only after a reload.
-function withTypeFields(track) {
+function withTypeFields(track: EditorTrack): EditorTrack {
   const tt = trackTypes.value.find(x => x.id === track.typeId)
   if (!tt) return track
   return {
@@ -488,36 +504,36 @@ function withTypeFields(track) {
   }
 }
 
-function onTrackAdded(track) {
+function onTrackAdded(track: EditorTrack): void {
   const added = upsertTrackLocal(withTypeFields(track))
   sync.sendTrackChange({ type: 'upsert', track: added })
 }
 
-async function patchTrack(track, json) {
-  const { ok, data } = await $fetch(trackUrl(track.id), { method: 'PATCH', json, silent: true })
+async function patchTrack(track: EditorTrack, json: Record<string, unknown>): Promise<void> {
+  const { ok, data } = await $fetch<EditorTrack>(trackUrl(track.id), { method: 'PATCH', json, silent: true })
   if (!ok) return
   const merged = upsertTrackLocal({ ...data, id: track.id })
   sync.sendTrackChange({ type: 'upsert', track: merged })
 }
 
-const toggleLock = (track) => patchTrack(track, { isLocked: !track.isLocked })
+const toggleLock = (track: EditorTrack) => patchTrack(track, { isLocked: !track.isLocked })
 
 // Per-track settings (name + icon override). The PATCH response carries only
 // the track row, so it merges onto the joined type/source fields already held.
-const trackDialog = ref({ open: false, track: null })
+const trackDialog = ref<{ open: boolean; track: EditorTrack | null }>({ open: false, track: null })
 
-function openTrackSettings(track) {
+function openTrackSettings(track: EditorTrack): void {
   if (blockedByLock(track)) return
   trackDialog.value = { open: true, track }
 }
 
-function onTrackSaved(track) {
+function onTrackSaved(track: EditorTrack): void {
   const merged = upsertTrackLocal(track)
   sync.sendTrackChange({ type: 'upsert', track: merged })
 }
 
 // Deleting a track takes every clip with it — always confirm first.
-const deleteTrackTarget = ref(null)
+const deleteTrackTarget = ref<EditorTrack | null>(null)
 const deletingTrack     = ref(false)
 
 async function confirmDeleteTrack() {
@@ -535,10 +551,22 @@ async function confirmDeleteTrack() {
 }
 
 // ── Clip mutations ────────────────────────────────────────────────────────────
-const clipDialog = ref({ open: false, track: null, clip: null, defaultPosition: 0, trackSources: [] })
-const bpmDialog  = ref({ open: false, track: null, clip: null, defaultPosition: 0 })
+const clipDialog = ref<{
+  open: boolean
+  track: EditorTrack | null
+  clip: EditorClip | null
+  defaultPosition: number
+  trackSources: Source[]
+}>({ open: false, track: null, clip: null, defaultPosition: 0, trackSources: [] })
 
-function openAddClip(track) {
+const bpmDialog = ref<{
+  open: boolean
+  track: EditorTrack | null
+  clip: EditorClip | null
+  defaultPosition: number
+}>({ open: false, track: null, clip: null, defaultPosition: 0 })
+
+function openAddClip(track: EditorTrack): void {
   if (blockedByLock(track)) return
   if (settingsFor(track).metronome) {
     bpmDialog.value = { open: true, track, clip: null, defaultPosition: Math.round(playheadFrame.value) }
@@ -552,7 +580,7 @@ function openAddClip(track) {
     trackSources:    getTrackSources(track),
   }
 }
-function openEditClip(track, clip) {
+function openEditClip(track: EditorTrack, clip: EditorClip): void {
   if (blockedByLock(track)) return
   if (settingsFor(track).metronome) {
     bpmDialog.value = { open: true, track, clip, defaultPosition: clip.position }
@@ -567,17 +595,17 @@ function openEditClip(track, clip) {
   }
 }
 
-function onBpmClipSaved(clip) {
+function onBpmClipSaved(clip: EditorClip): void {
   const trackId = bpmDialog.value.track?.id
   if (!trackId) return
   const merged = upsertClipLocal(trackId, clip)
   if (merged) sync.sendClipChange({ type: 'upsert', trackId, clip: merged })
 }
-function closeClipDialog() {
+function closeClipDialog(): void {
   clipDialog.value = { ...clipDialog.value, open: false }
 }
 
-function onClipSaved(savedClip) {
+function onClipSaved(savedClip: EditorClip): void {
   const trackId = clipDialog.value.track?.id
   if (!trackId) return
   const merged = upsertClipLocal(trackId, savedClip)
@@ -586,9 +614,9 @@ function onClipSaved(savedClip) {
 }
 
 // The single choke point for clip edits (move, crop, dialog saves).
-async function patchClip(track, clip, json) {
+async function patchClip(track: EditorTrack, clip: EditorClip, json: Record<string, unknown>): Promise<void> {
   if (blockedByLock(track)) return
-  const { ok, data } = await $fetch(clipUrl(clip.id), {
+  const { ok, data } = await $fetch<EditorClip>(clipUrl(clip.id), {
     method: 'PATCH', json, silent: true,
   })
   if (!ok) return
@@ -596,10 +624,10 @@ async function patchClip(track, clip, json) {
   if (merged) sync.sendClipChange({ type: 'upsert', trackId: track.id, clip: merged })
 }
 
-const moveClip = (track, clip, position) => patchClip(track, clip, { position })
-const cropClip = (track, clip, fields)   => patchClip(track, clip, fields)
+const moveClip = (track: EditorTrack, clip: EditorClip, position: number) => patchClip(track, clip, { position })
+const cropClip = (track: EditorTrack, clip: EditorClip, fields: Record<string, unknown>) => patchClip(track, clip, fields)
 
-async function deleteClip(track, clip) {
+async function deleteClip(track: EditorTrack, clip: EditorClip): Promise<void> {
   if (blockedByLock(track)) return
   const { ok } = await $fetch(clipUrl(clip.id), {
     method: 'DELETE', silent: true,
@@ -811,7 +839,7 @@ provide('editor-viewport',   viewport)
     <AddTrackDialog
       :open="addTrackOpen"
       :track-types="trackTypes"
-      :timeline-id="route.params.tlId"
+      :timeline-id="String(route.params.tlId)"
       @update:open="addTrackOpen = $event"
       @created="onTrackAdded"
     />

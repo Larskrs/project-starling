@@ -1,13 +1,26 @@
 import { ref, readonly } from 'vue';
 
+/**
+ * The signed-in user, exactly as login, register, /auth/me and /user/me return
+ * it — they all share one projection server-side (apps/api/src/lib/user.ts).
+ *
+ * `id` is a uuid string, not a number: this was typed `number` while every
+ * endpoint sent a uuid, and nothing caught it because the web app shimmed
+ * @starling/auth to `any`.
+ */
 export interface User {
-  id:              number;
+  id:              string;
   email:           string;
   name:            string;
   first_name:      string;
   last_name:       string;
+  isEmailVerified: boolean;
   role:            'admin' | 'user';
-  isAdministrator: boolean;
+  /** storageFiles id, resolved through /api/storage/{id}/serve. */
+  avatarImageId:   string | null;
+  bannerImageId:   string | null;
+  /** ISO-8601 — a Date on the server, a string once it's been through JSON. */
+  createdAt:       string;
 }
 
 export interface Session {

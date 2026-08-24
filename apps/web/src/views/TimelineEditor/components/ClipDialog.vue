@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
@@ -6,17 +6,27 @@ import { Button, FormField, Input, SplitDialog } from '@starling/ui'
 import HuePicker from '../../Production/components/HuePicker.vue'
 import { SelectFileDialog } from '../../../components/storage'
 import { useApi } from '../../../composables/useApi'
+import type { Timeline } from '../../../types/api'
+import type { EditorClip, EditorTrack, Source } from '../../../types/timeline'
+import type { StorageFile } from '../../../types/storage'
 
-const props = defineProps({
-  open:            { type: Boolean, required: true },
-  track:           { type: Object,  default: null },
-  clip:            { type: Object,  default: null },
-  trackSources:    { type: Array,   default: () => [] },
-  defaultPosition: { type: Number,  default: 0 },
-  timeline:        { type: Object,  default: null },
+// track/clip/timeline are null while the dialog is closed; `clip: null` also
+// means "create" rather than "edit" when it is open.
+const props = withDefaults(defineProps<{
+  open: boolean
+  track?: EditorTrack | null
+  clip?: EditorClip | null
+  trackSources?: Source[]
+  defaultPosition?: number
+  timeline?: Timeline | null
+}>(), {
+  track: null, clip: null, trackSources: () => [], defaultPosition: 0, timeline: null,
 })
 
-const emit = defineEmits(['update:open', 'saved'])
+const emit = defineEmits<{
+  'update:open': [open: boolean]
+  saved: [clip: EditorClip]
+}>()
 
 const { t }      = useI18n()
 const { $fetch } = useApi()
@@ -25,9 +35,9 @@ const label      = ref('')
 const position   = ref(0)
 const mediaStart = ref(0)
 const mediaEnd   = ref(100)
-const sourceId   = ref(null)
-const fileId     = ref(null)
-const hue        = ref(null)   // null = inherit the track type's hue
+const sourceId   = ref<string | null>(null)
+const fileId     = ref<string | null>(null)
+const hue        = ref<number | null>(null)   // null = inherit the track type's hue
 const loading    = ref(false)
 const error      = ref('')
 
@@ -43,7 +53,7 @@ const hueProxy = computed({
 // fileId and no name, so the name is looked up once.
 const CLIP_FILE_TYPES = ['audio', 'image']
 
-const pickedFile   = ref(null)
+const pickedFile   = ref<StorageFile | null>(null)
 const filePickerOpen = ref(false)
 
 const isEdit      = computed(() => props.clip !== null)
@@ -67,14 +77,15 @@ watch(() => props.open, async (open) => {
   error.value   = ''
   loading.value = false
 
-  if (isEdit.value) {
-    label.value      = props.clip.label ?? ''
-    position.value   = props.clip.position
-    mediaStart.value = props.clip.mediaStart ?? 0
-    mediaEnd.value   = props.clip.end ?? 100
-    sourceId.value   = props.clip.sourceId ?? null
-    fileId.value     = props.clip.fileId ?? null
-    hue.value        = props.clip.hue ?? null
+  const editing = props.clip
+  if (editing) {
+    label.value      = editing.label ?? ''
+    position.value   = editing.position
+    mediaStart.value = editing.mediaStart ?? 0
+    mediaEnd.value   = editing.end ?? 100
+    sourceId.value   = editing.sourceId ?? null
+    fileId.value     = editing.fileId ?? null
+    hue.value        = editing.hue ?? null
   } else {
     label.value      = ''
     position.value   = props.defaultPosition
@@ -89,8 +100,8 @@ watch(() => props.open, async (open) => {
   if (fileId.value) resolveFileName(fileId.value)
 })
 
-async function resolveFileName(id) {
-  const { ok, data } = await $fetch(
+async function resolveFileName(id: string) {
+  const { ok, data } = await $fetch<StorageFile[]>(
     `/api/production/${props.timeline?.productionId}/files`,
     { silent: true },
   )
@@ -98,7 +109,7 @@ async function resolveFileName(id) {
   if (ok && fileId.value === id) pickedFile.value = (data ?? []).find(f => f.id === id) ?? null
 }
 
-function onFilePicked(file) {
+function onFilePicked(file: StorageFile | null) {
   fileId.value         = file?.id ?? null
   pickedFile.value     = file
   filePickerOpen.value = false
@@ -109,18 +120,18 @@ const fileIcon = computed(() => {
   return pickedFile.value?.type === 'image' ? 'mdi:image-outline' : 'mdi:music-note'
 })
 
-function formatSize(bytes) {
+function formatSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
 function close() { emit('update:open', false) }
 
-function sourceColor(src) {
+function sourceColor(src: Source) {
   return src.hue != null ? `oklch(62% 0.17 ${src.hue})` : 'oklch(60% 0 0)'
 }
 
-function selectSource(src) {
+function selectSource(src: Source) {
   sourceId.value = src.id
   submit()
 }
@@ -131,7 +142,7 @@ async function submit() {
   error.value   = ''
 
   const tlId = props.track?.timelineId ?? props.timeline?.id
-  const url  = isEdit.value ? `/api/timeline/${tlId}/clips/${props.clip.id}` : `/api/timeline/${tlId}/clips`
+  const url  = props.clip ? `/api/timeline/${tlId}/clips/${props.clip.id}` : `/api/timeline/${tlId}/clips`
 
   let modeFields
   if (sourceId.value != null) {
