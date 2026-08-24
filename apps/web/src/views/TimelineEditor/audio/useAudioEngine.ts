@@ -53,6 +53,16 @@ interface Voice {
  */
 interface Run {
   gain: GainNode
+  /**
+   * trackId → gain, inserted between a clip's declick gain and the run gain:
+   *
+   *     clip sources -> clip gain -> TRACK gain -> run gain -> master
+   *
+   * A live node rather than a level baked into each clip's envelope, so moving
+   * a track's slider mid-playback re-levels what is already sounding instead of
+   * only affecting clips scheduled after the change.
+   */
+  trackGains: Map<string, GainNode>
   frameRate: number
   startCtxTime: number
   startFrame: number
@@ -71,6 +81,10 @@ interface Run {
 let _ctx: AudioContext | null          = null
 let _master: GainNode | null           = null
 let _masterVolume                      = 1
+
+// trackId → 0..1, owned here so a level applies to the current run AND to every
+// later one. Absent means unity; the editor persists these per viewer.
+const _trackVolumes = new Map<string, number>()
 
 // The active run, or null when stopped. Async scheduler callbacks capture their
 // run and bail if it's no longer `_run` (stale = superseded or stopped).
@@ -236,6 +250,47 @@ function _audibleTime(): number {
   return ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0)
 }
 
+/**
+ * The gain node for one track in the live run, created on demand.
+ *
+ * Behaviour controllers (metronome, TTS) use this too, so a track's level
+ * covers everything that track produces rather than just its media clips.
+ * Falls back to master when nothing is playing — a click scheduled outside a
+ * run is still better heard than dropped.
+ */
+export function getTrackGain(trackId: string): GainNode {
+  const ctx = getContext()
+  const run = _run
+  if (!run) return getMasterGain()
+
+  let node = run.trackGains.get(trackId)
+  if (!node) {
+    node = ctx.createGain()
+    node.gain.value = _trackVolumes.get(trackId) ?? 1
+    node.connect(run.gain)
+    run.trackGains.set(trackId, node)
+  }
+  return node
+}
+
+/** Per-track playback level in [0, 1]. Applies live and persists across runs. */
+export function setTrackVolume(trackId: string, volume: number): void {
+  const v = Math.max(0, Math.min(1, volume))
+  _trackVolumes.set(trackId, v)
+  const node = _run?.trackGains.get(trackId)
+  // Ramp rather than jump: a step in gain is an audible click.
+  if (node && _ctx) node.gain.setTargetAtTime(v, _ctx.currentTime, 0.01)
+}
+
+export function getTrackVolume(trackId: string): number {
+  return _trackVolumes.get(trackId) ?? 1
+}
+
+/** Seed levels for a run, e.g. from the editor's stored per-track mix. */
+export function setTrackVolumes(volumes: Record<string, number>): void {
+  for (const [trackId, v] of Object.entries(volumes)) setTrackVolume(trackId, v)
+}
+
 /** Master gain node — route generated audio through it so master volume applies. */
 export function getMasterGain(): GainNode {
   getContext()
@@ -313,6 +368,7 @@ export function startAudioPlayback(clips: Clip[], playheadFrame: number, frameRa
 
   _run = {
     gain,
+    trackGains:   new Map(),
     frameRate,
     startCtxTime: ctx.currentTime + START_LEAD_S,
     startFrame:   playheadFrame,
@@ -358,6 +414,41 @@ export function nudgePlaybackAnchor(deltaFrames: number): number {
   return Math.abs(_run.skew)
 }
 
+/**
+ * THE timeline clock, in one place.
+ *
+ * The AudioContext time at which sound for `frame` must be SCHEDULED so that it
+ * is HEARD exactly when getPlaybackFrame() reports that frame. Latency
+ * compensation lives in the reporting side (_audibleTime), so scheduling stays
+ * on the raw clock and the two meet correctly — see invariant 2 at the top.
+ *
+ * Every generator on the timeline places its sound through this, so they cannot
+ * disagree about where a frame is, and `nudgePlaybackAnchor` moves all of them
+ * together.
+ */
+function _ctxTimeFor(run: Run, frame: number): number {
+  return run.startCtxTime + (frame - run.startFrame) / run.frameRate
+}
+
+/**
+ * Public form of the above, for the behaviour controllers (metronome, TTS).
+ * Null when no run is live — nothing should be scheduled then.
+ *
+ * Anything that sounds on the timeline MUST place it through this rather than
+ * anchoring its own clock. The metronome used to keep a private anchor built
+ * from `ctx.currentTime` and the VISUAL playhead, which made it fire a fixed
+ * lead plus the whole output latency late, and left it blind to the sync
+ * corrections that nudge a live run.
+ */
+export function ctxTimeForFrame(frame: number): number | null {
+  return _run ? _ctxTimeFor(_run, frame) : null
+}
+
+/** Frame rate of the live run, or null when stopped. */
+export function getRunFrameRate(): number | null {
+  return _run?.frameRate ?? null
+}
+
 /** Walk the look-ahead window: warm decodes, and schedule clips that are due. */
 function _scheduleDue() {
   const run = _run
@@ -369,8 +460,8 @@ function _scheduleDue() {
 
     const ms             = clip.mediaStart ?? 0
     const durationFrames = (clip.end ?? 0) - ms
-    const startAt = run.startCtxTime + Math.max(0, clip.position - run.startFrame) / run.frameRate
-    const endAt   = run.startCtxTime + (clip.position + durationFrames - run.startFrame) / run.frameRate
+    const startAt = _ctxTimeFor(run, Math.max(run.startFrame, clip.position))
+    const endAt   = _ctxTimeFor(run, clip.position + durationFrames)
 
     if (endAt <= t) { run.scheduled.add(clip.id); run.sigs.set(clip.id, _clipSig(clip)); continue }  // window already passed
     if (startAt > t + DECODE_AHEAD_S) continue                 // too far out to care yet
@@ -393,7 +484,7 @@ function _scheduleClip(clip: Clip, run: Run, token: number): void {
   const ms             = clip.mediaStart ?? 0
   const durationFrames = (clip.end ?? 0) - ms
   const offsetFrames   = Math.max(0, run.startFrame - clip.position)  // playhead started inside clip
-  const startAt        = run.startCtxTime + Math.max(0, clip.position - run.startFrame) / run.frameRate
+  const startAt        = _ctxTimeFor(run, Math.max(run.startFrame, clip.position))
   const bufferStart    = (ms + offsetFrames) / run.frameRate
   const playSeconds    = (durationFrames - offsetFrames) / run.frameRate
   if (playSeconds <= 0) return
@@ -420,7 +511,7 @@ function _scheduleClip(clip: Clip, run: Run, token: number): void {
     const gain = _ctx.createGain()
     src.buffer = buf
     src.connect(gain)
-    gain.connect(run.gain)
+    gain.connect(getTrackGain(clip.trackId))
 
     const fade = Math.min(FADE_S, dur / 2)
     gain.gain.setValueAtTime(0, when)

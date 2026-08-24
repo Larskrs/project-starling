@@ -1,5 +1,5 @@
-import { watch, onScopeDispose, type Ref } from 'vue'
-import { useCookie } from '../../../composables/useCookie'
+import { onScopeDispose, watch, type Ref } from 'vue'
+import { useLocalStorage } from '../../../composables/useLocalStorage'
 import type { EditorViewport } from '../../../types/timeline'
 import type { Timeline } from '../../../types/api'
 
@@ -30,7 +30,7 @@ export interface ViewMemoryOptions {
 export function useEditorViewMemory(
   { timeline, loading, pxPerFrame, viewport, canvasRef }: ViewMemoryOptions,
 ) {
-  const savedViews = useCookie<Record<string, SavedView>>('editor-views', {})
+  const savedViews = useLocalStorage<Record<string, SavedView>>('editor-views', {})
 
   /** The remembered view for a timeline, or null if it has none. */
   function viewFor(timelineId: string): SavedView | null {
@@ -57,25 +57,22 @@ export function useEditorViewMemory(
     if (timer) { clearTimeout(timer); timer = null }
   }
 
-  /**
-   * Save now, cancelling any debounced save. Call on the way out: without it a
-   * zoom or scroll in the last 800ms before leaving is lost.
-   */
-  function flush(): void {
-    cancelPending()
-    save()
-  }
-
   watch([pxPerFrame, viewport], () => {
     if (loading.value || !timeline.value) return
     cancelPending()
     timer = setTimeout(save, SAVE_DEBOUNCE_MS)
   })
 
-  // The timer outlives the component otherwise, and would fire after unmount to
-  // write the view of a timeline the user has already left. The composable owns
-  // the timer, so it owns clearing it — callers shouldn't have to know it exists.
-  onScopeDispose(cancelPending)
+  // Leaving the editor mid-debounce would otherwise drop the last zoom/scroll,
+  // so a queued save is flushed rather than cancelled. A pending timer is
+  // exactly the signal that something changed and hasn't been persisted, and
+  // the scope stops before the canvas unmounts — scrollLeft is still readable.
+  onScopeDispose(() => {
+    if (!timer) return
+    clearTimeout(timer)
+    timer = null
+    save()
+  })
 
-  return { viewFor, save, flush }
+  return { viewFor, save }
 }

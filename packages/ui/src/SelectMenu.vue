@@ -19,7 +19,7 @@ export interface SelectOption {
 
 const props = withDefaults(defineProps<{
   modelValue?: T['value'] | null
-  options?: T[]
+  options: T[]
   /** Adds a "none" first item; null omits it entirely. */
   nullLabel?: string | null
   placeholder?: string
@@ -28,7 +28,8 @@ const props = withDefaults(defineProps<{
 }>(), {
   // No modelValue default — an absent value is `undefined`, and every
   // comparison here is null-loose, so it reads the same as null.
-  options: () => [] as never[],
+  // `options` is required: a default here would be inferred as never[] and
+  // collapse T for every caller.
   nullLabel: null,
   placeholder: 'Select…',
   align: 'start',

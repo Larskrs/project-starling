@@ -154,7 +154,10 @@
     "recentMembers": "New members",
     "noRecentFiles": "No files uploaded yet",
     "noRecentMembers": "No members yet",
-    "uploadedBy": "by {name}"
+    "uploadedBy": "by {name}",
+    "storageUsed": "Storage used",
+    "viewAll": "View all",
+    "tracks": "tracks"
   },
   "storage": {
     "type": {
@@ -347,6 +350,9 @@
     "addClip": "Add clip",
     "mute": "Mute track",
     "unmute": "Unmute track",
+    "hideTrack": "Hide track",
+    "showTrack": "Show track",
+    "trackVolume": "Volume for {name}",
     "lock": "Lock track",
     "unlock": "Unlock track",
     "deleteTrack": "Delete track",
@@ -356,10 +362,10 @@
     "trackMenu": {
       "more": "More actions"
     },
-    "zoomIn": "Zoom in",
-    "zoomOut": "Zoom out",
+    "zoomIn": "Zoom in (Alt +)",
+    "zoomOut": "Zoom out (Alt −)",
     "zoomFit": "Fit whole timeline",
-    "zoomReset": "Reset zoom (5-minute ticks)",
+    "zoomReset": "Reset zoom to 5-minute ticks (Alt 0)",
     "goToStart": "Go to start (Home)",
     "playPause": "Play / Pause (Space)",
     "goToEnd": "Go to end (End)",
@@ -374,7 +380,8 @@
     "sourceBar": {
       "addsAt": "Click a source to add a clip at {tc}",
       "noSources": "This source set has no sources yet",
-      "close": "Deselect track"
+      "close": "Deselect track",
+      "onAir": "On air at the playhead"
     },
     "bpmClip": {
       "addTitle": "Add BPM change",

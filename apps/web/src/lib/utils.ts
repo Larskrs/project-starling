@@ -37,6 +37,35 @@ export function relativeTime(t: Translate, iso: string | null | undefined): stri
   return t('time.yearsAgo', { n: Math.floor(days / 365) })
 }
 
+/** The frame span fields every timeline-length helper needs. */
+export interface TimelineSpan {
+  startFrame: number
+  endFrame: number
+  frameRate: string | number
+}
+
+/** How many frames a timeline covers. Never negative. */
+export function timelineFrames(tl: TimelineSpan): number {
+  return Math.max(0, tl.endFrame - tl.startFrame)
+}
+
+/**
+ * A timeline's length as HH:MM:SS:FF. Drop-frame rates are shown at their
+ * nearest whole fps, which is what the editor's ruler does — this is a duration
+ * at a glance, not a timecode you can conform against.
+ */
+export function timelineDuration(tl: TimelineSpan): string {
+  const fps    = Math.round(parseFloat(String(tl.frameRate))) || 25
+  const frames = timelineFrames(tl)
+  const pad    = (n: number) => String(n).padStart(2, '0')
+  return [
+    pad(Math.floor(frames / (fps * 3600))),
+    pad(Math.floor(frames / (fps * 60)) % 60),
+    pad(Math.floor(frames / fps) % 60),
+    pad(frames % fps),
+  ].join(':')
+}
+
 export function formatBytes(bytes: number | null | undefined): string {
   if (!bytes)            return '0 B'
   if (bytes < 1024)      return `${bytes} B`

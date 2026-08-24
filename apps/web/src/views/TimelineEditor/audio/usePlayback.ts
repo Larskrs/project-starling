@@ -2,7 +2,7 @@ import { ref, computed, watch, onScopeDispose, type Ref } from 'vue'
 import { clamp } from '../lib/editorUtils'
 import {
   startAudioPlayback, seekAudioPlayback, resyncAudioPlayback, stopAudioPlayback,
-  getPlaybackFrame, nudgePlaybackAnchor, onAudioBlockedChange,
+  getPlaybackFrame, nudgePlaybackAnchor, onAudioBlockedChange, setTrackVolumes,
 } from './useAudioEngine'
 import { resolveTrackSettings } from '../behaviors/trackSettings'
 import { createMetronome } from './metronome'
@@ -10,6 +10,7 @@ import { createCueSpeaker } from './tts'
 import type { Clip, TrackType, TrackWithType } from '../../../types/timeline'
 import type { Timeline } from '../../../types/api'
 import type { TransportAction, TransportState } from '../data/useTimelineSync'
+import type { BehaviorController } from './behaviorTypes'
 
 // The SERVER owns the transport clock: clients send commands (play/pause/seek)
 // and continuously converge on the server's anchor — position now =
@@ -28,11 +29,6 @@ export interface EditorTrack extends TrackWithType {
   clips: Clip[]
 }
 
-/** Behaviour controllers (metronome, TTS) share this shape. */
-interface BehaviorController {
-  start: (playheadFrame: number) => void
-  stop: () => void
-}
 
 /** The server's authoritative anchor while the shared transport plays. */
 interface ServerAnchor {
@@ -45,8 +41,10 @@ export interface PlaybackDeps {
   timeline: Ref<Timeline | null>
   trackList: Ref<EditorTrack[]>
   trackTypes: Ref<TrackType[]>
-  /** Client-local mute (cookie), not the server's isMuted flag. */
+  /** Client-local mute (localStorage), not the server's isMuted flag. */
   mutedTracks: Ref<Record<string, boolean>>
+  /** Client-local per-track level, 0..1. Absent means unity. */
+  trackVolumes: Ref<Record<string, number>>
   pxPerFrame: Ref<number>
   canvasRef: Ref<HTMLElement | null>
   sendTransport: (action: TransportAction, frame?: number) => void
@@ -71,7 +69,7 @@ const DRIFT_DEADBAND_FRAMES = 0.25
  *
  */
 export function usePlayback({
-  timeline, trackList, trackTypes, mutedTracks, pxPerFrame, canvasRef, sendTransport,
+  timeline, trackList, trackTypes, mutedTracks, trackVolumes, pxPerFrame, canvasRef, sendTransport,
 }: PlaybackDeps) {
   // Stored as float for smooth animation; TC display rounds it.
   const playheadFrame = ref(0)
@@ -109,15 +107,22 @@ export function usePlayback({
   // built from each unmuted track's type settings.
   let _behaviors: BehaviorController[] = []
 
-  function _startBehaviors(fps: number): void {
+  /**
+   * `resumed` marks a re-time of a run that is already sounding, as opposed to
+   * a fresh play or seek. Controllers that fire something once on entry (the
+   * cue speaker) use it to avoid re-announcing the clip the playhead is already
+   * inside — without it, every anchor-convergence tick re-triggers that cue.
+   */
+  function _startBehaviors(fps: number, { resumed = false } = {}): void {
     _stopBehaviors()   // never stack two metronomes/speakers on one transport
     for (const track of trackList.value) {
       if (isMuted(track)) continue
       const settings = resolveTrackSettings(track, trackTypes?.value ?? [])
-      if (settings.metronome) _behaviors.push(createMetronome({ clips: track.clips, fps, endFrame: timeline.value!.endFrame }))
-      if (settings.tts)       _behaviors.push(createCueSpeaker({ clips: track.clips, fps }))
+      if (settings.metronome) _behaviors.push(createMetronome({ clips: track.clips, fps, endFrame: timeline.value!.endFrame, trackId: track.id }))
+      // No fps: cues are compared against the engine's frame clock directly.
+      if (settings.tts)       _behaviors.push(createCueSpeaker({ clips: track.clips, trackId: track.id }))
     }
-    for (const b of _behaviors) b.start(playheadFrame.value)
+    for (const b of _behaviors) b.start(playheadFrame.value, { resumed })
   }
 
   function _stopBehaviors(): void {
@@ -151,6 +156,7 @@ export function usePlayback({
 
     seekAudioPlayback(currentClips(), playheadFrame.value, fps)
     _stopBehaviors()
+    // A real jump — treated like a seek, so a cue at the landing point speaks.
     _startBehaviors(fps)
   }
 
@@ -169,7 +175,9 @@ export function usePlayback({
   function resyncBehaviors() {
     if (!isPlaying.value || !timeline.value) return
     _stopBehaviors()
-    _startBehaviors(parseFloat(timeline.value.frameRate))
+    // A re-time, not a fresh start: the listener is mid-run and has already
+    // heard whatever cue the playhead is sitting in.
+    _startBehaviors(parseFloat(timeline.value.frameRate), { resumed: true })
   }
 
   // Leading edge + true trailing debounce: a lone trigger (a single seek click)
@@ -275,6 +283,9 @@ export function usePlayback({
     _rafId           = requestAnimationFrame(_tick)
 
     const fps = parseFloat(timeline.value.frameRate)
+    // Seed the run's mixer before any voice is scheduled, so the first clip
+    // attacks at the stored level rather than unity then ramping down.
+    setTrackVolumes(trackVolumes.value)
     startAudioPlayback(currentClips(), playheadFrame.value, fps)
     _startBehaviors(fps)
 

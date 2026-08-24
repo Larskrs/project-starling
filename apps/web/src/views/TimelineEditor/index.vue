@@ -6,7 +6,7 @@ import { Icon } from '@iconify/vue'
 import { ResizeHandle, ConfirmDialog, useToast } from '@starling/ui'
 import { useApi } from '../../composables/useApi'
 import { usePageTitle } from '../../composables/usePageTitle'
-import { useCookie } from '../../composables/useCookie'
+import { useLocalStorage } from '../../composables/useLocalStorage'
 import { clamp, framesToTC, sourceIndexFromKey } from './lib/editorUtils'
 import { useEditorViewport } from './view/useEditorViewport'
 import { useEditorZoom } from './view/useEditorZoom'
@@ -15,10 +15,10 @@ import { useEditorViewMemory } from './view/useEditorViewMemory'
 import { createDrag } from './lib/pointerDrag'
 import { useTimelineSync } from './data/useTimelineSync'
 import { usePlayback } from './audio/usePlayback'
-import { destroyAudioEngine } from './audio/useAudioEngine'
+import { destroyAudioEngine, setTrackVolume as applyTrackVolume } from './audio/useAudioEngine'
 import { clearWaveformCache } from './audio/useWaveform'
 import { describeDownload, resetDownloads } from './media/mediaDownloads'
-import { resolveTrackSettings, bpmAtFrame } from './behaviors/trackSettings'
+import { resolveTrackSettings, trackSupportsAudio } from './behaviors/trackSettings'
 import RulerLane       from './behaviors/RulerLane.vue'
 import BpmLane         from './behaviors/BpmLane.vue'
 import EditorToolbar   from './components/EditorToolbar.vue'
@@ -173,10 +173,10 @@ const {
   zoomIn, zoomOut, zoomFit, zoomReset,
 } = useEditorZoom({
   timeline, canvasRef, updateViewport,
-  // Lazy on purpose — usePlayback is constructed below, out of the pxPerFrame
-  // this call returns. See EditorZoomOptions.
-  playheadFrame: () => playback.playheadFrame.value,
-  isPlaying:     () => playback.isPlaying.value,
+  // Playback owns the transport state but is created below — it needs
+  // pxPerFrame from here. Passed as getters so nothing is read during setup.
+  playheadFrame: () => playheadFrame.value,
+  isPlaying:     () => isPlaying.value,
 })
 
 const viewMemory = useEditorViewMemory({ timeline, loading, pxPerFrame, viewport, canvasRef })
@@ -195,15 +195,6 @@ const byOrder = (a: EditorTrack, b: EditorTrack) =>
 
 const orderedTracks = computed(() => [...trackList.value].sort(byOrder))
 
-// Header badge: live BPM for metronome tracks; the active clip's label otherwise.
-function headerBadge(track: EditorTrack): string {
-  if (settingsFor(track).metronome) {
-    const bpm = bpmAtFrame(track.clips, playheadFrame.value)
-    return bpm ? `♩ ${bpm}` : '♩ —'
-  }
-  return activeClipLabel(track)
-}
-
 // The clip under the playhead: last clip at/before it, still running if it has
 // a length (clip mode); event-mode clips stay active until the next clip.
 function activeClip(track: EditorTrack): EditorClip | null {
@@ -221,18 +212,30 @@ function activeClip(track: EditorTrack): EditorClip | null {
   return active
 }
 
-function activeClipLabel(track: EditorTrack): string {
-  const active = activeClip(track)
-  if (!active) return ''
-  // Matches the clip display: source short name prefixes a custom label.
-  const short = active.sourceId ? sources.value.find(s => s.id === active.sourceId)?.shortName : null
-  if (short && active.label) return `${short} - ${active.label}`
-  return active.label || ''
-}
+// ── Client-local mute + volume (localStorage — never saved to the server) ─────
+// Both are per-viewer: two people editing the same timeline mix it to their own
+// taste without fighting over each other's levels.
+const mutedTracks  = useLocalStorage<Record<string, true>>('editor-muted-tracks', {})   // trackId → true
+const trackVolumes = useLocalStorage<Record<string, number>>('editor-track-volumes', {}) // trackId → 0..1
 
-// ── Client-local mute (cookie — never saved to the server) ────────────────────
-const mutedTracks  = useCookie<Record<string, true>>('editor-muted-tracks', {})   // trackId → true
 const isTrackMuted = (track: EditorTrack) => !!mutedTracks.value[track.id]
+
+/** A track with no stored level is at unity, not silent. */
+const trackVolume = (track: EditorTrack): number =>
+  clamp(trackVolumes.value[track.id] ?? 1, 0, 1)
+
+/** Whether this track can make sound — decides mute-vs-hide for its control. */
+const supportsAudio = (track: EditorTrack): boolean =>
+  trackSupportsAudio(track, trackTypes.value)
+
+/**
+ * A track with no audio that has been switched off. Its toggle shows an eye, so
+ * it has to actually hide something: the lane is made invisible rather than
+ * unmounted, which keeps its row box — and therefore the header/lane alignment
+ * — exactly as it was.
+ */
+const isTrackHidden = (track: EditorTrack): boolean =>
+  isTrackMuted(track) && !supportsAudio(track)
 
 function toggleMute(track: EditorTrack): void {
   const next = { ...mutedTracks.value }
@@ -241,9 +244,21 @@ function toggleMute(track: EditorTrack): void {
   mutedTracks.value = next
 }
 
+function setTrackVolume(track: EditorTrack, volume: number): void {
+  const v = clamp(volume, 0, 1)
+  // Unity is the default, so storing it would just grow the entry for nothing.
+  const next = { ...trackVolumes.value }
+  if (v === 1) delete next[track.id]
+  else next[track.id] = v
+  trackVolumes.value = next
+  // Apply to the live run immediately — a slider that only takes effect on the
+  // next play is not a mixer.
+  applyTrackVolume(track.id, v)
+}
+
 // ── Playback ──────────────────────────────────────────────────────────────────
 const playback = usePlayback({
-  timeline, trackList, trackTypes, mutedTracks, pxPerFrame, canvasRef,
+  timeline, trackList, trackTypes, mutedTracks, trackVolumes, pxPerFrame, canvasRef,
   sendTransport: (...args) => sync.sendTransport(...args),
 })
 const {
@@ -389,12 +404,16 @@ async function addSourceClip(source: Source): Promise<void> {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 function onKeydown(e: KeyboardEvent): void {
-  // Ctrl/⌘ +/−/0 zoom the timeline, never the page — even while an input has
-  // focus, so browser zoom stays disabled everywhere on the editor page.
-  if (e.ctrlKey || e.metaKey) {
-    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return }
-    if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
-    if (e.key === '0')                  { e.preventDefault(); zoomReset(); return }
+  // Alt +/−/0 zoom the timeline — claimed even while an input has focus, so the
+  // shortcut behaves the same everywhere in the editor. Ctrl/⌘ +/−/0 are left
+  // alone: they scale the page here exactly as they do on any other site.
+  //
+  // Keyed off e.code because Option rewrites the printed character on macOS
+  // (Option+= is '≠'), which is what e.key would report.
+  if (e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (e.code === 'Equal'  || e.code === 'NumpadAdd')      { e.preventDefault(); zoomIn();    return }
+    if (e.code === 'Minus'  || e.code === 'NumpadSubtract') { e.preventDefault(); zoomOut();   return }
+    if (e.code === 'Digit0' || e.code === 'Numpad0')        { e.preventDefault(); zoomReset(); return }
   }
   const target = e.target as HTMLElement | null
   const tag = target?.tagName
@@ -409,8 +428,11 @@ function onKeydown(e: KeyboardEvent): void {
   }
 
   // Bare +/− step the zoom ladder too — no modifier needed outside inputs.
-  if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return }
-  if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
+  // Ctrl/⌘ is excluded so the browser's own page zoom still gets the key.
+  if (!e.ctrlKey && !e.metaKey) {
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return }
+    if (e.key === '-')                  { e.preventDefault(); zoomOut(); return }
+  }
   // Ignore auto-repeat: holding space would otherwise machine-gun play/stop,
   // tearing down and restarting the run many times a second.
   if (e.code === 'Space')  { e.preventDefault(); if (!e.repeat) togglePlayback() }
@@ -427,7 +449,7 @@ onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
   if (_flashTimer) clearTimeout(_flashTimer)
-  viewMemory.flush()   // flush the debounced view save so the last zoom/scroll sticks
+  // The pending view save is flushed by useEditorViewMemory's own teardown.
   stopPlayback(false)
   destroyAudioEngine()
   clearWaveformCache()
@@ -712,10 +734,12 @@ provide('editor-viewport',   viewport)
               :track="track"
               :height="trackHeight(track)"
               :selected="track.id === selectedTrackId"
-              :badge="headerBadge(track)"
               :resizable="!isStripTrack(track)"
               :muted="isTrackMuted(track)"
+              :supports-audio="supportsAudio(track)"
+              :volume="trackVolume(track)"
               :class="reorderDrag?.trackId === track.id ? 'opacity-60' : ''"
+              @update:volume="setTrackVolume(track, $event)"
               @select="selectTrack(track)"
               @reorder-start="startTrackReorder(track, $event)"
               @resize-start="startRowResize(track, $event)"
@@ -767,6 +791,7 @@ provide('editor-viewport',   viewport)
 
               <template v-for="track in orderedTracks" :key="track.id">
                 <BpmLane
+                  :class="isTrackHidden(track) ? 'invisible' : ''"
                   v-if="settingsFor(track).trackDisplay === 'bpm'"
                   :track="track"
                   :timeline="timeline"
@@ -780,6 +805,7 @@ provide('editor-viewport',   viewport)
                   @move-clip="moveClip(track, $event.clip, $event.position)"
                 />
                 <RulerLane
+                  :class="isTrackHidden(track) ? 'invisible' : ''"
                   v-else-if="settingsFor(track).trackDisplay === 'ruler'"
                   :track="track"
                   :timeline="timeline"
@@ -793,6 +819,7 @@ provide('editor-viewport',   viewport)
                   @move-clip="moveClip(track, $event.clip, $event.position)"
                 />
                 <TrackLane
+                  :class="isTrackHidden(track) ? 'invisible' : ''"
                   v-else
                   :track="track"
                   :timeline="timeline"

@@ -1,7 +1,4 @@
-import {
-  ref, computed, nextTick, onMounted, onUnmounted, toValue,
-  type MaybeRefOrGetter, type Ref,
-} from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, type Ref } from 'vue'
 import { clamp, RULER_TICK_TARGET_PX } from '../lib/editorUtils'
 import type { Timeline } from '../../../types/api'
 
@@ -9,7 +6,7 @@ import type { Timeline } from '../../../types/api'
  * Timeline zoom: one range (fit-the-whole-timeline … MAX_PX_PER_FRAME, so the
  * range adapts to length) driven two ways.
  *
- *  - wheel / pinch — CONTINUOUS exponential scaling, normalised per device and
+ *  - alt + wheel — CONTINUOUS exponential scaling, normalised per device and
  *    coalesced to one zoom per frame, so trackpads feel smooth and mouse
  *    notches feel sane
  *  - toolbar / keyboard — a ladder of ZOOM_STOPS geometric stops
@@ -26,17 +23,13 @@ export interface EditorZoomOptions {
   timeline: Ref<Timeline | null>
   canvasRef: Ref<HTMLElement | null>
   /**
-   * Playback state, read only when a zoom actually happens.
-   *
-   * Deliberately `MaybeRefOrGetter` and not `Ref`: usePlayback needs the
-   * `pxPerFrame` this composable creates, and this composable needs playback's
-   * position — a construction cycle, so one side has to be lazy. Accepting a
-   * getter lets zoom be built first and still read live playback state at zoom
-   * time. Handing over the refs directly means evaluating them before
-   * usePlayback has run, which is a temporal-dead-zone crash on mount.
+   * Transport state, read at zoom time rather than taken as refs. Playback owns
+   * those refs but is created AFTER this composable — it needs `pxPerFrame`
+   * from here — so at setup the caller has nothing to hand over yet. Only
+   * `setZoom` reads them, and never before the first user gesture.
    */
-  playheadFrame: MaybeRefOrGetter<number>
-  isPlaying: MaybeRefOrGetter<boolean>
+  playheadFrame: () => number
+  isPlaying: () => boolean
   updateViewport: () => void
 }
 
@@ -79,8 +72,8 @@ export function useEditorZoom(
       anchorX = anchorClientX - canvas.getBoundingClientRect().left
     } else {
       const playheadPx =
-        (toValue(playheadFrame) - timeline.value.startFrame) * pxPerFrame.value - canvas.scrollLeft
-      anchorX = (toValue(isPlaying) && playheadPx >= 0 && playheadPx <= canvas.clientWidth)
+        (playheadFrame() - timeline.value.startFrame) * pxPerFrame.value - canvas.scrollLeft
+      anchorX = (isPlaying() && playheadPx >= 0 && playheadPx <= canvas.clientWidth)
         ? playheadPx
         : canvas.clientWidth / 2
     }
@@ -135,18 +128,23 @@ export function useEditorZoom(
     return `${clamp(pct, 0, 100)}%`
   })
 
-  // ── Ctrl/⌘ + wheel ───────────────────────────────────────────────────────
-  // Browser zoom is disabled on the editor page: the gesture zooms the timeline
-  // instead, anchored at the cursor when it is over the canvas. Deltas are
-  // normalised (line/page deltaModes → px) and coalesced to one setZoom per
-  // frame, so a pinch burst costs one re-render. Safari's proprietary gesture
-  // events are swallowed for the same reason.
+  // ── Alt + wheel ──────────────────────────────────────────────────────────
+  // Alt is the timeline's own zoom modifier, anchored at the cursor when it is
+  // over the canvas. Ctrl/⌘ is deliberately NOT claimed — along with trackpad
+  // pinch, which browsers report as ctrl+wheel — so page zoom keeps working on
+  // the editor exactly as it does everywhere else. Deltas are normalised
+  // (line/page deltaModes → px) and coalesced to one setZoom per frame, so a
+  // fast burst costs one re-render.
+  //
+  // The default is still prevented for alt+wheel itself: Firefox maps that
+  // gesture to history navigation on Windows, which would otherwise walk out of
+  // the editor mid-zoom.
   let wheelFactor = 1
   let wheelAnchor: number | null = null
   let wheelRaf: number | null = null
 
   function onGlobalWheel(e: WheelEvent): void {
-    if (!e.ctrlKey && !e.metaKey) return
+    if (!e.altKey || e.ctrlKey || e.metaKey) return
     e.preventDefault()
     const deltaPx = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1)
     wheelFactor *= Math.exp(-deltaPx * WHEEL_ZOOM_RATE)
@@ -163,18 +161,12 @@ export function useEditorZoom(
     })
   }
 
-  const preventGesture = (e: Event): void => e.preventDefault()
-
   onMounted(() => {
     document.addEventListener('wheel', onGlobalWheel, { passive: false })
-    document.addEventListener('gesturestart', preventGesture)
-    document.addEventListener('gesturechange', preventGesture)
   })
 
   onUnmounted(() => {
     document.removeEventListener('wheel', onGlobalWheel)
-    document.removeEventListener('gesturestart', preventGesture)
-    document.removeEventListener('gesturechange', preventGesture)
     if (wheelRaf) { cancelAnimationFrame(wheelRaf); wheelRaf = null }
   })
 

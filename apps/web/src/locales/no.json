@@ -154,7 +154,10 @@
     "recentMembers": "Nye medlemmer",
     "noRecentFiles": "Ingen filer lastet opp ennå",
     "noRecentMembers": "Ingen medlemmer ennå",
-    "uploadedBy": "av {name}"
+    "uploadedBy": "av {name}",
+    "storageUsed": "Lagring brukt",
+    "viewAll": "Se alle",
+    "tracks": "spor"
   },
   "storage": {
     "type": {
@@ -347,6 +350,9 @@
     "addClip": "Legg til klipp",
     "mute": "Demp spor",
     "unmute": "Avdemp spor",
+    "hideTrack": "Skjul spor",
+    "showTrack": "Vis spor",
+    "trackVolume": "Volum for {name}",
     "lock": "Lås spor",
     "unlock": "Lås opp spor",
     "deleteTrack": "Slett spor",
@@ -356,10 +362,10 @@
     "trackMenu": {
       "more": "Flere handlinger"
     },
-    "zoomIn": "Zoom inn",
-    "zoomOut": "Zoom ut",
+    "zoomIn": "Zoom inn (Alt +)",
+    "zoomOut": "Zoom ut (Alt −)",
     "zoomFit": "Vis hele tidslinjen",
-    "zoomReset": "Tilbakestill zoom (5-minutters merker)",
+    "zoomReset": "Tilbakestill zoom til 5-minutters merker (Alt 0)",
     "goToStart": "Gå til start (Home)",
     "playPause": "Spill av / pause (mellomrom)",
     "goToEnd": "Gå til slutt (End)",
@@ -374,7 +380,8 @@
     "sourceBar": {
       "addsAt": "Klikk en kilde for å legge til et klipp ved {tc}",
       "noSources": "Dette kildesettet har ingen kilder ennå",
-      "close": "Fjern valg av spor"
+      "close": "Fjern valg av spor",
+      "onAir": "På lufta ved spillehodet"
     },
     "bpmClip": {
       "addTitle": "Legg til BPM-endring",

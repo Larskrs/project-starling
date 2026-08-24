@@ -6,6 +6,7 @@ import { Icon } from '@iconify/vue'
 import { Avatar, Button, IconButton, Skeleton } from '@starling/ui'
 import { useProductionCrud } from '../../composables/useProductionCrud'
 import { useTimelineOpening } from '../../composables/useTimelineOpening'
+import { timelineDuration, timelineFrames } from '../../lib/utils'
 import ManageListPage from './components/ManageListPage.vue'
 import TimelineDialog from './components/TimelineDialog.vue'
 
@@ -25,28 +26,6 @@ const {
 })
 
 onMounted(load)
-
-function durationFrames(tl) {
-  return tl.endFrame - tl.startFrame
-}
-
-const pad = n => String(n).padStart(2, '0')
-
-/**
- * Frame count → HH:MM:SS:FF. Drop-frame rates are shown at their nearest whole
- * fps, which is what the editor's ruler does — this is a duration at a glance,
- * not a timecode you can conform against.
- */
-function duration(tl) {
-  const fps    = Math.round(parseFloat(tl.frameRate)) || 25
-  const frames = Math.max(0, durationFrames(tl))
-  return [
-    pad(Math.floor(frames / (fps * 3600))),
-    pad(Math.floor(frames / (fps * 60)) % 60),
-    pad(Math.floor(frames / fps) % 60),
-    pad(frames % fps),
-  ].join(':')
-}
 
 function openEditor(tl) {
   // Names the loading screen before the route even starts resolving.
@@ -112,11 +91,11 @@ function openEditor(tl) {
         <div class="min-w-0 flex flex-col gap-0.5">
           <span class="text-sm font-medium text-foreground truncate">{{ tl.name }}</span>
           <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span class="tabular-nums">{{ duration(tl) }}</span>
+            <span class="tabular-nums">{{ timelineDuration(tl) }}</span>
             <span class="text-muted-foreground/40" aria-hidden="true">·</span>
             <span>{{ tl.frameRate }} fps</span>
             <span class="text-muted-foreground/40" aria-hidden="true">·</span>
-            <span class="tabular-nums">{{ durationFrames(tl).toLocaleString() }} {{ $t('timelines.frames') }}</span>
+            <span class="tabular-nums">{{ timelineFrames(tl).toLocaleString() }} {{ $t('timelines.frames') }}</span>
           </span>
         </div>
 

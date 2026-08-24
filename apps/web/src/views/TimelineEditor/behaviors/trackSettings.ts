@@ -6,7 +6,7 @@
  * defaults. Every consumer (lanes, playback, dialogs) goes through this so the
  * shape is always complete.
  */
-import type { Clip, TrackSettings, TrackType, TrackWithType } from '../../../types/timeline'
+import type { TrackSettings, TrackType, TrackWithType } from '../../../types/timeline'
 
 const DEFAULTS: TrackSettings = Object.freeze({
   trackDisplay: 'normal',    // effective: 'normal' | 'ruler' | 'bpm' (bpm is metronome-only)
@@ -41,13 +41,29 @@ export const RULER_TRACK_HEIGHT = 28
 /** Height (px) of metronome (BPM strip) tracks — room for bar lines + labels. */
 export const BPM_TRACK_HEIGHT = 36
 
-/** Current BPM at a playhead position, from a metronome track's clips. */
-export function bpmAtFrame(clips: Clip[], frame: number): number | null {
-  let bpm: number | null = null
-  for (const clip of clips) {
-    if (clip.position > frame) break
-    const v = Number(clip.data?.bpm)
-    if (Number.isFinite(v) && v > 0) bpm = v
-  }
-  return bpm
+/**
+ * Whether a track can make sound at all.
+ *
+ * This is a CAPABILITY of the track, not a statement about its current
+ * contents: a clip-mode track with no clips in it yet still supports audio, and
+ * its control must not flip to a different meaning the moment the last clip is
+ * deleted.
+ *
+ *  - clip mode carries media clips, which is the only kind that holds a file
+ *  - metronome tracks generate clicks
+ *  - TTS tracks speak their clip labels
+ *
+ * Everything else — event-mode source tracks, ruler strips — is notation. For
+ * those the per-track toggle hides the lane instead of silencing it, which is
+ * why the header shows an eye rather than a speaker.
+ */
+export function trackSupportsAudio(
+  track: TrackWithType | null | undefined,
+  trackTypes: TrackType[] = [],
+): boolean {
+  if (!track) return false
+  const settings = resolveTrackSettings(track, trackTypes)
+  if (settings.metronome || settings.tts) return true
+  const type = trackTypes.find(tt => tt.id === track.typeId)
+  return (track.mode ?? type?.trackMode) === 'clip'
 }

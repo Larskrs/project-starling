@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue'
-import { useCookie } from '../../../composables/useCookie'
+import { useLocalStorage } from '../../../composables/useLocalStorage'
 import { useResizable } from '../../../composables/useResizable'
 import { clamp } from '../lib/editorUtils'
 import { RULER_TRACK_HEIGHT, BPM_TRACK_HEIGHT } from '../behaviors/trackSettings'
@@ -17,15 +17,15 @@ export interface EditorLayoutOptions {
 }
 
 /**
- * Sidebar width and per-track row heights, both persisted in cookies so the
+ * Sidebar width and per-track row heights, both persisted locally so the
  * editor reopens the shape you left it in.
  *
  * Strip tracks (ruler, BPM) have a fixed height and are not resizable — they
  * are header-like furniture, not content rows.
  */
 export function useEditorLayout({ tracks, settingsFor, onSidebarResize }: EditorLayoutOptions) {
-  const sidebarWidth = useCookie('editor-sidebar-width', 264)
-  const trackHeights = useCookie<Record<string, number>>('editor-track-heights', {})
+  const sidebarWidth = useLocalStorage('editor-sidebar-width', 264)
+  const trackHeights = useLocalStorage<Record<string, number>>('editor-track-heights', {})
 
   function trackHeight(track: TrackWithType): number {
     const display = settingsFor(track).trackDisplay
