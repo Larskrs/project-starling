@@ -577,26 +577,41 @@
     "failedToLoad": "Could not load your recent activity"
   },
   "welcome": {
-    "title": "Plan, edit and play back your productions — together.",
-    "lede": "Cino is the collaborative workspace for live productions: shared timelines, synchronized playback and all your source material in one place.",
+    "title": "Run the whole show from one timeline.",
+    "lede": "Shared timelines, synced playback, every source in one place.",
     "getStarted": "Get started",
-    "featuresTitle": "Everything your production needs",
-    "features": {
-      "timelines": {
-        "title": "Timelines that stay in sync",
-        "text": "Build show timelines with tracks and clips, and watch every change appear live for the whole team — playhead included."
+    "closing": "Bring your next production together.",
+    "stats": {
+      "live": "Live on this server",
+      "productions": "Projects",
+      "timelines": "Timelines",
+      "tracks": "Tracks",
+      "clips": "Clips",
+      "media": "Media stored"
+    },
+    "demo": {
+      "reset": "Reset the example",
+      "timeline": {
+        "eyebrow": "Timeline",
+        "title": "Cut the show as it runs",
+        "text": "The real editor, right here. Nothing you do is saved.",
+        "hints": {
+          "scrub": "Drag the ruler",
+          "drag": "Move a clip",
+          "sources": "Press 1–4 to cut",
+          "menu": "Right-click a clip"
+        }
       },
       "tracks": {
-        "title": "Tracks that fit your workflow",
-        "text": "Configure track types with rulers, metronomes, text-to-speech and more, or start from ready-made presets."
+        "eyebrow": "Track types",
+        "title": "Tracks that look like the job",
+        "text": "Set it once on the type — every track follows."
       },
-      "files": {
-        "title": "All your files in one place",
-        "text": "Organize audio, video and documents in production folders, and drop sources straight onto the timeline."
-      },
-      "teams": {
-        "title": "Built for teams",
-        "text": "Companies, productions, roles and permissions — everyone sees exactly what they need, nothing they don't."
+      "team": {
+        "eyebrow": "Teams",
+        "title": "Roles decide who can do what",
+        "text": "Pick a role. These are the permissions the server checks.",
+        "canDo": "{name} can"
       }
     }
   },

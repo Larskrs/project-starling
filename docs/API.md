@@ -197,6 +197,12 @@ All paths are prefixed `/api`. "Access" is what the handler enforces beyond a va
 | `pid` | production id | `GET/POST /timelines`, `/storage` |
 | `sid` | source-set id | `GET/POST /production/[pid]/sources` |
 
+### Public
+
+| Method + path | Access | Notes |
+| --- | --- | --- |
+| `GET /welcome` | **none** | Server-wide totals for the signed-out welcome page: `{ companies, productions, timelines, tracks, clips, users, files, mediaBytes, generatedAt }`. Every value is a bare `COUNT(*)`/`SUM` over a whole table — no row, name or id is exposed, which is why there is no access check to make. One snapshot is computed at most once a minute (`TtlCache`) and served to every caller with a matching `Cache-Control: public, max-age=60`; only a cache miss reaches the DB, and misses are rate limited to 60/min per IP. It is the **only** unauthenticated read in the API — anything that returns rows needs a session. |
+
 ### Auth & user
 
 | Method + path | Access | Notes |

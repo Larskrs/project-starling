@@ -65,8 +65,6 @@ const hue = computed(() =>
 // waveform must follow the theme's foreground rather than assume a dark fill.
 const faintBody = computed(() => props.clipDisplay === 'border' || props.clipDisplay === 'transparent')
 
-// Label text + stretch-mode SVG geometry: viewBox sized to the text's natural
-// proportions, preserveAspectRatio="none" then distorts it to fill the clip.
 // A clip with both a source and a custom label combines them ("K1 - Total shot").
 const labelText = computed(() => {
   const short = source.value?.shortName
@@ -74,9 +72,6 @@ const labelText = computed(() => {
   if (isEventTrack.value && source.value) return short
   return props.clip.label || props.track.name
 })
-const stretchViewBox = computed(() =>
-  `0 0 ${Math.max(24, labelText.value.length * 11)} 40`,
-)
 
 // ── Drag to move ──────────────────────────────────────────────────────────────
 const moveAdj = ref(0)   // pixel offset applied during drag
@@ -381,17 +376,27 @@ watch(
         />
 
         <!-- Label — stretch: SVG text distorted to fill the clip; emphasize: bold/centered; normal.
-             Faint clip bodies use the theme foreground; solid bodies use white. -->
+             Faint clip bodies use the theme foreground; solid bodies use white.
+
+             The box is FIXED and `textLength` fits the glyphs to it, rather than
+             the viewBox being sized to a guess at the text's natural width: any
+             guess from the character count is wrong by whatever the font's real
+             metrics are, and when it came up short the centred text ran past
+             both edges and the SVG viewport clipped it. Letting the browser do
+             the fitting is exact for every string and every font.
+             `dominant-baseline="central"` centres on the em box, so ascenders
+             and descenders clear the 40-unit height at font-size 26. -->
         <svg
           v-if="nameDisplay === 'stretch'"
           class="absolute inset-0 w-full h-full pointer-events-none z-10 px-1"
           :class="faintBody ? 'text-foreground/90' : ''"
-          :viewBox="stretchViewBox"
+          viewBox="0 0 100 40"
           preserveAspectRatio="none"
         >
           <text
-            x="50%" y="55%"
-            text-anchor="middle" dominant-baseline="middle"
+            x="50" y="20"
+            text-anchor="middle" dominant-baseline="central"
+            textLength="100" lengthAdjust="spacingAndGlyphs"
             font-size="26" font-weight="700"
             :fill="faintBody ? 'currentColor' : 'rgba(255,255,255,0.92)'"
           >{{ labelText }}</text>

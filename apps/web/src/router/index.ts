@@ -13,14 +13,18 @@ const isEditorRoute = (route: RouteLocationNormalized): boolean =>
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/',         redirect: '/home' },
+    // The root IS the pitch: a signed-out visitor lands on the welcome page at
+    // "/" rather than being bounced to a second URL. `guestOnly` sends anyone
+    // with a session straight on to their home page.
+    { path: '/',         component: () => import('../views/Welcome/index.vue'), meta: { guestOnly: true, layout: EmptyLayout, title: 'Welcome' } },
     { path: '/login',    component: () => import('../views/LoginView.vue'),     meta: { layout: AuthLayout,   title: 'Login' } },
     { path: '/register', component: () => import('../views/RegisterView.vue'),  meta: { layout: AuthLayout,   title: 'Register' } },
     { path: '/chat',     component: () => import('../views/Chat/index.vue'),    meta: { requiresAuth: true, layout: EmptyLayout,   title: 'Chat' } },
-    { path: '/welcome',  component: () => import('../views/WelcomeView.vue'),      meta: { guestOnly: true,    layout: EmptyLayout,  title: 'Welcome' } },
+    // Kept for links minted while the pitch lived at its own URL.
+    { path: '/welcome',  redirect: '/' },
     // Signed-out visitors landing on the home page get the product pitch rather
     // than a login form — every other protected route still routes to /login.
-    { path: '/home',       component: () => import('../views/Home/index.vue'),             meta: { requiresAuth: true, guestRedirect: '/welcome', layout: DefaultLayout, title: 'Home' } },
+    { path: '/home',       component: () => import('../views/Home/index.vue'),             meta: { requiresAuth: true, guestRedirect: '/', layout: DefaultLayout, title: 'Home' } },
     { path: '/settings',   component: () => import('../views/Settings/index.vue'),         meta: { requiresAuth: true, layout: DefaultLayout, title: 'Settings' } },
     { path: '/c/:slug',    component: () => import('../views/Company/index.vue'),           meta: { requiresAuth: true, layout: DefaultLayout } },
     { path: '/c/:slug/settings', component: () => import('../views/Company/SettingsView.vue'), meta: { requiresAuth: true, requiresCompanyAdmin: true, layout: DefaultLayout } },

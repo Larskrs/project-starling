@@ -577,26 +577,41 @@
     "failedToLoad": "Kunne ikke laste nylig aktivitet"
   },
   "welcome": {
-    "title": "Planlegg, rediger og spill av produksjonene dine — sammen.",
-    "lede": "Cino er samarbeidsflaten for liveproduksjoner: delte tidslinjer, synkronisert avspilling og alt kildematerialet ditt på ett sted.",
+    "title": "Kjør hele forestillingen fra én tidslinje.",
+    "lede": "Delte tidslinjer, synkronisert avspilling og alt materialet på ett sted.",
     "getStarted": "Kom i gang",
-    "featuresTitle": "Alt produksjonen din trenger",
-    "features": {
-      "timelines": {
-        "title": "Tidslinjer som holder seg synkronisert",
-        "text": "Bygg tidslinjer med spor og klipp, og se hver endring dukke opp live for hele teamet — spillehodet inkludert."
+    "closing": "Samle neste produksjon på ett sted.",
+    "stats": {
+      "live": "Live på denne serveren",
+      "productions": "Prosjekter",
+      "timelines": "Tidslinjer",
+      "tracks": "Spor",
+      "clips": "Klipp",
+      "media": "Lagret media"
+    },
+    "demo": {
+      "reset": "Nullstill eksempelet",
+      "timeline": {
+        "eyebrow": "Tidslinje",
+        "title": "Klipp forestillingen mens den går",
+        "text": "Den ekte editoren, her og nå. Ingenting lagres.",
+        "hints": {
+          "scrub": "Dra i linjalen",
+          "drag": "Flytt et klipp",
+          "sources": "Trykk 1–4 for å klippe",
+          "menu": "Høyreklikk et klipp"
+        }
       },
       "tracks": {
-        "title": "Spor som passer arbeidsflyten din",
-        "text": "Sett opp sportyper med linjaler, metronom, tekst-til-tale og mer, eller start fra ferdige forhåndsinnstillinger."
+        "eyebrow": "Sportyper",
+        "title": "Spor som ser ut som jobben",
+        "text": "Sett det på typen — alle sporene følger."
       },
-      "files": {
-        "title": "Alle filene dine på ett sted",
-        "text": "Organiser lyd, video og dokumenter i produksjonsmapper, og dra kilder rett inn på tidslinjen."
-      },
-      "teams": {
-        "title": "Laget for team",
-        "text": "Selskaper, produksjoner, roller og tilganger — alle ser akkurat det de trenger, ikke noe mer."
+      "team": {
+        "eyebrow": "Team",
+        "title": "Roller bestemmer hvem som kan hva",
+        "text": "Velg en rolle. Dette er rettighetene serveren sjekker.",
+        "canDo": "{name} kan"
       }
     }
   },
