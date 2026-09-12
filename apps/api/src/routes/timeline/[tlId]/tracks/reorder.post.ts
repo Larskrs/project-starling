@@ -1,9 +1,11 @@
 import z from 'zod';
 import { eq } from 'drizzle-orm';
 import { db, tracks } from '@starling/db';
-import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/handler.js';
+import { defineEventHandler, readValidatedBody, createError, getSocketId } from '../../../../lib/handler.js';
 import { requireTimelineParam } from '../../../../lib/production.js';
 import { Permission } from '@starling/auth/permissions';
+import { TimelineEvent } from '@starling/realtime';
+import { emitTimelineChange } from '../../../../lib/timelineSockets.js';
 
 const bodySchema = z.object({
   order: z.array(z.uuid()).min(1).max(500),
@@ -29,6 +31,9 @@ export default defineEventHandler(async (event) => {
       await tx.update(tracks).set({ sortOrder: i }).where(eq(tracks.id, order[i]!));
     }
   });
+
+  emitTimelineChange(timeline.id, TimelineEvent.trackChange,
+    { type: 'reorder', order }, getSocketId(event));
 
   return { order };
 });

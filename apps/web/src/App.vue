@@ -39,7 +39,7 @@ const layout = computed(() => {
     <component :is="layout">
       <RouterView />
     </component>
-    <Toast />
+    <Toast :dismiss-label="$t('common.dismiss')" />
 
     <Transition name="tl-loading">
       <TimelineLoadingScreen v-if="openingTimeline" :timeline="openingTimeline" />

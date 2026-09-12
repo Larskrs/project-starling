@@ -14,3 +14,30 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+/*
+ * Honour the OS "reduce motion" setting.
+ *
+ * The app leans on transitions and animations throughout — sidebar collapse,
+ * dialog and menu entrances, toast slides, hover states — and for users with
+ * vestibular sensitivity that motion can cause real nausea and dizziness. The
+ * setting already exists at the OS level, so respecting it costs one block.
+ *
+ * Motion is reduced to a near-instant 0.01ms rather than 0: a duration of zero
+ * stops transitionend/animationend from firing in some browsers, which would
+ * strand any code waiting on those events. Transforms and opacity still change
+ * — the element just arrives without travelling.
+ *
+ * `scroll-behavior: auto` matters too: a smooth-scrolled jump is exactly the
+ * kind of large unexpected movement this setting exists to prevent.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

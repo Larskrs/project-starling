@@ -1,24 +1,15 @@
 import { ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
+import {
+  TIMELINE_NAMESPACE, TimelineEvent,
+  type ClipChange, type TrackChange, type TransportAction,
+} from '@starling/realtime'
 import { createTransportClock } from '../audio/transportClock'
-import type { EditorClip, EditorTrack, PlayheadAnchor } from '../../../types/timeline'
+import { setLiveSocketId } from '../../../composables/useLiveSocketId'
+import type { PlayheadAnchor } from '../../../types/timeline'
 
-// The server relays these payloads verbatim (see timelineSockets.ts), so what
-// arrives is exactly what a peer's editor sent: the joined editor shapes, not
-// the bare DB rows.
-export interface ClipChange {
-  type: 'upsert' | 'remove'
-  trackId: string
-  clip?: EditorClip
-  clipId?: string
-}
-
-export interface TrackChange {
-  type: 'upsert' | 'remove' | 'reorder'
-  track?: EditorTrack
-  trackId?: string
-  order?: string[]
-}
+// Re-exported so the editor keeps importing its wire types from one place.
+export type { ClipChange, TrackChange, TransportAction }
 
 /**
  * The room's transport anchor, with the server stamp mapped onto our clock.
@@ -40,8 +31,6 @@ export interface Peer {
   lastName?: string
   profileImageId?: string | null
 }
-
-export type TransportAction = 'play' | 'pause' | 'seek'
 
 export interface TimelineSyncOptions {
   onClipChange?: (change: ClipChange) => void
@@ -94,7 +83,7 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
     const ping = () => {
       if (!socket?.connected) return
       const t0 = Date.now()
-      socket.timeout(2000).emit('time:ping', (err: Error | null, serverNow: number) => {
+      socket.timeout(2000).emit(TimelineEvent.timePing, (err: Error | null, serverNow: number) => {
         attempts++
         if (!err) clock.addSample({ t0, t2: Date.now(), serverNow })
         if (attempts >= CLOCK_SAMPLES) { clock.settle(); return }
@@ -107,41 +96,46 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
   function join(id: string): void {
     timelineId = id
     if (!socket) {
-      socket = io('/timeline', { path: '/socket', withCredentials: true })
+      socket = io(TIMELINE_NAMESPACE, { path: '/socket', withCredentials: true })
 
       const active = socket
       active.on('connect', () => {
         connected.value = true
+        // Every REST mutation now carries this id, so the server can relay the
+        // write to the room WITHOUT echoing it back to us.
+        setLiveSocketId(active.id ?? null)
         // Clock first: joining a playing room is answered with an anchor, and
         // the first ping should already be in flight when it arrives. Re-run on
         // every reconnect — the transport path may have changed.
         syncClock()
-        if (timelineId) active.emit('timeline:join', { timelineId })
+        if (timelineId) active.emit(TimelineEvent.join, { timelineId })
       })
       active.on('disconnect', () => {
         connected.value = false
+        setLiveSocketId(null)
         peers.value = []
         // An anchor held from before the drop describes a room we are no longer
         // in step with; the rejoin brings a fresh one.
         clock.reset()
       })
 
-      active.on('timeline:presence', (users: Peer[]) => { peers.value = users })
-      if (onClipChange)  active.on('clip:change', onClipChange)
-      if (onTrackChange) active.on('track:change', onTrackChange)
-      if (onTransport) active.on('transport:state', (state: PlayheadAnchor) => clock.accept(state))
+      active.on(TimelineEvent.presence, (users: Peer[]) => { peers.value = users })
+      if (onClipChange)  active.on(TimelineEvent.clipChange, onClipChange)
+      if (onTrackChange) active.on(TimelineEvent.trackChange, onTrackChange)
+      if (onTransport) active.on(TimelineEvent.transportState, (state: PlayheadAnchor) => clock.accept(state))
 
       active.on('connect_error', (err: Error) => {
         console.error('[timeline socket]', err.message)
       })
     } else if (socket.connected) {
-      socket.emit('timeline:join', { timelineId })
+      socket.emit(TimelineEvent.join, { timelineId })
     }
   }
 
   function leave(): void {
     clock.reset()
-    socket?.emit('timeline:leave')
+    setLiveSocketId(null)
+    socket?.emit(TimelineEvent.leave)
     socket?.disconnect()
     socket          = null
     timelineId      = null
@@ -150,11 +144,11 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
   }
 
   function sendClipChange(change: ClipChange): void {
-    if (socket?.connected) socket.emit('clip:change', change)
+    if (socket?.connected) socket.emit(TimelineEvent.clipChange, change)
   }
 
   function sendTrackChange(change: TrackChange): void {
-    if (socket?.connected) socket.emit('track:change', change)
+    if (socket?.connected) socket.emit(TimelineEvent.trackChange, change)
   }
 
   // Transport commands. play/pause send immediately (and drop any queued
@@ -172,7 +166,7 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
 
     if (action !== 'seek') {
       if (_pendingSeek) { clearTimeout(_pendingSeek); _pendingSeek = null }
-      active.emit('transport:command', frame != null ? { action, frame } : { action })
+      active.emit(TimelineEvent.transportCommand, frame != null ? { action, frame } : { action })
       return
     }
 
@@ -181,14 +175,14 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
     if (now - _lastSeekSent >= SEEK_THROTTLE_MS) {
       if (_pendingSeek) { clearTimeout(_pendingSeek); _pendingSeek = null }
       _lastSeekSent = now
-      active.emit('transport:command', { action: 'seek', frame })
+      active.emit(TimelineEvent.transportCommand, { action: 'seek', frame })
       return
     }
     if (_pendingSeek) return   // trailing send already queued; frame updated above
     _pendingSeek = setTimeout(() => {
       _pendingSeek  = null
       _lastSeekSent = Date.now()
-      if (socket?.connected) socket.emit('transport:command', { action: 'seek', frame: _pendingFrame })
+      if (socket?.connected) socket.emit(TimelineEvent.transportCommand, { action: 'seek', frame: _pendingFrame })
     }, SEEK_THROTTLE_MS - (now - _lastSeekSent))
   }
 

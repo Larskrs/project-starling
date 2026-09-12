@@ -1,10 +1,12 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, tracks } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/handler.js';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined, getSocketId } from '../../../../lib/handler.js';
 import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
 import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
+import { TimelineEvent } from '@starling/realtime';
+import { emitTimelineChange } from '../../../../lib/timelineSockets.js';
 
 const bodySchema = z.object({
   name:      z.string().min(1).max(128).optional(),
@@ -40,6 +42,9 @@ export default defineEventHandler(async (event) => {
     .returning();
 
   if (!updated) throw createError({ statusCode: 404, message: 'Track not found' });
+
+  emitTimelineChange(timeline.id, TimelineEvent.trackChange,
+    { type: 'upsert', track: updated }, getSocketId(event));
 
   return updated;
 });

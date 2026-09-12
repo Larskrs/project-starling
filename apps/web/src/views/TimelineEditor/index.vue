@@ -151,13 +151,13 @@ function removeClipLocal(trackId: string, clipId: string): void {
 // ── Live sync ─────────────────────────────────────────────────────────────────
 const sync = useTimelineSync({
   onClipChange(change) {
-    if (change.type === 'upsert' && change.clip) upsertClipLocal(change.trackId, change.clip)
-    if (change.type === 'remove' && change.clipId) removeClipLocal(change.trackId, change.clipId)
+    if (change.type === 'upsert') upsertClipLocal(change.trackId, change.clip as unknown as EditorClip)
+    if (change.type === 'remove') removeClipLocal(change.trackId, change.clipId)
   },
   onTrackChange(change) {
-    if (change.type === 'upsert' && change.track) upsertTrackLocal(change.track)
-    if (change.type === 'remove' && change.trackId) removeTrackLocal(change.trackId)
-    if (change.type === 'reorder' && Array.isArray(change.order)) applyTrackOrder(change.order)
+    if (change.type === 'upsert') upsertTrackLocal(change.track as unknown as EditorTrack)
+    if (change.type === 'remove') removeTrackLocal(change.trackId)
+    if (change.type === 'reorder') applyTrackOrder(change.order)
   },
   onTransport(state) {
     playback.applyTransportState(state)
@@ -372,7 +372,6 @@ async function reorderTracks(order: string[]): Promise<void> {
   })
   if (!ok) { load(); return }
   applyTrackOrder(data.order)
-  sync.sendTrackChange({ type: 'reorder', order: data.order })
 }
 
 // Picking a source is often a blind keypress during a take — the clip lands at
@@ -399,7 +398,6 @@ async function addSourceClip(source: Source): Promise<void> {
   })
   if (!ok) return
   upsertClipLocal(track.id, data)
-  sync.sendClipChange({ type: 'upsert', trackId: track.id, clip: data })
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
@@ -441,7 +439,14 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.code === 'Escape') { selectedTrackId.value = null }
   if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
     e.preventDefault()
-    const step = (e.shiftKey ? 10 : 1) * (e.code === 'ArrowLeft' ? -1 : 1)
+    const back = e.code === 'ArrowLeft'
+    // ⌘←/⌘→ jump to the ends. Mac laptop keyboards have no Home or End key —
+    // reaching them needs Fn+Arrow — so without this the seek-to-edge shortcut
+    // simply does not exist on a MacBook. Cmd+Arrow is the platform's own idiom
+    // for "go to the beginning/end of the line", which is exactly this gesture.
+    // Bound to metaKey only, so Ctrl+Arrow stays free for the window manager.
+    if (e.metaKey) { back ? seekStart() : seekEnd(); return }
+    const step = (e.shiftKey ? 10 : 1) * (back ? -1 : 1)
     setPlayhead(Math.round(playheadFrame.value) + step)
   }
 }
@@ -527,15 +532,13 @@ function withTypeFields(track: EditorTrack): EditorTrack {
 }
 
 function onTrackAdded(track: EditorTrack): void {
-  const added = upsertTrackLocal(withTypeFields(track))
-  sync.sendTrackChange({ type: 'upsert', track: added })
+  upsertTrackLocal(withTypeFields(track))
 }
 
 async function patchTrack(track: EditorTrack, json: Record<string, unknown>): Promise<void> {
   const { ok, data } = await $fetch<EditorTrack>(trackUrl(track.id), { method: 'PATCH', json, silent: true })
   if (!ok) return
-  const merged = upsertTrackLocal({ ...data, id: track.id })
-  sync.sendTrackChange({ type: 'upsert', track: merged })
+  upsertTrackLocal({ ...data, id: track.id })
 }
 
 const toggleLock = (track: EditorTrack) => patchTrack(track, { isLocked: !track.isLocked })
@@ -550,8 +553,7 @@ function openTrackSettings(track: EditorTrack): void {
 }
 
 function onTrackSaved(track: EditorTrack): void {
-  const merged = upsertTrackLocal(track)
-  sync.sendTrackChange({ type: 'upsert', track: merged })
+  upsertTrackLocal(track)
 }
 
 // Deleting a track takes every clip with it — always confirm first.
@@ -569,7 +571,6 @@ async function confirmDeleteTrack() {
   if (!ok) return
   removeTrackLocal(track.id)
   if (selectedTrackId.value === track.id) selectedTrackId.value = null
-  sync.sendTrackChange({ type: 'remove', trackId: track.id })
 }
 
 // ── Clip mutations ────────────────────────────────────────────────────────────
@@ -620,8 +621,7 @@ function openEditClip(track: EditorTrack, clip: EditorClip): void {
 function onBpmClipSaved(clip: EditorClip): void {
   const trackId = bpmDialog.value.track?.id
   if (!trackId) return
-  const merged = upsertClipLocal(trackId, clip)
-  if (merged) sync.sendClipChange({ type: 'upsert', trackId, clip: merged })
+  upsertClipLocal(trackId, clip)
 }
 function closeClipDialog(): void {
   clipDialog.value = { ...clipDialog.value, open: false }
@@ -630,8 +630,7 @@ function closeClipDialog(): void {
 function onClipSaved(savedClip: EditorClip): void {
   const trackId = clipDialog.value.track?.id
   if (!trackId) return
-  const merged = upsertClipLocal(trackId, savedClip)
-  if (merged) sync.sendClipChange({ type: 'upsert', trackId, clip: merged })
+  upsertClipLocal(trackId, savedClip)
   closeClipDialog()
 }
 
@@ -642,8 +641,7 @@ async function patchClip(track: EditorTrack, clip: EditorClip, json: Record<stri
     method: 'PATCH', json, silent: true,
   })
   if (!ok) return
-  const merged = upsertClipLocal(track.id, { ...data, id: clip.id })
-  if (merged) sync.sendClipChange({ type: 'upsert', trackId: track.id, clip: merged })
+  upsertClipLocal(track.id, { ...data, id: clip.id })
 }
 
 const moveClip = (track: EditorTrack, clip: EditorClip, position: number) => patchClip(track, clip, { position })
@@ -656,7 +654,6 @@ async function deleteClip(track: EditorTrack, clip: EditorClip): Promise<void> {
   })
   if (!ok) return
   removeClipLocal(track.id, clip.id)
-  sync.sendClipChange({ type: 'remove', trackId: track.id, clipId: clip.id })
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -772,7 +769,7 @@ provide('editor-viewport',   viewport)
         />
 
         <!-- Right panel: canvas -->
-        <div ref="canvasRef" class="flex-1 overflow-auto relative" @scroll="onCanvasScroll">
+        <div ref="canvasRef" class="tl-scroll flex-1 overflow-auto relative" @scroll="onCanvasScroll">
           <div :style="{ width: timelineWidth + 'px', minWidth: '100%', position: 'relative' }">
 
             <Ruler
@@ -913,3 +910,81 @@ provide('editor-viewport',   viewport)
 
   </div>
 </template>
+
+<style>
+/*
+ * The timeline canvas scrollbar.
+ *
+ * Bigger and always visible, which matters more here than on an ordinary page.
+ * The horizontal bar is not just a control: on an hour-long timeline it is the
+ * only persistent indication of WHERE you are and how much of the whole you can
+ * see. macOS hides overlay scrollbars until you scroll, so on a Mac that
+ * indicator vanished exactly when you stopped moving and wanted to read it.
+ *
+ * Declaring ::-webkit-scrollbar opts this element out of overlay scrollbars, so
+ * the bar becomes a real, permanently visible, layout-occupying track in every
+ * browser that supports it.
+ *
+ * Colours come from the theme tokens, so it follows light/dark like everything
+ * else. Tokens are OKLCH TRIPLETS ("0.88 0.015 241"), hence oklch(var(--x)) —
+ * wrapping them in hsl() would produce a near-white nonsense colour.
+ */
+.tl-scroll {
+  /* Firefox: no px control, but it takes the colours and the wider preset. */
+  scrollbar-width: auto;
+  scrollbar-color: oklch(var(--border)) transparent;
+}
+
+.tl-scroll::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.tl-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/*
+ * The thumb is inset from its track by a transparent border rather than being
+ * drawn 14px thick: a full-width slab looks heavy against the canvas, while a
+ * generous track still gives a large, easy pointer target. background-clip
+ * keeps the fill inside the padding box so the border reads as breathing room.
+ */
+.tl-scroll::-webkit-scrollbar-thumb {
+  background-color: oklch(var(--border));
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+}
+
+/*
+ * A minimum grab size, applied PER AXIS.
+ *
+ * It has to be per axis: a bare `min-height` would also apply to the horizontal
+ * thumb, where the track is only 14px tall, and force it to overflow its own
+ * scrollbar. Each axis constrains only its own long edge.
+ *
+ * The floor matters most on a long timeline — at an hour's length the thumb
+ * would otherwise shrink to a few pixels and become almost impossible to hit.
+ */
+.tl-scroll::-webkit-scrollbar-thumb:horizontal {
+  min-width: 48px;
+}
+
+.tl-scroll::-webkit-scrollbar-thumb:vertical {
+  min-height: 48px;
+}
+
+.tl-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(var(--muted-foreground) / 0.65);
+}
+
+.tl-scroll::-webkit-scrollbar-thumb:active {
+  background-color: oklch(var(--muted-foreground));
+}
+
+/* Where the two bars meet, so the square doesn't render as a grey block. */
+.tl-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+</style>

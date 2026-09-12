@@ -21,7 +21,9 @@ apps/api/src/
 │  ├─ company.ts       company resolution + company-admin guard
 │  ├─ storage.ts       disk layout, sharp image pipeline, audio writes
 │  ├─ sockets.ts       Socket.IO server, shared auth middleware, chat namespace
-│  └─ timelineSockets.ts  /timeline namespace: rooms, presence, relays, playhead
+│  ├─ docs.ts         renders docs/ as pages under /docs (file path = URL)
+│  ├─ liveRoom.ts      createLiveRoom: rooms, presence, join/leave, capability cache
+│  └─ timelineSockets.ts  /timeline namespace: transport clock, relays, emitTimelineChange
 └─ routes/             one file per endpoint (see Routing)
 ```
 
@@ -34,7 +36,9 @@ One `createServer` callback handles everything, in this order:
 1. **Origin policy + security headers** (`lib/security.ts`) — every response gets `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `Vary: Origin`. Cross-site requests are checked against an allowlist: no `Origin` header (same-origin pages, CLI clients, and reverse proxies that strip it), **same-site origins — exact host or subdomain in either direction** (`app.cino.no` ↔ `cino.no`, the Plesk "app on a subdomain, API on the apex" layout works with zero config), localhost, or an entry in the `CORS_ORIGINS` env var (comma-separated full origins). The request's own host honours `X-Forwarded-Host` (`requestHost()`), so proxy Host rewriting doesn't break the comparison. Allowed origins get credentialed CORS headers; **disallowed origins are refused with `403` before any handler runs**. `OPTIONS` preflights short-circuit with `204`.
 2. **`/health`** → `{ "status": "ok" }`.
 3. **`/api/*`** — matched against the route table (below). No match → `404 { error, path }`.
-4. **Anything else** — `GET`/`HEAD` requests serve the public **homepage** (`apps/homepage/dist`, a separate Vue/Vite app) through an in-memory static cache: files are read from disk once (revalidated by mtime), **pre-gzipped** when compressible (html/js/css/svg/json over 1 KB), and served with `ETag`/`304` conditional handling. Paths under `/assets/` (content-hashed filenames) get `Cache-Control: public, max-age=31536000, immutable`; extension-less paths fall back to `index.html` (SPA routing) with `no-cache` + ETag revalidation. A resolved-path containment check makes traversal structurally impossible. If the homepage isn't built, non-asset requests return `503` with a hint. Socket.IO owns `/socket` and intercepts those requests (both namespaces) before this handler ever sees them. Non-`GET` methods on unknown paths still get a JSON `404`. The web app (`apps/web/dist`) is deployed separately on `app.cino.no` (Plesk serves the dist directly), so it builds with the default vite base `/`.
+4. **`/docs` and `/docs/*`** (`lib/docs.ts`) — renders the repo's `docs/` folder as a browsable site. **The URL structure IS the file structure**: `docs/API.md` answers to `/docs/api`, `docs/guides/deploy.md` to `/docs/guides/deploy`, with lowercasing as the only transformation. Adding a markdown file publishes a page and deleting one takes it down — there is no route table to keep in step. Pages render on demand (`marked`, GFM) and are cached by mtime, so an edit shows on refresh without a restart. Relative `.md` links are rewritten to `/docs/…` and links out of the folder to GitHub blob URLs, since a served page has no filesystem to point at. **Behind a session** — these pages describe the permission model and every route, which is not something to hand to the open internet by default; drop the `getAuth` guard in `serveDocs` to publish them. Slugs are matched against the discovered file list rather than joined onto a path, so a slug never reaches the filesystem and traversal has nothing to traverse.
+
+5. **Anything else** — `GET`/`HEAD` requests serve the public **homepage** (`apps/homepage/dist`, a separate Vue/Vite app) through an in-memory static cache: files are read from disk once (revalidated by mtime), **pre-gzipped** when compressible (html/js/css/svg/json over 1 KB), and served with `ETag`/`304` conditional handling. Paths under `/assets/` (content-hashed filenames) get `Cache-Control: public, max-age=31536000, immutable`; extension-less paths fall back to `index.html` (SPA routing) with `no-cache` + ETag revalidation. A resolved-path containment check makes traversal structurally impossible. If the homepage isn't built, non-asset requests return `503` with a hint. Socket.IO owns `/socket` and intercepts those requests (both namespaces) before this handler ever sees them. Non-`GET` methods on unknown paths still get a JSON `404`. The web app (`apps/web/dist`) is deployed separately on `app.cino.no` (Plesk serves the dist directly), so it builds with the default vite base `/`.
 
 Socket.IO is attached to the same server via `setupSockets(server)` (see §8), and the port comes from `PORT` (default 3000). At boot the server prints a route tree of all loaded endpoints.
 
@@ -339,6 +343,11 @@ storage/c/{companyId}/p/{productionId}/profile/{slot}/{fileId}@…       (produc
 ---
 
 ## 8. Sockets — engine & authentication (`lib/sockets.ts`)
+
+> **See also [REALTIME.md](./REALTIME.md)** for the live-update architecture:
+> why persisted changes are relayed by the REST routes rather than by clients,
+> the shared `@starling/realtime` event contract, the `createLiveRoom`
+> abstraction, and the transport clock.
 
 One Socket.IO server rides the HTTP server at **path `/socket`**. Handshakes enforce the **same origin allowlist as HTTP** inside `allowRequest` (where the full request — including `X-Forwarded-Host` — is available); the `cors` option only reflects the already-vetted origin so browsers accept cross-subdomain polling responses. A missing `Origin` header is allowed (proxies like Plesk can strip it; same-origin pages never send it) — do **not** move the check into a `cors.origin` callback, which sees neither the request host nor a way to distinguish these cases. There are two namespaces: the **root** namespace (global chat + presence) and **`/timeline`** (editor live-sync). They share:
 

@@ -1,8 +1,7 @@
 <script setup>
 import { ref, inject, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { Badge, IconButton } from '@starling/ui'
+import { Badge, ConfirmDialog, IconButton } from '@starling/ui'
 import { Permission, PERMISSIONS as PERMISSION_NAMES } from '@starling/auth/permissions'
 import { useApi } from '../../../composables/useApi'
 
@@ -12,7 +11,6 @@ const props = defineProps({
 
 const emit = defineEmits(['updated', 'deleted'])
 
-const { t }      = useI18n()
 const { $fetch } = useApi()
 const data       = inject('production-data')
 const rolesBase  = computed(() => `/api/production/${data.value?.production?.id}/roles`)
@@ -52,12 +50,24 @@ async function saveRole() {
   editing.value = null
 }
 
+/**
+ * Deleting a role goes through the app's own ConfirmDialog rather than the
+ * browser's confirm(). Native confirm ignores the theme, blocks the main
+ * thread, and gives a destructive action no visual weight — and once a user
+ * ticks "prevent this page from creating additional dialogs" it returns false
+ * forever, so the delete would silently stop working.
+ */
+const confirmingDelete = ref(false)
+const deleting = ref(false)
+
 async function deleteRole() {
-  if (!confirm(t('roles.confirmDelete', { name: props.role.name }))) return
+  deleting.value = true
   const { ok } = await $fetch(
     `${rolesBase.value}/${props.role.id}`,
     { method: 'DELETE' },
   )
+  deleting.value = false
+  confirmingDelete.value = false
   if (ok) emit('deleted', props.role.id)
 }
 </script>
@@ -77,7 +87,7 @@ async function deleteRole() {
       >
         <Icon :icon="editing ? 'mdi:close' : 'mdi:pencil-outline'" class="text-base" />
       </IconButton>
-      <IconButton destructive :title="$t('roles.deleteRole')" @click="deleteRole">
+      <IconButton destructive :title="$t('roles.deleteRole')" @click="confirmingDelete = true">
         <Icon icon="mdi:trash-can-outline" class="text-base" />
       </IconButton>
     </div>
@@ -133,6 +143,19 @@ async function deleteRole() {
         {{ $t(perm.key) }}
       </Badge>
     </div>
+
+    <ConfirmDialog
+      :open="confirmingDelete"
+      :title="$t('roles.deleteRole')"
+      :confirm-label="$t('roles.deleteRole')"
+      :cancel-label="$t('roles.cancel')"
+      :loading="deleting"
+      destructive
+      @confirm="deleteRole"
+      @cancel="confirmingDelete = false"
+    >
+      {{ $t('roles.confirmDelete', { name: role.name }) }}
+    </ConfirmDialog>
 
   </li>
 </template>

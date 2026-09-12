@@ -16,7 +16,7 @@ defineEmits(['update:modelValue'])
       v-for="opt in options"
       :key="String(opt.value)"
       type="button"
-      class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-150"
+      class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
       :class="modelValue === opt.value
         ? 'bg-secondary text-foreground shadow-sm'
         : 'text-muted-foreground hover:text-foreground'"

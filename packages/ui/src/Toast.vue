@@ -2,6 +2,16 @@
 import { Icon } from '@iconify/vue'
 import { useToast } from './useToast'
 
+/**
+ * The dismiss button's only content is a close glyph, so it needs an explicit
+ * accessible name. This package is deliberately i18n-agnostic — no component in
+ * it imports vue-i18n — so the label arrives as a prop with an English default,
+ * the same way FormDialog takes cancelLabel/submitLabel.
+ */
+defineProps({
+  dismissLabel: { type: String, default: 'Dismiss' },
+})
+
 const { toasts, dismiss } = useToast()
 
 const ICONS = {
@@ -43,10 +53,14 @@ const STYLES = {
           />
           <p class="flex-1 text-sm leading-snug">{{ toast.message }}</p>
           <button
-            class="shrink-0 -mr-1 -mt-0.5 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+            type="button"
+            class="shrink-0 -mr-1 -mt-0.5 p-1 rounded text-muted-foreground hover:text-foreground transition-colors
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                   focus-visible:ring-offset-2 ring-offset-background"
+            :aria-label="dismissLabel"
             @click="dismiss(toast.id)"
           >
-            <Icon icon="mdi:close" class="text-sm" />
+            <Icon icon="mdi:close" class="text-sm" aria-hidden="true" />
           </button>
         </div>
       </TransitionGroup>

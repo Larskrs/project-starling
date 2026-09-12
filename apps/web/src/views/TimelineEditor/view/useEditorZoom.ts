@@ -18,6 +18,9 @@ import type { Timeline } from '../../../types/api'
 const MAX_PX_PER_FRAME = 16
 const ZOOM_STOPS       = 50
 const WHEEL_ZOOM_RATE  = 0.003   // exp factor per normalised wheel px
+// Trackpad pinch reports far smaller per-event deltas than a wheel notch, so it
+// is amplified to cover a comparable zoom range in one comfortable gesture.
+const PINCH_ZOOM_GAIN  = 4
 
 export interface EditorZoomOptions {
   timeline: Ref<Timeline | null>
@@ -128,25 +131,47 @@ export function useEditorZoom(
     return `${clamp(pct, 0, 100)}%`
   })
 
-  // ── Alt + wheel ──────────────────────────────────────────────────────────
-  // Alt is the timeline's own zoom modifier, anchored at the cursor when it is
-  // over the canvas. Ctrl/⌘ is deliberately NOT claimed — along with trackpad
-  // pinch, which browsers report as ctrl+wheel — so page zoom keeps working on
-  // the editor exactly as it does everywhere else. Deltas are normalised
-  // (line/page deltaModes → px) and coalesced to one setZoom per frame, so a
-  // fast burst costs one re-render.
+  // ── Zoom gestures: alt + wheel, and trackpad pinch ───────────────────────
+  // Alt+wheel is the timeline's own zoom modifier, anchored at the cursor when
+  // it is over the canvas. Trackpad pinch (ctrl+wheel) zooms too, but only over
+  // the canvas — see isPinchOverCanvas for why that narrowing matters. Deltas
+  // are normalised (line/page deltaModes → px) and coalesced to one setZoom per
+  // frame, so a fast burst costs one re-render.
   //
-  // The default is still prevented for alt+wheel itself: Firefox maps that
+  // The default is prevented for alt+wheel as well as pinch: Firefox maps that
   // gesture to history navigation on Windows, which would otherwise walk out of
   // the editor mid-zoom.
   let wheelFactor = 1
   let wheelAnchor: number | null = null
   let wheelRaf: number | null = null
 
+  /**
+   * Trackpad pinch, which every browser reports as ctrl+wheel.
+   *
+   * This used to be rejected outright so browser page zoom kept working. That
+   * reasoning holds for the page as a whole, but it left MACBOOK USERS WITH NO
+   * ZOOM GESTURE AT ALL: a trackpad has no wheel, so alt+wheel — the timeline's
+   * own zoom modifier — is unreachable, and pinch is the only thing a Mac user
+   * would think to try.
+   *
+   * So pinch is claimed, but ONLY while the pointer is over the timeline canvas.
+   * Anywhere else in the editor — the track headers, the toolbar, a dialog —
+   * ctrl+wheel still page-zooms exactly as it does on any other site, which is
+   * what the original decision was protecting.
+   */
+  function isPinchOverCanvas(e: WheelEvent): boolean {
+    if (!e.ctrlKey || e.metaKey || e.altKey) return false
+    return e.target instanceof Node && !!canvasRef.value?.contains(e.target)
+  }
+
   function onGlobalWheel(e: WheelEvent): void {
-    if (!e.altKey || e.ctrlKey || e.metaKey) return
+    const pinch = isPinchOverCanvas(e)
+    if (!pinch && (!e.altKey || e.ctrlKey || e.metaKey)) return
     e.preventDefault()
-    const deltaPx = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1)
+    // A pinch arrives with much smaller deltas than a wheel notch, so it needs
+    // amplifying to cover the same range in a comfortable gesture.
+    const gain = pinch ? PINCH_ZOOM_GAIN : 1
+    const deltaPx = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1) * gain
     wheelFactor *= Math.exp(-deltaPx * WHEEL_ZOOM_RATE)
     if (e.target instanceof Node && canvasRef.value?.contains(e.target)) wheelAnchor = e.clientX
 

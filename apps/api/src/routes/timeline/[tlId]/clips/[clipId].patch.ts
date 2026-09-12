@@ -1,10 +1,12 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, tracks, clips } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/handler.js';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined, getSocketId } from '../../../../lib/handler.js';
 import { requireTimelineParam, requirePermission, assertTrackUnlocked } from '../../../../lib/production.js';
 import { clipDataSchema } from '../../../../lib/clipData.js';
 import { Permission } from '@starling/auth/permissions';
+import { TimelineEvent } from '@starling/realtime';
+import { emitTimelineChange } from '../../../../lib/timelineSockets.js';
 
 const bodySchema = z.object({
   label:      z.string().max(256).optional(),
@@ -43,6 +45,9 @@ export default defineEventHandler(async (event) => {
     .set({ ...update, updatedAt: new Date() })
     .where(eq(clips.id, clipId))
     .returning();
+
+  emitTimelineChange(ctx.timeline.id, TimelineEvent.clipChange,
+    { type: 'upsert', trackId: updated!.trackId, clip: updated! }, getSocketId(event));
 
   return updated;
 });

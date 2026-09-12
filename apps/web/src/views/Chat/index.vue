@@ -106,6 +106,7 @@ function fmt(iso) {
                   v-for="att in msg.attachments"
                   :key="att.url"
                   :src="att.url"
+                  :alt="$t('chat.gifAttachment')"
                   class="max-w-xs max-h-64 rounded-md object-contain"
                   loading="lazy"
                 />
@@ -116,7 +117,7 @@ function fmt(iso) {
 
         <!-- Pending GIF preview -->
         <div v-if="pendingGif" class="px-6 pt-3 flex items-start gap-2">
-          <img :src="pendingGif.url" class="max-h-32 rounded-md object-contain" />
+          <img :src="pendingGif.url" :alt="$t('chat.gifAttachment')" class="max-h-32 rounded-md object-contain" />
           <button
             class="text-muted-foreground hover:text-foreground text-xs mt-1"
             @click="pendingGif = null"

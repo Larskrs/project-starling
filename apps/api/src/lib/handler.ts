@@ -3,6 +3,7 @@ import { gzipSync } from 'node:zlib';
 import type { ZodType } from 'zod';
 import type { SessionData } from './session.js';
 import { parseSessionCookie, getSession, renewSessionIfDue } from './session.js';
+import { SOCKET_ID_HEADER } from '@starling/realtime';
 
 // ── Route metadata ────────────────────────────────────────────────────────────
 
@@ -272,4 +273,18 @@ export async function readMultipart(
   }
 
   return { fields, files };
+}
+
+/**
+ * The caller's socket id, from the SOCKET_ID_HEADER a live client sends on
+ * mutating requests.
+ *
+ * Used to keep a server-side relay from echoing a change back to whoever made
+ * it. Absent for curl, native clients and anyone not holding a socket — in
+ * which case the relay simply goes to everyone, which is idempotent.
+ */
+export function getSocketId(event: ApiEvent): string | null {
+  const raw = event.req.headers[SOCKET_ID_HEADER];
+  const id = Array.isArray(raw) ? raw[0] : raw;
+  return typeof id === 'string' && id.length > 0 && id.length <= 64 ? id : null;
 }

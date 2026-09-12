@@ -15,7 +15,7 @@ defineEmits(['update:modelValue'])
       v-for="tab in tabs"
       :key="tab.id"
       type="button"
-      class="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors relative -mb-px border-b-2"
+      class="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors relative -mb-px border-b-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
       :class="modelValue === tab.id
         ? 'text-foreground border-primary'
         : 'text-muted-foreground border-transparent hover:text-foreground hover:border-border'"

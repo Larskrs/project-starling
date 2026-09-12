@@ -81,7 +81,7 @@ const swatchStyle = (hue) => hue == null
               style="border: 1px solid oklch(1 0 0 / 0.1);"
               :style="peekStyles[i]"
             >
-              <img v-if="thumbnailUrl(file)" :src="thumbnailUrl(file)" class="w-full h-full object-cover" />
+              <img v-if="thumbnailUrl(file)" :src="thumbnailUrl(file)" alt="" class="w-full h-full object-cover" />
               <div v-else class="w-full h-full flex items-center justify-center">
                 <Icon :icon="fileIcon(file)" class="text-lg text-foreground/50" />
               </div>

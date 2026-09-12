@@ -4,9 +4,10 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { loadRoutes, matchRoute, type Route } from './router.js';
-import { ApiError, type ApiEvent, sendJson, appendVary, acceptsGzip } from './lib/handler.js';
+import { ApiError, type ApiEvent, sendJson, appendVary, acceptsGzip, getAuth } from './lib/handler.js';
 import { setupSockets } from './lib/sockets.js';
 import { applyCors, applySecurityHeaders } from './lib/security.js';
+import { renderIndex, renderPage } from './lib/docs.js';
 
 const here         = dirname(fileURLToPath(import.meta.url));
 const apiDir       = join(here, 'routes');
@@ -158,6 +159,63 @@ async function serveSpa(
   }
 }
 
+/**
+ * Serves `docs/` as pages under `/docs/`.
+ *
+ * Behind a session, deliberately. These pages describe the permission model,
+ * every route and the internals of the live layer — useful to the team, and not
+ * something to hand to the open internet by default. Everything here is already
+ * readable to anyone with repository access, so a login is the right bar rather
+ * than a permission check.
+ *
+ * To publish them publicly, drop the getAuth guard below.
+ */
+async function serveDocs(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  const session = await getAuth({ req, res, method: req.method, url, params: {} });
+  if (!session) {
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end('<!doctype html><meta charset="utf-8"><title>Sign in</title>'
+      + '<p style="font:15px system-ui;padding:40px">Sign in to read the documentation.</p>');
+    return;
+  }
+
+  const slug = url.pathname.replace(/^\/docs\/?/, '');
+  const html = slug ? await renderPage(slug) : await renderIndex();
+
+  if (html === null) {
+    res.statusCode = 404;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end('<!doctype html><meta charset="utf-8"><title>Not found</title>'
+      + '<p style="font:15px system-ui;padding:40px">No such page. '
+      + '<a href="/docs/">All documentation</a></p>');
+    return;
+  }
+
+  const body = Buffer.from(html);
+  // Always revalidated: docs change often and a stale page is worse than a
+  // request. The render itself is cached in-process by mtime.
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  if (acceptsGzip(req) && body.length > 1024) {
+    const gz = gzipSync(body);
+    appendVary(res, 'Accept-Encoding');
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Content-Length', gz.length);
+    res.end(req.method === 'HEAD' ? undefined : gz);
+    return;
+  }
+  res.setHeader('Content-Length', body.length);
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
@@ -174,6 +232,11 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok' });
+    return;
+  }
+
+  if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) {
+    await serveDocs(req, res, url);
     return;
   }
 

@@ -2,7 +2,7 @@
 import { ref, inject, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { Input } from '@starling/ui'
+import { ConfirmDialog, Input } from '@starling/ui'
 import { useApi }  from '../../composables/useApi'
 import { useAuth } from '../../composables/useAuth'
 import RoleSelector from './components/RoleSelector.vue'
@@ -89,13 +89,32 @@ async function changeMemberRole(member, roleId) {
   if (ok) await loadMembers()
 }
 
-async function removeMember(member) {
-  const name = member.user.firstName || member.user.name
-  if (!confirm(t('members.confirmRemove', { name }))) return
+/**
+ * Removing a member goes through the app's own ConfirmDialog rather than the
+ * browser's confirm(). Native confirm ignores the theme, blocks the main
+ * thread, and gives a destructive action no visual weight — and once a user
+ * ticks "prevent this page from creating additional dialogs" it returns false
+ * forever, so the removal would silently stop working.
+ */
+const removeTarget = ref(null)
+const removing = ref(false)
+
+const removeName = computed(() =>
+  removeTarget.value
+    ? removeTarget.value.user.firstName || removeTarget.value.user.name
+    : '',
+)
+
+async function removeMember() {
+  const member = removeTarget.value
+  if (!member) return
+  removing.value = true
   const { ok } = await $fetch(
     `/api/production/${pid.value}/members/${member.id}`,
     { method: 'DELETE' },
   )
+  removing.value = false
+  removeTarget.value = null
   if (ok) members.value = members.value.filter(m => m.id !== member.id)
 }
 </script>
@@ -176,17 +195,34 @@ async function removeMember(member) {
           </div>
           <button
             v-if="member.user.id !== user?.id"
-            class="p-1.5 rounded text-muted-foreground/50 hover:text-destructive transition-colors shrink-0"
+            type="button"
+            class="p-1.5 rounded text-muted-foreground/50 hover:text-destructive transition-colors shrink-0
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                   focus-visible:ring-offset-2 ring-offset-background"
             :title="$t('members.removeTitle')"
-            @click="removeMember(member)"
+            :aria-label="$t('members.confirmRemove', { name: member.user.firstName || member.user.name })"
+            @click="removeTarget = member"
           >
-            <Icon icon="mdi:close" class="text-sm" />
+            <Icon icon="mdi:close" class="text-sm" aria-hidden="true" />
           </button>
           <div v-else class="size-7 shrink-0" />
         </MemberRow>
       </ul>
 
     </ListCard>
+
+    <ConfirmDialog
+      :open="removeTarget !== null"
+      :title="$t('members.removeTitle')"
+      :confirm-label="$t('members.removeTitle')"
+      :cancel-label="$t('storage.cancel')"
+      :loading="removing"
+      destructive
+      @confirm="removeMember"
+      @cancel="removeTarget = null"
+    >
+      {{ $t('members.confirmRemove', { name: removeName }) }}
+    </ConfirmDialog>
 
   </div>
 </template>

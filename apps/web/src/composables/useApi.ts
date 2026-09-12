@@ -1,6 +1,7 @@
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@starling/ui/useToast'
 import { debugConfig } from '@starling/ui/debugConfig'
+import { liveSocketHeaders } from './useLiveSocketId'
 
 export interface FetchOptions extends Omit<RequestInit, 'body' | 'headers'> {
   /** Serialised to a JSON body, with the Content-Type set for you. */
@@ -49,7 +50,10 @@ export function useApi() {
   async function $fetch<T = any>(url: string, options: FetchOptions = {}): Promise<FetchResult<T>> {
     const { silent = false, json: jsonBody, headers: extraHeaders, ...rest } = options
 
-    const headers: Record<string, string> = { ...extraHeaders }
+    // Identifies this client's live socket so a server-side relay can skip
+    // echoing the change back to whoever made it. Omitted when no socket is
+    // open, which is the normal case outside the editor.
+    const headers: Record<string, string> = { ...liveSocketHeaders(), ...extraHeaders }
     if (jsonBody !== undefined) headers['Content-Type'] = 'application/json'
 
     const init: RequestInit = {

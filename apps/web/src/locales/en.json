@@ -629,5 +629,11 @@
       "status": "Shapes & status",
       "objects": "Objects"
     }
+  },
+  "chat": {
+    "gifAttachment": "GIF attachment"
+  },
+  "common": {
+    "dismiss": "Dismiss"
   }
 }

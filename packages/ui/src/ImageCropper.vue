@@ -163,6 +163,7 @@ function apply() {
           <img
             ref="imgEl"
             :src="srcUrl"
+            alt=""
             draggable="false"
             @load="onLoaded"
             :class="natW ? 'block w-full h-full rounded-sm pointer-events-none' : 'sr-only'"

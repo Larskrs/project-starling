@@ -1,5 +1,5 @@
 <script setup>
-import { ref, shallowRef, computed, inject, watch } from 'vue'
+import { ref, shallowRef, computed, inject, watch, onBeforeUnmount } from 'vue'
 import { Icon } from '@iconify/vue'
 import { clipLeft, clipWidth } from '../lib/editorUtils'
 import { createDrag } from '../lib/pointerDrag'
@@ -77,17 +77,62 @@ const labelText = computed(() => {
 const moveAdj = ref(0)   // pixel offset applied during drag
 let _didMove  = false    // true once movement threshold is exceeded
 
+/*
+ * Retire the held drag offset once the row catches up.
+ *
+ * onEnd leaves `moveAdj` holding the clip at the position the drag resolved to
+ * while the PATCH is in flight. The moment `clip.position` reflects that write,
+ * the offset has to go — otherwise it would be applied a second time on top of
+ * the new position and the clip would drift further with every drag.
+ *
+ * The timer is the failure path: a rejected or dropped PATCH never updates the
+ * position, and without it the clip would sit at a place the server does not
+ * agree with, indefinitely. Reverting is honest — it shows where the clip
+ * actually is.
+ */
+const MOVE_SETTLE_TIMEOUT_MS = 4000
+let _settleTimer = null
+
+watch(() => props.clip.position, () => {
+  moveAdj.value = 0
+  if (_settleTimer) { clearTimeout(_settleTimer); _settleTimer = null }
+})
+
+function holdUntilCommitted() {
+  if (_settleTimer) clearTimeout(_settleTimer)
+  _settleTimer = setTimeout(() => { _settleTimer = null; moveAdj.value = 0 }, MOVE_SETTLE_TIMEOUT_MS)
+}
+
+onBeforeUnmount(() => { if (_settleTimer) clearTimeout(_settleTimer) })
+
 const moveDrag = createDrag({
   onStart: () => { _didMove = false },
   onMove:  ({ dx }) => { _didMove = true; dragging.value = true; moveAdj.value = dx },
   onEnd:   ({ dx, moved }) => {
-    if (moved) {
-      const deltaFrames = Math.round(dx / props.pxPerFrame)
-      const newPosition = Math.max(props.timeline.startFrame, props.clip.position + deltaFrames)
-      if (deltaFrames !== 0) emit('move', newPosition)
-    }
-    moveAdj.value  = 0
     dragging.value = false
+
+    if (!moved) { moveAdj.value = 0; return }
+
+    const deltaFrames = Math.round(dx / props.pxPerFrame)
+    if (deltaFrames === 0) { moveAdj.value = 0; return }
+
+    /*
+     * Hold the visual offset until the committed row arrives.
+     *
+     * `displayedLeft` is `left + moveAdj`, and `left` derives from
+     * `clip.position` — which only updates once the PATCH comes back. Clearing
+     * moveAdj here, as this used to, snapped the clip back to where the drag
+     * started and then jumped it forward a round trip later: a visible bounce
+     * on every single drop, and a worse one the further away the server is.
+     *
+     * Snapping to the exact frame the drag resolved to also removes the
+     * sub-pixel drift between where the pointer was and where the clip will
+     * land, so the clip settles before the network is involved at all.
+     */
+    const newPosition = Math.max(props.timeline.startFrame, props.clip.position + deltaFrames)
+    moveAdj.value = (newPosition - props.clip.position) * props.pxPerFrame
+    holdUntilCommitted()
+    emit('move', newPosition)
   },
 })
 

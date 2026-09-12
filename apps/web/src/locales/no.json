@@ -629,5 +629,11 @@
       "status": "Former og status",
       "objects": "Objekter"
     }
+  },
+  "chat": {
+    "gifAttachment": "GIF-vedlegg"
+  },
+  "common": {
+    "dismiss": "Lukk"
   }
 }

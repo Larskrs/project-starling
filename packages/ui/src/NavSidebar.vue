@@ -15,7 +15,7 @@ defineEmits(['update:modelValue'])
       v-for="item in items"
       :key="item.id"
       type="button"
-      class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm font-medium transition-colors w-full text-left"
+      class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm font-medium transition-colors w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
       :class="modelValue === item.id
         ? 'bg-secondary text-foreground'
         : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'"
