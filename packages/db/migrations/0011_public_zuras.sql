@@ -1,0 +1,1 @@
+ALTER TABLE "api_tokens" ADD COLUMN "profile_image_id" uuid;

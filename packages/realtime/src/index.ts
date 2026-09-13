@@ -104,6 +104,20 @@ export interface PresenceUser {
 }
 
 /**
+ * Presence id prefix for a socket authenticated with an API token.
+ *
+ * Namespaced so a device can never collide with a user id — without it a desk
+ * would join under the id of whoever issued its token. Clients use the same
+ * prefix to list devices apart from people.
+ */
+export const TOKEN_PRESENCE_PREFIX = 'token:';
+
+/** Whether a presence entry is an API account (a device) rather than a person. */
+export function isDevicePresence(id: string): boolean {
+  return id.startsWith(TOKEN_PRESENCE_PREFIX);
+}
+
+/**
  * The room's authoritative transport.
  *
  * `frame` is the anchor position at server time `at`; while playing, the

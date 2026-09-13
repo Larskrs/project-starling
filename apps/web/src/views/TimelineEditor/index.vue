@@ -3,7 +3,7 @@ import { ref, computed, provide, nextTick, watch, onMounted, onUnmounted } from 
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { ResizeHandle, ConfirmDialog, useToast } from '@starling/ui'
+import { Button, ResizeHandle, ConfirmDialog, useToast } from '@starling/ui'
 import { useApi } from '../../composables/useApi'
 import { usePageTitle } from '../../composables/usePageTitle'
 import { useLocalStorage } from '../../composables/useLocalStorage'
@@ -13,6 +13,8 @@ import { useEditorZoom } from './view/useEditorZoom'
 import { useEditorLayout } from './view/useEditorLayout'
 import { useEditorViewMemory } from './view/useEditorViewMemory'
 import { createDrag } from './lib/pointerDrag'
+import { combineEntries, createEditHistory, type HistoryEntry, type IdResolver } from './lib/editHistory'
+import { buildSnapTargets } from './lib/snapping'
 import { useTimelineSync } from './data/useTimelineSync'
 import { usePlayback } from './audio/usePlayback'
 import { destroyAudioEngine, setTrackVolume as applyTrackVolume } from './audio/useAudioEngine'
@@ -22,6 +24,7 @@ import { resolveTrackSettings, trackSupportsAudio } from './behaviors/trackSetti
 import RulerLane       from './behaviors/RulerLane.vue'
 import BpmLane         from './behaviors/BpmLane.vue'
 import EditorToolbar   from './components/EditorToolbar.vue'
+import DeviceRow       from './components/DeviceRow.vue'
 import Ruler           from './components/Ruler.vue'
 import TrackHeader     from './components/TrackHeader.vue'
 import TrackLane       from './components/TrackLane.vue'
@@ -29,6 +32,7 @@ import SourceBar       from './components/SourceBar.vue'
 import DownloadToast   from './components/DownloadToast.vue'
 import AddTrackDialog  from './components/AddTrackDialog.vue'
 import TrackDialog     from './components/TrackDialog.vue'
+import ShortcutsDialog from './components/ShortcutsDialog.vue'
 import { useTimelineOpening } from '../../composables/useTimelineOpening'
 import ClipDialog      from './components/ClipDialog.vue'
 import BpmClipDialog   from './components/BpmClipDialog.vue'
@@ -53,23 +57,50 @@ const sources    = ref<Source[]>([])
 const loading    = ref(true)
 const error      = ref('')
 
+/**
+ * Whether this viewer may edit. A view-only member gets the editor without its
+ * editing affordances rather than drags and menus the API would refuse. An
+ * older payload without the flag is treated as editable — the API enforces it
+ * regardless.
+ */
+const canEdit  = ref(true)
+const readonly = computed(() => !canEdit.value)
+
 const timelineUrl = computed(() => `/api/timeline/${route.params.tlId}`)
 const trackUrl = (trackId: string) => `${timelineUrl.value}/tracks/${trackId}`
 const clipUrl  = (clipId: string)  => `${timelineUrl.value}/clips/${clipId}`
 
-async function load() {
-  loading.value = true
-  error.value   = ''
-  const { ok, data } = await $fetch<TimelineBootstrap>(timelineUrl.value, { silent: true })
-  loading.value = false
-  if (!ok) { error.value = t('editor.couldNotLoad'); finishOpening(); return }
-  timeline.value   = data.timeline
-  // Names the loading screen for anyone who arrived by pasted URL.
-  describeOpening(data.timeline)
+function applyData(data: TimelineBootstrap): void {
   trackList.value  = data.tracks
   trackTypes.value = data.trackTypes
   sources.value    = data.sources
+  canEdit.value    = data.canEdit !== false
   describeClipMedia()
+}
+
+async function load() {
+  loading.value = true
+  error.value   = ''
+  // A different timeline: nothing selected or undoable carries over.
+  cancelNudge()
+  history.clear()
+  selectedTrackId.value   = null
+  selectedClipIds.value   = []
+  selectionAnchorId.value = null
+
+  const { ok, status, data } = await $fetch<TimelineBootstrap>(timelineUrl.value, { silent: true })
+  loading.value = false
+  if (!ok) {
+    error.value = status === 404 ? t('editor.notFound')
+      : status === 401 || status === 403 ? t('editor.noAccess')
+      : t('editor.couldNotLoad')
+    finishOpening()
+    return
+  }
+  timeline.value   = data.timeline
+  // Names the loading screen for anyone who arrived by pasted URL.
+  describeOpening(data.timeline)
+  applyData(data)
   sync.join(String(route.params.tlId))
   nextTick(() => {
     // Restore the saved view for this timeline; otherwise the 5-minute default.
@@ -85,6 +116,26 @@ async function load() {
       finishOpening()
     })
   })
+}
+
+/**
+ * Re-reads the timeline in place: after the live connection comes back (the
+ * room does not replay what it relayed while we were gone), or when the server
+ * refused an optimistic change.
+ *
+ * Unlike load() it keeps the view, playhead, selection and undo history.
+ * `timeline` is patched rather than replaced — playback watches that ref and a
+ * new object would throw the playhead back to the start.
+ */
+let _refreshing = false
+async function refresh(): Promise<void> {
+  if (_refreshing || !timeline.value) return
+  _refreshing = true
+  const { ok, data } = await $fetch<TimelineBootstrap>(timelineUrl.value, { silent: true })
+  _refreshing = false
+  if (!ok || !timeline.value || data.timeline.id !== timeline.value.id) return
+  Object.assign(timeline.value, data.timeline)
+  applyData(data)
 }
 
 onMounted(load)
@@ -132,20 +183,77 @@ function removeTrackLocal(trackId: string): void {
   trackList.value = trackList.value.filter(x => x.id !== trackId)
 }
 
+/** The storage type of a file some other clip already knows, or null. */
+function fileTypeOf(fileId: string): string | null {
+  for (const track of trackList.value) {
+    for (const clip of track.clips) {
+      if (clip.fileId === fileId && clip.fileType) return clip.fileType
+    }
+  }
+  return null
+}
+
+// fileId → storage type, for files no clip on the timeline knew the type of.
+// A failed lookup is forgotten, so the clip's next change tries again.
+const _fileTypeLookups = new Map<string, Promise<string | null>>()
+
+function lookupFileType(fileId: string): Promise<string | null> {
+  let lookup = _fileTypeLookups.get(fileId)
+  if (!lookup) {
+    lookup = $fetch<{ file: { type: string | null } }>(`/api/storage/${fileId}`, { silent: true })
+      .then(res => {
+        const type = res.ok ? res.data.file.type ?? null : null
+        if (!type) _fileTypeLookups.delete(fileId)
+        return type
+      })
+    _fileTypeLookups.set(fileId, lookup)
+  }
+  return lookup
+}
+
+/** Fills in a clip's missing fileType, so its waveform or image can load. */
+async function resolveFileType(clipId: string, fileId: string): Promise<void> {
+  const type = await lookupFileType(fileId)
+  if (!type) return
+  const found = findClip(clipId)
+  // The clip may have been removed, or pointed at another file, meanwhile.
+  if (!found || found.clip.fileId !== fileId || found.clip.fileType) return
+  describeDownload(fileId, { kind: type === 'image' || type === 'audio' ? type : 'file' })
+  upsertClipLocal(found.track.id, { ...found.clip, fileType: type })
+}
+
 function upsertClipLocal(trackId: string, clip: EditorClip): EditorClip | null {
   const track = trackList.value.find(x => x.id === trackId)
   if (!track) return null
   const i      = track.clips.findIndex(c => c.id === clip.id)
-  const merged = i !== -1 ? { ...track.clips[i], ...clip } : clip
+  const prev   = i !== -1 ? track.clips[i] : null
+  const merged = { ...prev, ...clip } as EditorClip
+  // Only the bootstrap joins fileType on. A relayed or freshly created row
+  // arrives without it — and an audio clip with no fileType draws no waveform
+  // — so borrow it from any clip already using the same file.
+  if (clip.fileType === undefined && prev?.fileId !== merged.fileId) {
+    merged.fileType = merged.fileId ? fileTypeOf(merged.fileId) : null
+  }
   if (i !== -1) track.clips[i] = merged
   else          track.clips.push(merged)
   track.clips.sort((a, b) => a.position - b.position)
+  // No clip to borrow from (a peer's new file, an undo back to a file nothing
+  // else uses): ask storage, and the clip re-renders once the type is known.
+  if (merged.fileId && !merged.fileType) void resolveFileType(merged.id, merged.fileId)
   return merged
 }
 
 function removeClipLocal(trackId: string, clipId: string): void {
   const track = trackList.value.find(x => x.id === trackId)
   if (track) track.clips = track.clips.filter(c => c.id !== clipId)
+}
+
+function findClip(clipId: string): { track: EditorTrack; clip: EditorClip } | null {
+  for (const track of trackList.value) {
+    const clip = track.clips.find(c => c.id === clipId)
+    if (clip) return { track, clip }
+  }
+  return null
 }
 
 // ── Live sync ─────────────────────────────────────────────────────────────────
@@ -161,6 +269,9 @@ const sync = useTimelineSync({
   },
   onTransport(state) {
     playback.applyTransportState(state)
+  },
+  onReconnect() {
+    refresh()
   },
 })
 
@@ -180,6 +291,39 @@ const {
 })
 
 const viewMemory = useEditorViewMemory({ timeline, loading, pxPerFrame, viewport, canvasRef })
+
+/**
+ * The track headers never scroll on their own (they mirror the canvas), so a
+ * wheel over them used to do nothing at all. Hand it to the canvas instead.
+ * Modified wheels are left alone: those are zoom gestures, handled globally.
+ */
+function onHeadersWheel(e: WheelEvent): void {
+  const canvas = canvasRef.value
+  if (!canvas || e.ctrlKey || e.metaKey || e.altKey) return
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1
+  canvas.scrollTop  += e.deltaY * unit
+  canvas.scrollLeft += e.deltaX * unit
+}
+
+/**
+ * The API-account footer under the track headers takes height from that column
+ * alone. The canvas reserves the same height below its lanes; otherwise it
+ * scrolls further than the headers can follow and the bottom rows drift apart.
+ * Observed rather than fixed: accounts come and go, and many wrap to more lines.
+ */
+const deviceFooterRef    = ref<HTMLElement | null>(null)
+const deviceFooterHeight = ref(0)
+
+const footerObserver = typeof ResizeObserver === 'undefined'
+  ? null
+  : new ResizeObserver(() => { deviceFooterHeight.value = deviceFooterRef.value?.offsetHeight ?? 0 })
+
+watch(deviceFooterRef, (el, prev) => {
+  if (prev) footerObserver?.unobserve(prev)
+  if (el) footerObserver?.observe(el)
+  deviceFooterHeight.value = el?.offsetHeight ?? 0
+})
+onUnmounted(() => footerObserver?.disconnect())
 
 // ── Track behavior settings (from track types) ────────────────────────────────
 const settingsFor = (track: TrackWithType) => resolveTrackSettings(track, trackTypes.value)
@@ -257,26 +401,61 @@ function setTrackVolume(track: EditorTrack, volume: number): void {
 }
 
 // ── Playback ──────────────────────────────────────────────────────────────────
+/**
+ * Live (the room's shared transport) or local (a private playhead). The toolbar
+ * toggle picks it; every transport control — play, seek, scrub, Home/End —
+ * then acts on that one. Per viewer and remembered, like the mix.
+ */
+const transportLive = useLocalStorage<boolean>('editor-transport-live', true)
+
 const playback = usePlayback({
   timeline, trackList, trackTypes, mutedTracks, trackVolumes, pxPerFrame, canvasRef,
   sendTransport: (...args) => sync.sendTransport(...args),
+  live: transportLive,
 })
 const {
-  playheadFrame, playheadX, isPlaying, audioBlocked,
-  setPlayhead, seekStart, seekEnd, stopPlayback, togglePlayback,
+  playheadFrame, playheadX, isPlaying, audioBlocked, roomPlaying,
+  setPlayhead, seekStart, seekEnd, stopPlayback, togglePlayback, setLiveMode,
 } = playback
 
+watch(sync.connected, (connected) => { if (!connected) playback.clearRoomState() })
+
 // ── Layout ────────────────────────────────────────────────────────────────────
+/** The add-track row under the bottom track header; the canvas reserves the same height. */
+const ADD_TRACK_ROW_PX = 36
+
 const {
   sidebarWidth, trackHeight, totalTracksHeight,
   sidebarResizer, startSidebarResize, startRowResize,
 } = useEditorLayout({ tracks: trackList, settingsFor, onSidebarResize: updateViewport })
 
-// ── Track selection + source bar ──────────────────────────────────────────────
+// ── Selection: track + clip ───────────────────────────────────────────────────
 const selectedTrackId = ref<string | null>(null)
 const selectedTrack   = computed(() =>
   trackList.value.find(tr => tr.id === selectedTrackId.value) ?? null,
 )
+
+/**
+ * Selected clips — what Delete, nudging and dragging act on. Ctrl/⌘-click adds
+ * or removes one; Shift-click selects a range from the anchor (the last clip
+ * clicked without Shift). Ids of clips a peer deleted are simply not found.
+ */
+const selectedClipIds   = ref<string[]>([])
+const selectionAnchorId = ref<string | null>(null)
+const selectedClips = computed(() =>
+  selectedClipIds.value
+    .map(id => findClip(id))
+    .filter((x): x is { track: EditorTrack; clip: EditorClip } => x !== null),
+)
+
+interface ClipSelectMods {
+  /** Ctrl/⌘: add or remove this clip. */
+  toggle?: boolean
+  /** Shift: everything between the anchor and this clip. */
+  range?: boolean
+  /** Right-click: leave an existing selection that contains this clip alone. */
+  keep?: boolean
+}
 
 // The source bar shows when the selected track's type is bound to a source set.
 const selectedTrackHasSourceSet = computed(() => {
@@ -293,9 +472,71 @@ const activeSourceId = computed(() =>
   selectedTrack.value ? activeClip(selectedTrack.value)?.sourceId ?? null : null,
 )
 
-function selectTrack(track: EditorTrack): void {
+/**
+ * `toggle` is for the track header, where clicking a selected track again is
+ * the natural way to let go of it. Clicks in a lane only ever select: a stray
+ * click during a live take must not close the source switcher mid-shot.
+ */
+function selectTrack(track: EditorTrack, { toggle = false } = {}): void {
   if (_suppressSelect) return
-  selectedTrackId.value = selectedTrackId.value === track.id ? null : track.id
+  selectedTrackId.value = toggle && selectedTrackId.value === track.id ? null : track.id
+}
+
+function onLaneClick(track: EditorTrack): void {
+  selectedClipIds.value = []
+  selectTrack(track)
+}
+
+function selectClip(clip: EditorClip, { toggle = false, range = false, keep = false }: ClipSelectMods = {}): void {
+  const ids = selectedClipIds.value
+  if (range && selectionAnchorId.value && findClip(selectionAnchorId.value)) {
+    const run = clipsInRange(selectionAnchorId.value, clip.id)
+    // Ctrl/⌘+Shift adds the range to what is already selected. The anchor
+    // stays put, so further Shift-clicks re-draw the range from the same clip.
+    selectedClipIds.value = toggle ? [...new Set([...ids, ...run])] : run
+    return
+  }
+  if (toggle) {
+    selectedClipIds.value   = ids.includes(clip.id) ? ids.filter(id => id !== clip.id) : [...ids, clip.id]
+    selectionAnchorId.value = clip.id
+    return
+  }
+  // Right-clicking inside a selection keeps it, so its menu acts on all of it.
+  if (keep && ids.includes(clip.id)) return
+  selectedClipIds.value   = [clip.id]
+  selectionAnchorId.value = clip.id
+}
+
+/**
+ * Shift-click: every clip whose position lies between the anchor clip's and the
+ * clicked clip's (inclusive), on the rows from the anchor's track to the clicked
+ * one's. Both on one track — the usual case — is a plain run along that track.
+ * Hidden tracks are skipped: nothing invisible gets selected.
+ */
+function clipsInRange(anchorId: string, targetId: string): string[] {
+  const a = findClip(anchorId)
+  const b = findClip(targetId)
+  if (!a || !b) return [targetId]
+  const rows = orderedTracks.value
+  const ia   = rows.findIndex(tr => tr.id === a.track.id)
+  const ib   = rows.findIndex(tr => tr.id === b.track.id)
+  const lo   = Math.min(a.clip.position, b.clip.position)
+  const hi   = Math.max(a.clip.position, b.clip.position)
+  const out: string[] = []
+  for (const track of rows.slice(Math.min(ia, ib), Math.max(ia, ib) + 1)) {
+    if (isTrackHidden(track)) continue
+    for (const clip of track.clips) {
+      if (clip.position >= lo && clip.position <= hi) out.push(clip.id)
+    }
+  }
+  return out
+}
+
+/** Ctrl/⌘+A: every clip on the selected track, or on every visible track. */
+function selectAllClips(): void {
+  const tracks = selectedTrack.value ? [selectedTrack.value] : orderedTracks.value.filter(tr => !isTrackHidden(tr))
+  selectedClipIds.value   = tracks.flatMap(tr => tr.clips.map(c => c.id))
+  selectionAnchorId.value = null
 }
 
 // ── Track reordering (drag headers vertically) ────────────────────────────────
@@ -329,6 +570,9 @@ let _suppressSelect = false
 
 const _reorderDrag = createDrag<EditorTrack>({
   threshold: 5,
+  // Vertical only: a few px of sideways wobble on a click is not a reorder,
+  // and treating it as one swallowed the click that should have selected.
+  axis: 'y',
   onMove: ({ event }, track) => {
     reorderDrag.value = { trackId: track.id, index: reorderBoundaryFromPointer(event.clientY) }
   },
@@ -343,7 +587,7 @@ const _reorderDrag = createDrag<EditorTrack>({
 })
 
 function startTrackReorder(track: EditorTrack, e: PointerEvent): void {
-  if (trackList.value.length < 2) return
+  if (readonly.value || trackList.value.length < 2) return
   _reorderDrag(e, track)
 }
 
@@ -366,11 +610,11 @@ function applyTrackOrder(order: string[]): void {
 }
 
 async function reorderTracks(order: string[]): Promise<void> {
-  applyTrackOrder(order)   // optimistic; reload if the server disagrees
+  applyTrackOrder(order)   // optimistic; re-read if the server disagrees
   const { ok, data } = await $fetch<{ order: string[] }>(`${timelineUrl.value}/tracks/reorder`, {
-    method: 'POST', json: { order }, silent: true,
+    method: 'POST', json: { order },
   })
-  if (!ok) { load(); return }
+  if (!ok) { refresh(); return }
   applyTrackOrder(data.order)
 }
 
@@ -389,19 +633,312 @@ function flashSource(sourceId: string): void {
 /** Create a clip for `source` on the selected track at the playhead. */
 async function addSourceClip(source: Source): Promise<void> {
   const track = selectedTrack.value
-  if (!track || blockedByLock(track)) return
+  if (!track || !timeline.value || cannotEdit(track)) return
   flashSource(source.id)
+  const position = clamp(Math.round(playheadFrame.value), timeline.value.startFrame, timeline.value.endFrame - 1)
   const { ok, data } = await $fetch<EditorClip>(`${timelineUrl.value}/clips`, {
     method: 'POST',
-    json:   { trackId: track.id, position: Math.max(0, Math.round(playheadFrame.value)), sourceId: source.id },
-    silent: true,
+    json:   { trackId: track.id, position: Math.max(0, position), sourceId: source.id },
   })
   if (!ok) return
-  upsertClipLocal(track.id, data)
+  const clip = upsertClipLocal(track.id, data)
+  if (clip) history.push(clipCreateEntry(track.id, clip))
+}
+
+// ── Snapping ──────────────────────────────────────────────────────────────────
+// Drags ask for targets once, when they start. The guide is the frame the drag
+// last snapped to, drawn as a line across every lane.
+const snapGuide = ref<number | null>(null)
+
+const snapGuideX = computed(() =>
+  snapGuide.value == null || !timeline.value
+    ? null
+    : (snapGuide.value - timeline.value.startFrame) * pxPerFrame.value,
+)
+
+/** Targets for a drag of the clips in `exclude` — they never snap to themselves. */
+function snapTargets(exclude: string[]): number[] {
+  const skip = new Set(exclude)
+  const tl = timeline.value
+  const frames: number[] = [playheadFrame.value]
+  if (tl) frames.push(tl.startFrame, tl.endFrame)
+  for (const track of trackList.value) {
+    for (const clip of track.clips) {
+      if (skip.has(clip.id)) continue
+      frames.push(clip.position)
+      if (track.mode !== 'event' && clip.sourceId == null && clip.end != null) {
+        frames.push(clip.position + clip.end - (clip.mediaStart ?? 0))
+      }
+    }
+  }
+  return buildSnapTargets(frames)
+}
+
+// ── Undo / redo ───────────────────────────────────────────────────────────────
+// Clip edits only — creation, deletion, move, trim, dialog saves, nudges. Track
+// deletion is guarded by a confirmation instead; restoring a whole track with
+// every clip on it is a different undertaking.
+const canUndo = ref(false)
+const canRedo = ref(false)
+
+const history = createEditHistory({
+  onChange: (state) => { canUndo.value = state.canUndo; canRedo.value = state.canRedo },
+})
+
+/** The fields a clip edit can change — what undo snapshots and puts back. */
+const CLIP_FIELDS = ['position', 'mediaStart', 'end', 'label', 'hue', 'sourceId', 'fileId', 'data'] as const
+type ClipFields = Partial<Pick<EditorClip, typeof CLIP_FIELDS[number]>>
+
+function pickClipFields(clip: EditorClip, keys: readonly string[] = CLIP_FIELDS): ClipFields {
+  const out: Record<string, unknown> = {}
+  for (const key of keys) {
+    if (!(CLIP_FIELDS as readonly string[]).includes(key)) continue
+    const value = clip[key as keyof EditorClip] ?? null
+    // `data` is a reactive object: snapshot a plain copy of it as it is now.
+    out[key] = key === 'data' && value ? JSON.parse(JSON.stringify(value)) : value
+  }
+  return out as ClipFields
+}
+
+/** Lets the clip under edit know the write didn't land, so it stops holding it. */
+const rejectedEdit = ref<{ clipId: string } | null>(null)
+const rejectEdit = (clipId: string): void => { rejectedEdit.value = { clipId } }
+
+function clipPatchEntry(trackId: string, clipId: string, before: ClipFields, after: ClipFields): HistoryEntry {
+  const apply = (fields: ClipFields) => async (ids: IdResolver): Promise<boolean> => {
+    const id    = ids.resolve(clipId)
+    const found = findClip(id)
+    if (found && cannotEdit(found.track)) return false
+    const { ok, data } = await $fetch<EditorClip>(clipUrl(id), { method: 'PATCH', json: fields })
+    if (!ok) return false
+    upsertClipLocal(found?.track.id ?? trackId, { ...data, id })
+    return true
+  }
+  return { undo: apply(before), redo: apply(after) }
+}
+
+async function removeClipRemote(trackId: string, clipId: string): Promise<boolean> {
+  const { ok, status, error: err } = await $fetch(clipUrl(clipId), { method: 'DELETE', silent: true })
+  // Already gone — a peer got there first — is exactly the state asked for.
+  if (!ok && status !== 404) { toast.error(err); return false }
+  removeClipLocal(trackId, clipId)
+  selectedClipIds.value = selectedClipIds.value.filter(id => id !== clipId)
+  return true
+}
+
+async function recreateClip(trackId: string, snapshot: EditorClip, ids: IdResolver): Promise<boolean> {
+  const { ok, data } = await $fetch<EditorClip>(`${timelineUrl.value}/clips`, {
+    method: 'POST',
+    json:   { trackId, ...pickClipFields(snapshot) },
+  })
+  if (!ok) return false
+  // The restored row has a new id: older entries naming the old one follow it.
+  ids.alias(ids.resolve(snapshot.id), data.id)
+  upsertClipLocal(trackId, { ...data, fileType: snapshot.fileType ?? null })
+  return true
+}
+
+function clipCreateEntry(trackId: string, clip: EditorClip): HistoryEntry {
+  const snapshot = { ...clip, ...pickClipFields(clip) } as EditorClip
+  return {
+    undo: (ids) => removeClipRemote(trackId, ids.resolve(snapshot.id)),
+    redo: (ids) => recreateClip(trackId, snapshot, ids),
+  }
+}
+
+function clipDeleteEntry(trackId: string, clip: EditorClip): HistoryEntry {
+  const created = clipCreateEntry(trackId, clip)
+  return { undo: created.redo, redo: created.undo }
+}
+
+async function undo(): Promise<void> {
+  if (readonly.value) return
+  await flushNudge()
+  history.undo()
+}
+
+async function redo(): Promise<void> {
+  if (readonly.value) return
+  await flushNudge()
+  history.redo()
+}
+
+// ── Moving several clips at once ──────────────────────────────────────────────
+interface PositionMove { trackId: string; clipId: string; from: number; to: number }
+
+/** Frames a clip covers on the timeline; 0 for event clips and point markers. */
+function clipSpan(track: EditorTrack, clip: EditorClip): number {
+  return track.mode === 'event' || clip.sourceId != null || clip.end == null
+    ? 0
+    : clip.end - (clip.mediaStart ?? 0)
+}
+
+/** How far a set of clips can move together without any of it leaving the timeline. */
+function deltaBoundsFor(items: { clipId: string; from: number }[]): { min: number; max: number } {
+  const tl = timeline.value
+  if (!tl) return { min: 0, max: 0 }
+  let min = -Infinity
+  let max = Infinity
+  for (const { clipId, from } of items) {
+    const found = findClip(clipId)
+    if (!found) continue
+    min = Math.max(min, tl.startFrame - from)
+    max = Math.min(max, tl.endFrame - Math.max(1, clipSpan(found.track, found.clip)) - from)
+  }
+  // Staying put is always allowed, even for a clip already sitting out of range.
+  return { min: Math.min(min, 0), max: Math.max(max, 0) }
+}
+
+/**
+ * The selection being dragged: which clip is under the pointer and how far it
+ * has moved. Every other selected clip reads this and follows.
+ */
+const groupDrag = ref<{ leaderId: string; delta: number } | null>(null)
+
+/** The ids that move with `clipId` — the selection, when it holds it and more. */
+function groupMembersFor(clipId: string): string[] | null {
+  const ids = selectedClips.value.map(({ clip }) => clip.id)
+  return ids.length > 1 && ids.includes(clipId) ? ids : null
+}
+
+function groupDeltaBounds(ids: string[]): { min: number; max: number } {
+  return deltaBoundsFor(ids.flatMap(id => {
+    const found = findClip(id)
+    return found ? [{ clipId: id, from: found.clip.position }] : []
+  }))
+}
+
+/** A lone locked track among the selection blocks the whole group edit. */
+function selectionBlocked(items: { track: EditorTrack }[]): boolean {
+  if (readonly.value) return true
+  const locked = items.find(({ track }) => track.isLocked)
+  return locked ? blockedByLock(locked.track) : false
+}
+
+/** Applies position changes locally right away, then writes them. */
+function applyPositions(moves: PositionMove[]): void {
+  for (const move of moves) {
+    const found = findClip(move.clipId)
+    if (found) upsertClipLocal(found.track.id, { ...found.clip, position: move.to })
+  }
+}
+
+/**
+ * Writes position changes already applied locally. Every clip that lands goes
+ * into ONE undo step; any the server refuses is put back where it was, with a
+ * single toast rather than one per clip.
+ */
+async function commitPositions(moves: PositionMove[]): Promise<void> {
+  if (!moves.length) return
+  const results = await Promise.all(moves.map(m =>
+    $fetch<EditorClip>(clipUrl(m.clipId), { method: 'PATCH', json: { position: m.to }, silent: true })))
+
+  const landed: HistoryEntry[] = []
+  let failure = ''
+  for (let i = 0; i < moves.length; i++) {
+    const move    = moves[i]!
+    const result  = results[i]!
+    const current = findClip(move.clipId)
+    if (result.ok) {
+      upsertClipLocal(current?.track.id ?? move.trackId, { ...result.data, id: move.clipId })
+      landed.push(clipPatchEntry(move.trackId, move.clipId, { position: move.from }, { position: move.to }))
+    } else {
+      failure ||= result.error
+      if (current) upsertClipLocal(current.track.id, { ...current.clip, position: move.from })
+    }
+  }
+  if (failure) toast.error(failure)
+  if (landed.length) history.push(combineEntries(landed))
+}
+
+/** Drag drop for a multi-clip selection: everything moves by the same delta. */
+function moveSelection(delta: number): void {
+  const items = selectedClips.value
+  if (!delta || !items.length || selectionBlocked(items)) return
+  const bounds = deltaBoundsFor(items.map(({ clip }) => ({ clipId: clip.id, from: clip.position })))
+  const d = clamp(delta, bounds.min, bounds.max)
+  if (!d) return
+  const moves = items.map(({ track, clip }) => ({ trackId: track.id, clipId: clip.id, from: clip.position, to: clip.position + d }))
+  // Synchronously, before the first await: the dragged clip's followers stop
+  // following as soon as this returns, and must already stand where they landed.
+  applyPositions(moves)
+  commitPositions(moves)
+}
+
+async function deleteSelection(): Promise<void> {
+  const items = selectedClips.value
+  if (!items.length) return
+  if (items.length === 1) return deleteClip(items[0]!.track, items[0]!.clip)
+  if (selectionBlocked(items)) return
+
+  const snapshots = items.map(({ track, clip }) => ({ trackId: track.id, clip: { ...clip } }))
+  const removed   = await Promise.all(snapshots.map(s => removeClipRemote(s.trackId, s.clip.id)))
+  const entries   = snapshots.filter((_, i) => removed[i]).map(s => clipDeleteEntry(s.trackId, s.clip))
+  if (!entries.length) return
+
+  const entry = combineEntries(entries)
+  history.push(entry)
+  toast.show(t('editor.clipsDeleted', { count: entries.length }), {
+    duration: 6000,
+    action: { label: t('editor.undo'), run: () => { history.undoIfLatest(entry) } },
+  })
+}
+
+// ── Nudging (, and .) ─────────────────────────────────────────────────────────
+// Holding the key repeats it. Each step moves the selection locally at once;
+// the write goes out when the keys go quiet, as ONE undo step, instead of a
+// round of PATCHes and a history entry per auto-repeat.
+const NUDGE_SETTLE_MS = 300
+let _nudge: { key: string; moves: PositionMove[]; delta: number; timer: ReturnType<typeof setTimeout> | null } | null = null
+
+function nudgeSelection(frames: number): void {
+  const items = selectedClips.value
+  if (!timeline.value || !items.length || selectionBlocked(items)) return
+
+  const key = items.map(({ clip }) => clip.id).sort().join(',')
+  if (_nudge && _nudge.key !== key) flushNudge()
+  if (!_nudge) {
+    _nudge = {
+      key, delta: 0, timer: null,
+      moves: items.map(({ track, clip }) => ({ trackId: track.id, clipId: clip.id, from: clip.position, to: clip.position })),
+    }
+  }
+
+  const bounds = deltaBoundsFor(_nudge.moves)
+  _nudge.delta = clamp(_nudge.delta + frames, bounds.min, bounds.max)
+  for (const move of _nudge.moves) move.to = move.from + _nudge.delta
+  applyPositions(_nudge.moves)
+
+  if (_nudge.timer) clearTimeout(_nudge.timer)
+  _nudge.timer = setTimeout(flushNudge, NUDGE_SETTLE_MS)
+}
+
+async function flushNudge(): Promise<void> {
+  const n = _nudge
+  _nudge = null
+  if (!n) return
+  if (n.timer) clearTimeout(n.timer)
+  await commitPositions(n.moves.filter(m => m.to !== m.from))
+}
+
+/** Drops a pending nudge without writing it — the timeline it belonged to is gone. */
+function cancelNudge(): void {
+  if (_nudge?.timer) clearTimeout(_nudge.timer)
+  _nudge = null
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
+const shortcutsOpen = ref(false)
+const addTrackOpen  = ref(false)
+
 function onKeydown(e: KeyboardEvent): void {
+  // A dialog or menu owns the keyboard while it is open. Without this, digits
+  // pressed at a dialog's buttons cut source clips on the track behind it,
+  // Space toggled playback and the arrows scrubbed while walking a menu.
+  const target = e.target as HTMLElement | null
+  if (anyDialogOpen.value) return
+  if (target?.closest?.('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return
+
   // Alt +/−/0 zoom the timeline — claimed even while an input has focus, so the
   // shortcut behaves the same everywhere in the editor. Ctrl/⌘ +/−/0 are left
   // alone: they scale the page here exactly as they do on any other site.
@@ -413,14 +950,46 @@ function onKeydown(e: KeyboardEvent): void {
     if (e.code === 'Minus'  || e.code === 'NumpadSubtract') { e.preventDefault(); zoomOut();   return }
     if (e.code === 'Digit0' || e.code === 'Numpad0')        { e.preventDefault(); zoomReset(); return }
   }
-  const target = e.target as HTMLElement | null
   const tag = target?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+
+  // Undo/redo — only outside text fields (above), so an input keeps its own.
+  const mod = (e.ctrlKey || e.metaKey) && !e.altKey
+  if (mod && e.code === 'KeyZ') { e.preventDefault(); e.shiftKey ? redo() : undo(); return }
+  if (mod && e.code === 'KeyY' && !e.shiftKey) { e.preventDefault(); redo(); return }
+
+  if (e.key === '?') { e.preventDefault(); shortcutsOpen.value = true; return }
+
+  if (mod && e.code === 'KeyA') { e.preventDefault(); selectAllClips(); return }
+
+  // Selected clips: Delete/Backspace removes them, , and . nudge them by a
+  // frame (Shift: ten), Enter edits a lone one.
+  const sel = selectedClips.value
+  if (sel.length && !readonly.value && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.code === 'Delete' || e.code === 'Backspace') { e.preventDefault(); deleteSelection(); return }
+    if ((e.code === 'Enter' || e.code === 'NumpadEnter') && sel.length === 1) {
+      e.preventDefault()
+      openEditClip(sel[0]!.track, sel[0]!.clip)
+      return
+    }
+    if (e.code === 'Comma' || e.code === 'Period') {
+      e.preventDefault()
+      nudgeSelection((e.code === 'Comma' ? -1 : 1) * (e.shiftKey ? 10 : 1))
+      return
+    }
+  }
+
+  // L flips the transport between live and local.
+  if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    e.preventDefault()
+    setLiveMode(!transportLive.value)
+    return
+  }
 
   // Source switcher: 1…9 then 0 add a clip for the Nth source of the selected
   // track (number row or numpad). Bare digits only — Ctrl/⌘+digit belongs to
   // the browser, and a modifier held by accident shouldn't cut a take.
-  if (selectedTrackHasSourceSet.value && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+  if (!readonly.value && selectedTrackHasSourceSet.value && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
     const source = selectedTrackSources.value[sourceIndexFromKey(e)]
     if (source) { e.preventDefault(); addSourceClip(source); return }
   }
@@ -436,7 +1005,11 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.code === 'Space')  { e.preventDefault(); if (!e.repeat) togglePlayback() }
   if (e.code === 'Home')   { e.preventDefault(); seekStart() }
   if (e.code === 'End')    { e.preventDefault(); seekEnd() }
-  if (e.code === 'Escape') { selectedTrackId.value = null }
+  // Escape lets go one level at a time: the clip first, then the track.
+  if (e.code === 'Escape') {
+    if (selectedClipIds.value.length) selectedClipIds.value = []
+    else selectedTrackId.value = null
+  }
   if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
     e.preventDefault()
     const back = e.code === 'ArrowLeft'
@@ -454,6 +1027,7 @@ onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
   if (_flashTimer) clearTimeout(_flashTimer)
+  flushNudge()
   // The pending view save is flushed by useEditorViewMemory's own teardown.
   stopPlayback(false)
   destroyAudioEngine()
@@ -476,11 +1050,13 @@ function onScrubStart(e: PointerEvent): void {
   setPlayhead(frameFromPointer(e))
   window.addEventListener('pointermove', onScrubMove)
   window.addEventListener('pointerup', onScrubEnd)
+  window.addEventListener('pointercancel', onScrubEnd)
 }
 function onScrubMove(e: PointerEvent) { setPlayhead(frameFromPointer(e)) }
 function onScrubEnd(): void {
   window.removeEventListener('pointermove', onScrubMove)
   window.removeEventListener('pointerup', onScrubEnd)
+  window.removeEventListener('pointercancel', onScrubEnd)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -508,8 +1084,12 @@ function blockedByLock(track: EditorTrack | null | undefined): boolean {
   return true
 }
 
+/** A view-only viewer (silently — nothing was offered) or a locked track. */
+function cannotEdit(track: EditorTrack | null | undefined): boolean {
+  return readonly.value || blockedByLock(track)
+}
+
 // ── Track mutations ───────────────────────────────────────────────────────────
-const addTrackOpen = ref(false)
 
 // A freshly created track comes back as the bare row, while the timeline
 // payload joins its type's display fields onto every track. Decorating here
@@ -536,19 +1116,19 @@ function onTrackAdded(track: EditorTrack): void {
 }
 
 async function patchTrack(track: EditorTrack, json: Record<string, unknown>): Promise<void> {
-  const { ok, data } = await $fetch<EditorTrack>(trackUrl(track.id), { method: 'PATCH', json, silent: true })
+  const { ok, data } = await $fetch<EditorTrack>(trackUrl(track.id), { method: 'PATCH', json })
   if (!ok) return
   upsertTrackLocal({ ...data, id: track.id })
 }
 
-const toggleLock = (track: EditorTrack) => patchTrack(track, { isLocked: !track.isLocked })
+const toggleLock = (track: EditorTrack) => { if (!readonly.value) patchTrack(track, { isLocked: !track.isLocked }) }
 
 // Per-track settings (name + icon override). The PATCH response carries only
 // the track row, so it merges onto the joined type/source fields already held.
 const trackDialog = ref<{ open: boolean; track: EditorTrack | null }>({ open: false, track: null })
 
 function openTrackSettings(track: EditorTrack): void {
-  if (blockedByLock(track)) return
+  if (cannotEdit(track)) return
   trackDialog.value = { open: true, track }
 }
 
@@ -563,9 +1143,9 @@ const deletingTrack     = ref(false)
 async function confirmDeleteTrack() {
   const track = deleteTrackTarget.value
   if (!track) return
-  if (blockedByLock(track)) { deleteTrackTarget.value = null; return }
+  if (cannotEdit(track)) { deleteTrackTarget.value = null; return }
   deletingTrack.value = true
-  const { ok } = await $fetch(trackUrl(track.id), { method: 'DELETE', silent: true })
+  const { ok } = await $fetch(trackUrl(track.id), { method: 'DELETE' })
   deletingTrack.value     = false
   deleteTrackTarget.value = null
   if (!ok) return
@@ -589,22 +1169,31 @@ const bpmDialog = ref<{
   defaultPosition: number
 }>({ open: false, track: null, clip: null, defaultPosition: 0 })
 
-function openAddClip(track: EditorTrack): void {
-  if (blockedByLock(track)) return
+const anyDialogOpen = computed(() =>
+  addTrackOpen.value || trackDialog.value.open || clipDialog.value.open || bpmDialog.value.open ||
+  deleteTrackTarget.value !== null || shortcutsOpen.value,
+)
+
+/** Opens the add dialog at `frame` (a double-clicked spot) or the playhead. */
+function openAddClip(track: EditorTrack, frame?: number): void {
+  if (cannotEdit(track)) return
+  const tl = timeline.value
+  const at = Math.round(frame ?? playheadFrame.value)
+  const defaultPosition = tl ? clamp(at, tl.startFrame, tl.endFrame - 1) : at
   if (settingsFor(track).metronome) {
-    bpmDialog.value = { open: true, track, clip: null, defaultPosition: Math.round(playheadFrame.value) }
+    bpmDialog.value = { open: true, track, clip: null, defaultPosition }
     return
   }
   clipDialog.value = {
     open:            true,
     track,
     clip:            null,
-    defaultPosition: Math.round(playheadFrame.value),
+    defaultPosition,
     trackSources:    getTrackSources(track),
   }
 }
 function openEditClip(track: EditorTrack, clip: EditorClip): void {
-  if (blockedByLock(track)) return
+  if (cannotEdit(track)) return
   if (settingsFor(track).metronome) {
     bpmDialog.value = { open: true, track, clip, defaultPosition: clip.position }
     return
@@ -618,42 +1207,61 @@ function openEditClip(track: EditorTrack, clip: EditorClip): void {
   }
 }
 
+/** Records a dialog save — a create, or an edit against the clip as it was. */
+function recordDialogSave(track: EditorTrack, before: EditorClip | null, saved: EditorClip): void {
+  const merged = upsertClipLocal(track.id, saved)
+  if (!merged) return
+  history.push(before
+    ? clipPatchEntry(track.id, before.id, pickClipFields(before), pickClipFields(merged))
+    : clipCreateEntry(track.id, merged))
+}
+
 function onBpmClipSaved(clip: EditorClip): void {
-  const trackId = bpmDialog.value.track?.id
-  if (!trackId) return
-  upsertClipLocal(trackId, clip)
+  const { track, clip: before } = bpmDialog.value
+  if (track) recordDialogSave(track, before, clip)
 }
 function closeClipDialog(): void {
   clipDialog.value = { ...clipDialog.value, open: false }
 }
 
 function onClipSaved(savedClip: EditorClip): void {
-  const trackId = clipDialog.value.track?.id
-  if (!trackId) return
-  upsertClipLocal(trackId, savedClip)
+  const { track, clip: before } = clipDialog.value
+  if (!track) return
+  recordDialogSave(track, before, savedClip)
   closeClipDialog()
 }
 
-// The single choke point for clip edits (move, crop, dialog saves).
-async function patchClip(track: EditorTrack, clip: EditorClip, json: Record<string, unknown>): Promise<void> {
-  if (blockedByLock(track)) return
-  const { ok, data } = await $fetch<EditorClip>(clipUrl(clip.id), {
-    method: 'PATCH', json, silent: true,
-  })
-  if (!ok) return
-  upsertClipLocal(track.id, { ...data, id: clip.id })
+// The single choke point for drag edits (move, trim). Failures toast (useApi)
+// and tell the clip, so it drops the position it was holding for the write.
+async function patchClip(track: EditorTrack, clip: EditorClip, json: ClipFields): Promise<boolean> {
+  if (cannotEdit(track)) { rejectEdit(clip.id); return false }
+  const before = pickClipFields(clip, Object.keys(json))
+  const { ok, data } = await $fetch<EditorClip>(clipUrl(clip.id), { method: 'PATCH', json })
+  if (!ok) { rejectEdit(clip.id); return false }
+  const merged = upsertClipLocal(track.id, { ...data, id: clip.id })
+  if (merged) history.push(clipPatchEntry(track.id, clip.id, before, pickClipFields(merged, Object.keys(json))))
+  return true
 }
 
-const moveClip = (track: EditorTrack, clip: EditorClip, position: number) => patchClip(track, clip, { position })
-const cropClip = (track: EditorTrack, clip: EditorClip, fields: Record<string, unknown>) => patchClip(track, clip, fields)
+/** A dragged clip that is part of a multi-clip selection takes the rest with it. */
+function moveClip(track: EditorTrack, clip: EditorClip, position: number): void {
+  if (groupMembersFor(clip.id)) { moveSelection(position - clip.position); return }
+  patchClip(track, clip, { position })
+}
+const cropClip = (track: EditorTrack, clip: EditorClip, fields: ClipFields) => patchClip(track, clip, fields)
 
 async function deleteClip(track: EditorTrack, clip: EditorClip): Promise<void> {
-  if (blockedByLock(track)) return
-  const { ok } = await $fetch(clipUrl(clip.id), {
-    method: 'DELETE', silent: true,
+  // "Delete" on any clip of a multi-clip selection deletes the selection.
+  if (groupMembersFor(clip.id)) return deleteSelection()
+  if (cannotEdit(track)) return
+  const snapshot = { ...clip }
+  if (!await removeClipRemote(track.id, clip.id)) return
+  const entry = clipDeleteEntry(track.id, snapshot)
+  history.push(entry)
+  toast.show(t('editor.clipDeleted', { name: snapshot.label || track.name }), {
+    duration: 6000,
+    action: { label: t('editor.undo'), run: () => { history.undoIfLatest(entry) } },
   })
-  if (!ok) return
-  removeClipLocal(track.id, clip.id)
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -667,6 +1275,11 @@ provide('editor-pxPerFrame', pxPerFrame)
 provide('editor-playhead',   playheadFrame)
 provide('editor-sources',    sources)
 provide('editor-viewport',   viewport)
+provide('editor-canvas',     canvasRef)
+provide('editor-readonly',   readonly)
+provide('editor-rejected',   rejectedEdit)
+provide('editor-snap',       { guide: snapGuide, targets: snapTargets })
+provide('editor-group',      { drag: groupDrag, membersFor: groupMembersFor, deltaBounds: groupDeltaBounds })
 </script>
 
 <template>
@@ -674,8 +1287,19 @@ provide('editor-viewport',   viewport)
 
     <!-- Loading is covered by TimelineLoadingScreen, raised in App.vue from the
          moment the route is entered — it outlives this component's chunk. -->
-    <div v-if="error" class="flex-1 flex items-center justify-center">
+    <div v-if="error" class="flex-1 flex flex-col items-center justify-center gap-4 px-4 text-center">
+      <Icon icon="mdi:timeline-alert-outline" class="size-10 text-muted-foreground/60" />
       <p class="text-sm text-destructive">{{ error }}</p>
+      <div class="flex items-center gap-2">
+        <Button variant="ghost" size="sm" @click="goBack">
+          <Icon icon="mdi:chevron-left" class="size-4" />
+          {{ $t('editor.back') }}
+        </Button>
+        <Button size="sm" :disabled="loading" @click="load">
+          <Icon icon="mdi:refresh" class="size-4" />
+          {{ $t('editor.retry') }}
+        </Button>
+      </div>
     </div>
 
     <!-- Editor -->
@@ -689,6 +1313,13 @@ provide('editor-viewport',   viewport)
         :audio-blocked="audioBlocked"
         :peers="sync.peers.value"
         :sync-connected="sync.connected.value"
+        :reconnecting="sync.reconnecting.value"
+        :can-undo="canUndo"
+        :can-redo="canRedo"
+        :readonly="readonly"
+        :transport-live="transportLive"
+        :room-playing="roomPlaying"
+        @update:transport-live="setLiveMode"
         @go-back="goBack"
         @zoom-in="zoomIn"
         @zoom-out="zoomOut"
@@ -698,6 +1329,9 @@ provide('editor-viewport',   viewport)
         @toggle-play="togglePlayback"
         @seek-start="seekStart"
         @seek-end="seekEnd"
+        @undo="undo"
+        @redo="redo"
+        @shortcuts="shortcutsOpen = true"
       />
 
       <div class="flex flex-1 overflow-hidden">
@@ -718,7 +1352,7 @@ provide('editor-viewport',   viewport)
             </span>
           </div>
 
-          <div ref="trackHeadersRef" class="flex-1 overflow-y-hidden relative">
+          <div ref="trackHeadersRef" class="flex-1 overflow-y-hidden relative" @wheel="onHeadersWheel">
             <!-- Reorder insertion line -->
             <div
               v-if="reorderDrag"
@@ -735,9 +1369,10 @@ provide('editor-viewport',   viewport)
               :muted="isTrackMuted(track)"
               :supports-audio="supportsAudio(track)"
               :volume="trackVolume(track)"
+              :readonly="readonly"
               :class="reorderDrag?.trackId === track.id ? 'opacity-60' : ''"
               @update:volume="setTrackVolume(track, $event)"
-              @select="selectTrack(track)"
+              @select="selectTrack(track, { toggle: true })"
               @reorder-start="startTrackReorder(track, $event)"
               @resize-start="startRowResize(track, $event)"
               @toggle-mute="toggleMute(track)"
@@ -749,15 +1384,25 @@ provide('editor-viewport',   viewport)
             <div v-if="trackList.length === 0" class="px-4 py-6 text-xs text-muted-foreground text-center">
               {{ $t('editor.noTracks') }}
             </div>
+
+            <!-- Directly under the bottom track. Scrolls with the headers, so the
+                 canvas reserves the same ADD_TRACK_ROW_PX below its lanes. -->
+            <button
+              v-if="!readonly"
+              class="border-b border-border px-3 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center gap-2 w-full"
+              :style="{ height: ADD_TRACK_ROW_PX + 'px' }"
+              @click="addTrackOpen = true"
+            >
+              <Icon icon="mdi:plus" class="size-4 shrink-0" />
+              {{ $t('editor.addTrack') }}
+            </button>
           </div>
 
-          <button
-            class="shrink-0 border-t border-border px-3 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center gap-2 w-full"
-            @click="addTrackOpen = true"
-          >
-            <Icon icon="mdi:plus" class="size-4 shrink-0" />
-            {{ $t('editor.addTrack') }}
-          </button>
+          <!-- API accounts in the room, pinned to the bottom of the tracks column.
+               Measured: the canvas reserves the same height below its lanes. -->
+          <div ref="deviceFooterRef" class="shrink-0">
+            <DeviceRow :peers="sync.peers.value" class="border-t border-border px-2 py-1.5" />
+          </div>
         </div>
 
         <!-- Sidebar width resize handle -->
@@ -779,11 +1424,21 @@ provide('editor-viewport',   viewport)
               @scrub="onScrubStart"
             />
 
-            <div class="relative" :style="{ minHeight: totalTracksHeight + 'px' }">
+            <!-- The extra space matches the add-track button and the API-account
+                 footer in the headers column, so both columns scroll the same
+                 distance and the bottom rows stay aligned. -->
+            <div class="relative" :style="{ minHeight: totalTracksHeight + (readonly ? 0 : ADD_TRACK_ROW_PX) + deviceFooterHeight + 'px' }">
               <!-- Playhead line -->
               <div
                 class="absolute top-0 bottom-0 w-px bg-primary/70 pointer-events-none z-10"
                 :style="{ left: playheadX + 'px' }"
+              />
+
+              <!-- Snap guide: where the dragged edge caught -->
+              <div
+                v-if="snapGuideX != null"
+                class="absolute top-0 bottom-0 w-px bg-amber-400 pointer-events-none z-40"
+                :style="{ left: snapGuideX + 'px' }"
               />
 
               <template v-for="track in orderedTracks" :key="track.id">
@@ -796,7 +1451,10 @@ provide('editor-viewport',   viewport)
                   :height="trackHeight(track)"
                   :selected="track.id === selectedTrackId"
                   :muted="isTrackMuted(track)"
-                  @seek="setPlayhead($event)"
+                  :selected-clip-ids="selectedClipIds"
+                  @select="onLaneClick(track)"
+                  @select-clip="(clip: EditorClip, mods?: ClipSelectMods) => selectClip(clip, mods)"
+                  @add-at="openAddClip(track, $event)"
                   @edit-clip="openEditClip(track, $event)"
                   @delete-clip="deleteClip(track, $event)"
                   @move-clip="moveClip(track, $event.clip, $event.position)"
@@ -810,7 +1468,10 @@ provide('editor-viewport',   viewport)
                   :height="trackHeight(track)"
                   :selected="track.id === selectedTrackId"
                   :muted="isTrackMuted(track)"
-                  @select="selectTrack(track)"
+                  :selected-clip-ids="selectedClipIds"
+                  @select="onLaneClick(track)"
+                  @select-clip="(clip: EditorClip, mods?: ClipSelectMods) => selectClip(clip, mods)"
+                  @add-at="openAddClip(track, $event)"
                   @edit-clip="openEditClip(track, $event)"
                   @delete-clip="deleteClip(track, $event)"
                   @move-clip="moveClip(track, $event.clip, $event.position)"
@@ -826,7 +1487,11 @@ provide('editor-viewport',   viewport)
                   :muted="isTrackMuted(track)"
                   :name-display="settingsFor(track).nameDisplay"
                   :clip-display="settingsFor(track).clipDisplay"
-                  @select="selectTrack(track)"
+                  :selected-clip-ids="selectedClipIds"
+                  :empty-hint="readonly || track.isLocked ? '' : $t('editor.laneEmptyHint')"
+                  @select="onLaneClick(track)"
+                  @select-clip="(clip: EditorClip, mods?: ClipSelectMods) => selectClip(clip, mods)"
+                  @add-at="openAddClip(track, $event)"
                   @edit-clip="openEditClip(track, $event)"
                   @delete-clip="deleteClip(track, $event)"
                   @crop-clip="cropClip(track, $event.clip, $event.fields)"
@@ -846,7 +1511,7 @@ provide('editor-viewport',   viewport)
 
       <!-- Source switcher: floats bottom-center while a source-set track is selected -->
       <SourceBar
-        v-if="selectedTrack && selectedTrackHasSourceSet"
+        v-if="selectedTrack && selectedTrackHasSourceSet && !readonly"
         :track="selectedTrack"
         :sources="selectedTrackSources"
         :tc="framesToTC(playheadFrame, timeline.frameRate)"
@@ -882,6 +1547,7 @@ provide('editor-viewport',   viewport)
       :track-sources="clipDialog.trackSources"
       :default-position="clipDialog.defaultPosition"
       :timeline="timeline"
+      :playhead-frame="playheadFrame"
       @update:open="!$event && closeClipDialog()"
       @saved="onClipSaved"
     />
@@ -891,9 +1557,13 @@ provide('editor-viewport',   viewport)
       :track="bpmDialog.track"
       :clip="bpmDialog.clip"
       :default-position="bpmDialog.defaultPosition"
+      :frame-rate="timeline?.frameRate ?? 25"
+      :playhead-frame="playheadFrame"
       @update:open="bpmDialog = { ...bpmDialog, open: $event }"
       @saved="onBpmClipSaved"
     />
+
+    <ShortcutsDialog v-model:open="shortcutsOpen" />
 
     <ConfirmDialog
       :open="deleteTrackTarget !== null"

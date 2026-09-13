@@ -134,6 +134,8 @@ export interface TimelineBootstrap {
   tracks: EditorTrack[]
   trackTypes: TrackType[]
   sources: Source[]
+  /** Whether the caller holds EDIT_TIMELINE. The API enforces it either way. */
+  canEdit?: boolean
 }
 
 /** The complete, resolved behaviour for one track. */

@@ -48,6 +48,13 @@ export interface PlaybackDeps {
   pxPerFrame: Ref<number>
   canvasRef: Ref<HTMLElement | null>
   sendTransport: (action: TransportAction, frame?: number) => void
+  /**
+   * Live: the transport is the room's — play/pause/seek go to the server and
+   * the room's state drives this playhead. Local: the same controls drive a
+   * private playhead that neither sends nor listens. Change it through
+   * `setLiveMode`, which also catches up with the room on the way back.
+   */
+  live: Ref<boolean>
 }
 
 /** A debounced call that also reports whether a trailing run is queued. */
@@ -69,7 +76,7 @@ const DRIFT_DEADBAND_FRAMES = 0.25
  *
  */
 export function usePlayback({
-  timeline, trackList, trackTypes, mutedTracks, trackVolumes, pxPerFrame, canvasRef, sendTransport,
+  timeline, trackList, trackTypes, mutedTracks, trackVolumes, pxPerFrame, canvasRef, sendTransport, live,
 }: PlaybackDeps) {
   // Stored as float for smooth animation; TC display rounds it.
   const playheadFrame = ref(0)
@@ -81,6 +88,14 @@ export function usePlayback({
    * explained rather than looking broken.
    */
   const audioBlocked  = ref(false)
+
+  /**
+   * The room's last transport state, kept even while local — so the toolbar can
+   * show that the live transport is running, and so switching back to live can
+   * land on the room's position at once instead of waiting for its next command.
+   */
+  const roomPlaying = ref(false)
+  let _roomState: TransportState | null = null
 
   watch(timeline, tl => { if (tl) playheadFrame.value = tl.startFrame }, { immediate: true })
 
@@ -245,15 +260,19 @@ export function usePlayback({
     // position. Only an active (playing) transport is shared: the seek goes to
     // the server as a command (the server re-anchors its clock and echoes the
     // authoritative state back), while local audio follows optimistically.
+    // In local mode the seek stays here, and only the audio has to follow.
     if (broadcast && isPlaying.value) {
-      _serverAnchor = null   // stale until the server echoes the new anchor
-      sendTransport('seek', playheadFrame.value)
+      if (live.value) {
+        _serverAnchor = null   // stale until the server echoes the new anchor
+        sendTransport('seek', playheadFrame.value)
+      }
       scheduleResync()
     }
   }
 
   // Home/End: if the shared transport is running this stops it for everyone
-  // (broadcast), then the jump itself is a private stopped-state seek.
+  // (broadcast; local mode stops only this client), then the jump itself is a
+  // private stopped-state seek.
   function seekStart() {
     stopPlayback()
     setPlayhead(timeline.value?.startFrame ?? 0)
@@ -289,7 +308,7 @@ export function usePlayback({
     startAudioPlayback(currentClips(), playheadFrame.value, fps)
     _startBehaviors(fps)
 
-    if (broadcast) sendTransport('play', playheadFrame.value)
+    if (broadcast && live.value) sendTransport('play', playheadFrame.value)
   }
 
   function stopPlayback(broadcast = true) {
@@ -308,7 +327,7 @@ export function usePlayback({
     _stopBehaviors()
 
     // The server computes the authoritative stop frame from ITS clock.
-    if (broadcast && wasPlaying) sendTransport('pause')
+    if (broadcast && wasPlaying && live.value) sendTransport('pause')
   }
 
   function togglePlayback() {
@@ -392,7 +411,13 @@ export function usePlayback({
    * ends the shared run at the server-computed frame but is ignored when
    * we're already stopped — it must never yank a privately-seeking user.
    */
-  function applyTransportState({ playing, frame, frameRate, anchorLocalMs }: TransportState): void {
+  function applyTransportState(state: TransportState): void {
+    _roomState = state
+    roomPlaying.value = state.playing
+    // A local playhead neither follows the room nor is followed by it.
+    if (!live.value) return
+
+    const { playing, frame, frameRate, anchorLocalMs } = state
     if (!timeline.value) return
     const fps = frameRate || parseFloat(timeline.value.frameRate)
 
@@ -450,10 +475,34 @@ export function usePlayback({
 
   onScopeDispose(stopBlockedWatch)
 
+  /**
+   * Switch between the live transport and a local one.
+   *
+   * Going local detaches without interrupting: a running playhead keeps going,
+   * just no longer steered by the room or steering it. Going live hands the
+   * playhead back to the room as it is right now — playing from the room's
+   * position if it is running, stopped if it isn't. A local run left going
+   * would otherwise look live while matching nobody.
+   */
+  function setLiveMode(on: boolean): void {
+    if (live.value === on) return
+    live.value = on
+    if (!on) { _serverAnchor = null; return }
+    const room = _roomState
+    if (room?.playing) applyTransportState(room)
+    else if (isPlaying.value) stopPlayback(false)
+  }
+
+  /** The connection dropped: what the room was doing is no longer known. */
+  function clearRoomState(): void {
+    _roomState = null
+    roomPlaying.value = false
+  }
+
   return {
-    playheadFrame, playheadX, isPlaying, audioBlocked,
+    playheadFrame, playheadX, isPlaying, audioBlocked, roomPlaying,
     setPlayhead, seekStart, seekEnd,
     startPlayback, stopPlayback, togglePlayback,
-    applyTransportState,
+    applyTransportState, setLiveMode, clearRoomState,
   }
 }

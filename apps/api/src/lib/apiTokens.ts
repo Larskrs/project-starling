@@ -106,6 +106,7 @@ export interface TokenPrincipal {
   productionId: string;
   roleId: string | null;
   label: string;
+  profileImageId: string | null;
   createdBy: string | null;
   expiresAt: Date;
   /** Already masked — never widen from this. */
@@ -198,6 +199,7 @@ export async function verifyApiToken(raw: string): Promise<TokenResult> {
       productionId: cached.row.productionId,
       roleId:       cached.row.roleId,
       label:        cached.row.label,
+      profileImageId: cached.row.profileImageId,
       createdBy:    cached.row.createdBy,
       expiresAt:    cached.row.expiresAt,
       permissions:  cached.permissions,
@@ -259,6 +261,7 @@ export async function listProductionTokens(productionId: string) {
     .select({
       id:         apiTokens.id,
       label:      apiTokens.label,
+      profileImageId: apiTokens.profileImageId,
       roleId:     apiTokens.roleId,
       roleName:   productionRoles.name,
       roleHue:    productionRoles.hue,

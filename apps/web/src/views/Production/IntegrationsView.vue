@@ -2,7 +2,8 @@
 import { inject, ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
-import { Button, Skeleton, Spinner, ConfirmDialog, EmptyState, useToast } from '@starling/ui'
+import { Avatar, Button, Skeleton, Spinner, ConfirmDialog, EmptyState, useToast } from '@starling/ui'
+import ImageCropper from '@starling/ui/ImageCropper'
 import { useApi } from '../../composables/useApi'
 import NewTokenDialog from './components/NewTokenDialog.vue'
 import { expiryState, lastUsedLabel, permissionKey } from './lib/tokenFormat'
@@ -124,6 +125,41 @@ async function confirmRevoke() {
   void refreshEvents()
 }
 
+// ── Profile image ─────────────────────────────────────────────────────────────
+// Picked per row, cropped square, then uploaded; the device shows as this image
+// wherever it appears in presence.
+const cropFile       = ref(null)
+const cropToken      = ref(null)
+const uploadingImage = ref(null)
+
+function onImagePick(token, e) {
+  const f = e.target.files?.[0]
+  if (f) { cropFile.value = f; cropToken.value = token }
+  e.target.value = ''
+}
+
+function onCropCancel() {
+  cropFile.value  = null
+  cropToken.value = null
+}
+
+async function onCropped(blob) {
+  const token = cropToken.value
+  onCropCancel()
+  if (!token) return
+  uploadingImage.value = token.id
+
+  const fd = new FormData()
+  fd.append('file', new File([blob], 'image.jpg', { type: 'image/jpeg' }))
+  const { ok, data: res, error: err } = await $fetch(`${base.value}/${token.id}/profile`, {
+    method: 'POST', body: fd, silent: true,
+  })
+  uploadingImage.value = null
+  if (!ok) { toast.error(err ?? t('integrations.imageUploadFailed')); return }
+
+  tokens.value = tokens.value.map(x => x.id === token.id ? { ...x, profileImageId: res.fileId } : x)
+}
+
 async function refreshEvents() {
   const { ok, data: res } = await $fetch(`${base.value}/events?limit=30`, { silent: true })
   if (ok) events.value = res.events ?? []
@@ -219,9 +255,32 @@ function formatTime(iso) {
           :key="token.id"
           class="rounded-xl border border-border px-5 py-4 flex items-start gap-4"
         >
-          <div class="size-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-            <Icon icon="mdi:transit-connection-variant" class="size-4.5 text-muted-foreground" />
-          </div>
+          <!-- Profile image: click to pick, crop and upload -->
+          <label
+            class="relative size-8 shrink-0 cursor-pointer group"
+            :title="$t('integrations.changeImage')"
+          >
+            <Avatar :id="token.profileImageId" :alt="token.label" class="size-8 rounded-lg bg-muted">
+              <Icon icon="mdi:transit-connection-variant" class="size-4.5 text-muted-foreground" />
+            </Avatar>
+            <div
+              class="absolute inset-0 rounded-lg flex items-center justify-center transition-colors"
+              :class="uploadingImage === token.id ? 'bg-black/45' : 'bg-black/0 group-hover:bg-black/45'"
+            >
+              <Icon
+                :icon="uploadingImage === token.id ? 'mdi:loading' : 'mdi:camera-outline'"
+                class="size-3.5 text-white transition-opacity"
+                :class="uploadingImage === token.id ? 'animate-spin opacity-100' : 'opacity-0 group-hover:opacity-100'"
+              />
+            </div>
+            <input
+              type="file"
+              accept="image/*"
+              class="sr-only"
+              :disabled="uploadingImage === token.id"
+              @change="onImagePick(token, $event)"
+            />
+          </label>
 
           <div class="flex-1 min-w-0 space-y-1">
             <div class="flex items-center gap-2 flex-wrap">
@@ -306,6 +365,14 @@ function formatTime(iso) {
         </li>
       </ul>
     </div>
+
+    <ImageCropper
+      :file="cropFile"
+      :aspect-ratio="1"
+      :max-output="600"
+      @crop="onCropped"
+      @cancel="onCropCancel"
+    />
 
     <NewTokenDialog
       :open="secretDialog.open"

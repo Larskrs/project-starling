@@ -53,6 +53,15 @@ const STYLES = {
           />
           <p class="flex-1 text-sm leading-snug">{{ toast.message }}</p>
           <button
+            v-if="toast.action"
+            type="button"
+            class="shrink-0 -my-0.5 rounded-md px-2 py-0.5 text-sm font-semibold text-primary hover:bg-accent transition-colors
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            @click="toast.action.run(); dismiss(toast.id)"
+          >
+            {{ toast.action.label }}
+          </button>
+          <button
             type="button"
             class="shrink-0 -mr-1 -mt-0.5 p-1 rounded text-muted-foreground hover:text-foreground transition-colors
                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring

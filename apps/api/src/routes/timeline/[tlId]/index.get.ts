@@ -3,9 +3,11 @@ import { db, tracks, trackTypes, sources, clips, storageFiles } from '@starling/
 import { defineEventHandler } from '../../../lib/handler.js';
 import { requireTimelineParam } from '../../../lib/production.js';
 import { trackActivity } from '../../../lib/activity.js';
+import { can } from '../../../lib/permissions.js';
+import { Permission } from '@starling/auth/permissions';
 
 export default defineEventHandler(async (event) => {
-  const { auth, principal, company, production, timeline } = await requireTimelineParam(event);
+  const { auth, principal, company, production, timeline, privileged, rolePermissions } = await requireTimelineParam(event);
 
   // Bootstrapping a timeline counts as opening it — covers clients that read
   // the timeline without joining the socket room.
@@ -84,5 +86,8 @@ export default defineEventHandler(async (event) => {
     tracks:     trackRows.map(tr => ({ ...tr, clips: clipsByTrack[tr.id] ?? [] })),
     trackTypes: trackTypeRows,
     sources:    sourceRows,
+    // Lets the editor drop its editing affordances for view-only members
+    // instead of offering drags and menus that the mutation routes refuse.
+    canEdit:    privileged || can(auth.role, rolePermissions, Permission.EDIT_TIMELINE),
   };
 });

@@ -75,6 +75,7 @@ export default defineEventHandler(async (event) => {
     token: {
       id:          issued.id,
       label:       body.label.trim(),
+      profileImageId: null,
       roleId:      role.id,
       roleName:    role.name,
       roleHue:     role.hue,

@@ -2,6 +2,7 @@ import { Server as SocketIOServer, type Socket } from 'socket.io';
 import type { Server as HttpServer } from 'node:http';
 import { eq } from 'drizzle-orm';
 import { db, users } from '@starling/db';
+import { TOKEN_PRESENCE_PREFIX } from '@starling/realtime';
 import { sessionFromCookies } from './session.js';
 import { verifyApiToken, recordTokenEvent } from './apiTokens.js';
 import { setupTimelineSockets } from './timelineSockets.js';
@@ -75,14 +76,8 @@ type ChatSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<stri
 // Resolves the session cookie to a user and stores it on socket.data.
 // Used by the root (chat) namespace and the /timeline namespace.
 
-/**
- * Presence id for a token, namespaced so it can never collide with a user id.
- *
- * Without this a desk would join under the id of whoever issued it: it would
- * collapse into that person's avatar in the presence list, and would be
- * announced as leaving the moment they closed a tab.
- */
-export const TOKEN_PRESENCE_PREFIX = 'token:';
+// A token's presence id is `TOKEN_PRESENCE_PREFIX` + its id — declared in
+// @starling/realtime, because clients use it to list devices apart from people.
 
 export async function socketAuth(socket: Socket, next: (err?: Error) => void): Promise<void> {
   try {
@@ -107,7 +102,7 @@ export async function socketAuth(socket: Socket, next: (err?: Error) => void): P
       (socket.data as SocketData).user = {
         id:            `${TOKEN_PRESENCE_PREFIX}${p.tokenId}`,
         name:          p.label,
-        avatarImageId: null,
+        avatarImageId: p.profileImageId,
         createdAt:     new Date(),
         // Pinned to 'user': can() short-circuits on 'admin', and a token must
         // never inherit the global role of whoever issued it.

@@ -379,6 +379,8 @@ export const apiTokens = pgTable('api_tokens', {
   // the safe direction for a credential to fail in.
   roleId:       uuid('role_id').references(() => productionRoles.id, { onDelete: 'set null' }),
   label:        text('label').notNull(),
+  /** Shown wherever the device appears (presence, the integrations page). */
+  profileImageId: uuid('profile_image_id'),
   /** SHA-256 of the secret half, hex. The plaintext is never stored. */
   tokenHash:    text('token_hash').notNull(),
   /** Who issued it. Nullable so deleting a person does not delete the desk. */

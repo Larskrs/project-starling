@@ -25,17 +25,24 @@ export interface TransportState extends PlayheadAnchor {
   anchorLocalMs: number
 }
 
+/** One person in the room, as the API's presence payload describes them. */
 export interface Peer {
-  userId: string
-  firstName?: string
-  lastName?: string
-  profileImageId?: string | null
+  id: string
+  name: string
+  avatarImageId?: string | null
+  createdAt?: string
 }
 
 export interface TimelineSyncOptions {
   onClipChange?: (change: ClipChange) => void
   onTrackChange?: (change: TrackChange) => void
   onTransport?: (state: TransportState) => void
+  /**
+   * The socket came back after a drop. Relays sent while we were away are gone
+   * for good — the room does not replay them — so the caller must re-read the
+   * timeline or keep editing a stale copy of it.
+   */
+  onReconnect?: () => void
 }
 
 /**
@@ -58,12 +65,15 @@ export interface TimelineSyncOptions {
  *     is where the transport is right now, with the command's network delay
  *     cancelled out.
  */
-export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: TimelineSyncOptions = {}) {
+export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onReconnect }: TimelineSyncOptions = {}) {
   const connected = ref(false)
+  /** Was connected, lost it, and is trying to get back — not the initial connect. */
+  const reconnecting = ref(false)
   const peers     = ref<Peer[]>([])   // everyone in the room, including self
 
   let socket: Socket | null = null
   let timelineId: string | null = null
+  let everConnected = false
 
   // ── Clock sync ──────────────────────────────────────────────────────────────
   // NTP-style: a short burst of pings estimates the offset between the server
@@ -100,7 +110,10 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
 
       const active = socket
       active.on('connect', () => {
-        connected.value = true
+        connected.value    = true
+        reconnecting.value = false
+        if (everConnected) onReconnect?.()
+        everConnected = true
         // Every REST mutation now carries this id, so the server can relay the
         // write to the room WITHOUT echoing it back to us.
         setLiveSocketId(active.id ?? null)
@@ -110,8 +123,10 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
         syncClock()
         if (timelineId) active.emit(TimelineEvent.join, { timelineId })
       })
-      active.on('disconnect', () => {
+      active.on('disconnect', (reason: string) => {
         connected.value = false
+        // Our own leave() is not a connection problem worth a banner.
+        reconnecting.value = everConnected && reason !== 'io client disconnect'
         setLiveSocketId(null)
         peers.value = []
         // An anchor held from before the drop describes a room we are no longer
@@ -139,7 +154,9 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
     socket?.disconnect()
     socket          = null
     timelineId      = null
+    everConnected   = false
     connected.value = false
+    reconnecting.value = false
     peers.value     = []
   }
 
@@ -186,5 +203,5 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport }: Ti
     }, SEEK_THROTTLE_MS - (now - _lastSeekSent))
   }
 
-  return { connected, peers, join, leave, sendClipChange, sendTrackChange, sendTransport }
+  return { connected, reconnecting, peers, join, leave, sendClipChange, sendTrackChange, sendTransport }
 }

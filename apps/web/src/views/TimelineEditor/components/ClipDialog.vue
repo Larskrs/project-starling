@@ -4,8 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import { Button, FormField, Input, SplitDialog } from '@starling/ui'
 import HuePicker from '../../Production/components/HuePicker.vue'
+import TimecodeInput from './TimecodeInput.vue'
 import { SelectFileDialog } from '../../../components/storage'
 import { useApi } from '../../../composables/useApi'
+import { framesToTC } from '../lib/editorUtils'
 import type { Timeline } from '../../../types/api'
 import type { EditorClip, EditorTrack, Source } from '../../../types/timeline'
 import type { StorageFile } from '../../../types/storage'
@@ -19,8 +21,10 @@ const props = withDefaults(defineProps<{
   trackSources?: Source[]
   defaultPosition?: number
   timeline?: Timeline | null
+  /** Where the playhead is, for the "use playhead" shortcut. */
+  playheadFrame?: number
 }>(), {
-  track: null, clip: null, trackSources: () => [], defaultPosition: 0, timeline: null,
+  track: null, clip: null, trackSources: () => [], defaultPosition: 0, timeline: null, playheadFrame: 0,
 })
 
 const emit = defineEmits<{
@@ -40,6 +44,12 @@ const fileId     = ref<string | null>(null)
 const hue        = ref<number | null>(null)   // null = inherit the track type's hue
 const loading    = ref(false)
 const error      = ref('')
+
+const fps = computed(() => props.timeline?.frameRate ?? 25)
+
+// Each timecode field reports whether its text parses; any bad one blocks save.
+const tcValid   = ref({ position: true, mediaStart: true, mediaEnd: true })
+const tcInvalid = computed(() => !Object.values(tcValid.value).every(Boolean))
 
 // HuePicker needs a number; null shows the neutral default until the user drags.
 const hueProxy = computed({
@@ -72,10 +82,13 @@ const endFrameError = computed(() =>
     : '',
 )
 
+const durationTC = computed(() => framesToTC(Math.max(0, mediaEnd.value - mediaStart.value), fps.value))
+
 watch(() => props.open, async (open) => {
   if (!open) return
   error.value   = ''
   loading.value = false
+  tcValid.value = { position: true, mediaStart: true, mediaEnd: true }
 
   const editing = props.clip
   if (editing) {
@@ -136,8 +149,13 @@ function selectSource(src: Source) {
   submit()
 }
 
+function usePlayhead() {
+  position.value = Math.max(0, Math.round(props.playheadFrame))
+  tcValid.value  = { ...tcValid.value, position: true }
+}
+
 async function submit() {
-  if (endFrameError.value) return
+  if (endFrameError.value || tcInvalid.value) return
   loading.value = true
   error.value   = ''
 
@@ -165,14 +183,19 @@ async function submit() {
     ...modeFields,
   }
 
-  const { ok, data, error: err } = await $fetch(url, {
+  const { ok, data, error: err } = await $fetch<EditorClip>(url, {
     method: isEdit.value ? 'PATCH' : 'POST',
     json:   body,
     silent: true,
   })
   loading.value = false
   if (!ok) { error.value = err ?? t('editor.failedToSaveClip'); return }
-  emit('saved', data)
+  // The API row has no fileType (only the bootstrap joins it), and without one
+  // a new audio or image clip would render blank until the next reload.
+  const fileType = data.fileId
+    ? (pickedFile.value?.id === data.fileId ? pickedFile.value.type : props.clip?.fileType ?? null)
+    : null
+  emit('saved', { ...data, fileType })
 }
 </script>
 
@@ -184,7 +207,7 @@ async function submit() {
     :submit-label="isEdit ? $t('editor.save') : $t('editor.addClip')"
     :cancel-label="$t('editor.cancel')"
     :loading="loading"
-    :disabled="!!endFrameError"
+    :disabled="!!endFrameError || tcInvalid"
     :error="error"
     :split="hasDetail"
     @update:open="!$event && close()"
@@ -196,7 +219,28 @@ async function submit() {
       </FormField>
 
       <FormField for="cd-pos" :label="$t('editor.clipPosition')">
-        <Input id="cd-pos" v-model.number="position" type="number" min="0" step="1" />
+        <div class="flex items-center gap-2">
+          <div class="flex-1 min-w-0">
+            <TimecodeInput
+              id="cd-pos"
+              v-model="position"
+              :frame-rate="fps"
+              @validity="tcValid = { ...tcValid, position: $event }"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            class="shrink-0 text-muted-foreground"
+            :title="$t('editor.usePlayheadHint')"
+            @click="usePlayhead"
+          >
+            <Icon icon="mdi:ray-vertex" class="size-4" />
+            {{ $t('editor.usePlayhead') }}
+          </Button>
+        </div>
+        <p v-if="!tcValid.position" class="mt-1 text-xs text-destructive">{{ $t('editor.invalidTimecode') }}</p>
       </FormField>
 
       <!-- Hue override (null = inherit the track type's hue) -->
@@ -279,21 +323,32 @@ async function submit() {
         </FormField>
 
         <div class="flex gap-3">
-          <FormField for="cd-ms" :label="$t('editor.mediaStart')" class="flex-1">
-            <Input id="cd-ms" v-model.number="mediaStart" type="number" min="0" step="1" />
+          <FormField for="cd-ms" :label="$t('editor.mediaStart')" class="flex-1 min-w-0">
+            <TimecodeInput
+              id="cd-ms"
+              v-model="mediaStart"
+              :frame-rate="fps"
+              @validity="tcValid = { ...tcValid, mediaStart: $event }"
+            />
           </FormField>
-          <FormField for="cd-end" :label="$t('editor.mediaEnd')" class="flex-1">
-            <Input
+          <FormField for="cd-end" :label="$t('editor.mediaEnd')" class="flex-1 min-w-0">
+            <TimecodeInput
               id="cd-end"
-              v-model.number="mediaEnd"
-              type="number"
-              min="1"
-              step="1"
+              v-model="mediaEnd"
+              :frame-rate="fps"
+              :min="1"
               :class="endFrameError ? 'border-destructive' : ''"
+              @validity="tcValid = { ...tcValid, mediaEnd: $event }"
             />
           </FormField>
         </div>
-        <p v-if="endFrameError" class="-mt-2 text-xs text-destructive">{{ endFrameError }}</p>
+        <p v-if="!tcValid.mediaStart || !tcValid.mediaEnd" class="-mt-2 text-xs text-destructive">
+          {{ $t('editor.invalidTimecode') }}
+        </p>
+        <p v-else-if="endFrameError" class="-mt-2 text-xs text-destructive">{{ endFrameError }}</p>
+        <p v-else class="-mt-2 text-xs text-muted-foreground">
+          {{ $t('editor.clipDuration') }}: <span class="font-mono tabular-nums">{{ durationTC }}</span>
+        </p>
       </template>
     </template>
   </SplitDialog>

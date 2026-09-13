@@ -27,6 +27,8 @@ const props = withDefaults(defineProps<{
   supportsAudio?: boolean
   /** Client-local level in 0..1. Ignored when the track has no audio. */
   volume?: number
+  /** Viewer without edit rights: only the local mix controls remain. */
+  readonly?: boolean
 }>(), {
   height: 56,
   selected: false,
@@ -34,6 +36,7 @@ const props = withDefaults(defineProps<{
   muted: false,
   supportsAudio: true,
   volume: 1,
+  readonly: false,
 })
 
 // reorder-start fires on any row pointerdown; the parent only enters reorder
@@ -240,32 +243,34 @@ const volumePercent = computed({
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end">
-          <DropdownMenuItem icon="mdi:plus" :disabled="track.isLocked" @click="$emit('add-clip')">
+          <DropdownMenuItem v-if="!readonly" icon="mdi:plus" :disabled="track.isLocked" @click="$emit('add-clip')">
             {{ $t('editor.addClip') }}
           </DropdownMenuItem>
           <DropdownMenuItem :icon="toggleIcon" @click="$emit('toggle-mute')">
             {{ $t(toggleLabel) }}
           </DropdownMenuItem>
-          <DropdownMenuItem
-            :icon="track.isLocked ? 'mdi:lock-open-outline' : 'mdi:lock'"
-            @click="$emit('toggle-lock')"
-          >
-            {{ track.isLocked ? $t('editor.unlock') : $t('editor.lock') }}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem icon="mdi:cog-outline" :disabled="track.isLocked" @click="$emit('settings')">
-            {{ $t('editor.trackSettings') }}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <!-- Deleting takes every clip with it — exactly what the lock guards -->
-          <DropdownMenuItem
-            icon="mdi:trash-can-outline"
-            destructive
-            :disabled="track.isLocked"
-            @click="$emit('delete')"
-          >
-            {{ $t('editor.deleteTrack') }}
-          </DropdownMenuItem>
+          <template v-if="!readonly">
+            <DropdownMenuItem
+              :icon="track.isLocked ? 'mdi:lock-open-outline' : 'mdi:lock'"
+              @click="$emit('toggle-lock')"
+            >
+              {{ track.isLocked ? $t('editor.unlock') : $t('editor.lock') }}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem icon="mdi:cog-outline" :disabled="track.isLocked" @click="$emit('settings')">
+              {{ $t('editor.trackSettings') }}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <!-- Deleting takes every clip with it — exactly what the lock guards -->
+            <DropdownMenuItem
+              icon="mdi:trash-can-outline"
+              destructive
+              :disabled="track.isLocked"
+              @click="$emit('delete')"
+            >
+              {{ $t('editor.deleteTrack') }}
+            </DropdownMenuItem>
+          </template>
         </DropdownMenuContent>
       </DropdownMenuRoot>
     </div>

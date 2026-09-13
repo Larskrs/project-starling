@@ -407,6 +407,7 @@ Recorded at:
 | --- | --- |
 | `GET /production/[pid]/tokens` | live tokens, newest first. Never returns a hash. `permissions` is reported **masked**, with `withheld` naming what the role granted but the token cannot hold — the listing must not imply a device has powers it was never given |
 | `POST /production/[pid]/tokens` | mints one. The plaintext secret is in **this response and nowhere else, ever** — only the hash is stored |
+| `POST /production/[pid]/tokens/[tokenId]/profile` | multipart `file` (image) → sets the token's profile image, replacing any previous one. It is the device's avatar in presence; the cached token row is dropped so the next connection picks it up |
 | `DELETE /production/[pid]/tokens/[tokenId]` | revokes. Scoped by production as well as id, so an administrator of one production cannot revoke another's by guessing a uuid |
 | `GET /production/[pid]/tokens/events` | the audit trail, newest first. Rejections are included deliberately: a burst of them against one address is the most useful thing this log can show |
 
@@ -435,7 +436,7 @@ Timelines are the one production resource kept at the top level (create/list by 
 | Method + path | Access | Body highlights |
 | --- | --- | --- |
 | `GET/POST /timelines?pid=…` | POST: `MANAGE_TIMELINES` | `{ name ≤128, frameRate (db enum: 23.976…60, from frameRateEnum), startFrame, endFrame > startFrame, ltcOffsetFrames }` |
-| `GET /timeline/[tlId]` | access | **The editor bootstrap** (also records an `open` activity row): `{ timeline, tracks: [{ …track, typeName, typeColor, sourceName/ShortName/Hue, clips: [{ …clip, fileType }] }], trackTypes, sources }` |
+| `GET /timeline/[tlId]` | access | **The editor bootstrap** (also records an `open` activity row): `{ timeline, tracks: [{ …track, typeName, typeColor, sourceName/ShortName/Hue, clips: [{ …clip, fileType }] }], trackTypes, sources, canEdit }` — `canEdit` is whether the caller holds `EDIT_TIMELINE` |
 | `PATCH/DELETE /timeline/[tlId]` | `MANAGE_TIMELINES` | PATCH bumps `updatedAt`. DELETE also purges the timeline's profile image (hidden `storageFiles` row + disk versions — nothing cascades to it) |
 | `POST /timeline/[tlId]/profile` | `MANAGE_TIMELINES` | Timeline profile image — multipart `file`, image mimes only. Same flow as the company/production profile routes but **no `slot` field**: a timeline has one image, no banner. Replaces and purges the previous image, writes quality versions to `storage/c/{companyId}/p/{productionId}/t/{timelineId}/profile/{fileId}@{quality}.webp`, sets `timelines.profileImageId`. Returns `{ fileId, versions }`; clients render it through `/storage/[id]/serve?quality=…` like every other image |
 | `GET/POST /timeline/[tlId]/tracks` | `EDIT_TIMELINE` (GET: access) | create track (typeId, sourceId?, name, mode, sortOrder…) — typeId verified same-production; `sortOrder` defaults to **max+1** (append). Track listings (here and in the editor bootstrap) are ordered by `sortOrder, createdAt` |
