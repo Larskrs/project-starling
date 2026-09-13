@@ -3,6 +3,8 @@
  *
  *     CINO_TOKEN=cino_svc_… CINO_TIMELINE=<uuid> npm start -w @starling/integration-test
  *     node src/index.ts --timeline <uuid> --url http://localhost:3000
+ *
+ * The URL defaults to production, https://cino.no.
  */
 
 export interface Config {
@@ -33,7 +35,7 @@ export function resolveConfig(
 ): Config {
   const args = parseArgs(argv);
 
-  const baseUrl    = args.url      ?? env.CINO_URL      ?? 'http://localhost:3000';
+  const rawUrl     = args.url      ?? env.CINO_URL      ?? 'https://cino.no';
   const token      = args.token    ?? env.CINO_TOKEN    ?? '';
   const timelineId = args.timeline ?? env.CINO_TIMELINE ?? '';
 
@@ -50,6 +52,14 @@ export function resolveConfig(
   if (!/^cino_svc_[0-9a-f]{32}_/.test(token)) {
     throw new ConfigError('That does not look like a Cino API token — expected cino_svc_…');
   }
+
+  // The same origin serves REST and the socket, and fetch() only speaks http(s).
+  // A ws(s):// URL is accepted as the natural thing to type and mapped back;
+  // socket.io picks the socket scheme itself.
+  if (!/^(https?|wss?):\/\//.test(rawUrl)) {
+    throw new ConfigError(`Invalid URL "${rawUrl}" — expected https://host or http://host:port`);
+  }
+  const baseUrl = rawUrl.replace(/^ws(s?):\/\//, 'http$1://');
 
   // Trailing slashes turn every URL into a double slash, which some proxies
   // treat as a different path.

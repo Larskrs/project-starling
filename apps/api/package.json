@@ -9,7 +9,7 @@
     "build": "npm run clean && npm run docs:build && tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx src/lib/docs.test.ts && tsx src/lib/docsRender.test.ts",
+    "test": "tsx src/lib/docs.test.ts && tsx src/lib/docsRender.test.ts && tsx src/lib/clockResync.test.ts",
     "docs:build": "tsx scripts/buildDocs.ts"
   },
   "dependencies": {

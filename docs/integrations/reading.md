@@ -6,8 +6,7 @@ order: 3
 
 # Reading a timeline
 
-> Part of the [integration guide](./index.md). The token system is specified
-> but not yet live on the server.
+> Part of the [integration guide](./index.md).
 
 Always bootstrap over REST before trusting a single socket event. The socket
 carries changes, not state. A client that builds its model from events alone is
@@ -71,7 +70,9 @@ async function bootstrap() {
 
 const socket = io(`${BASE}/timeline`, {
   path: '/socket',
-  transports: ['websocket'],
+  // Polling first, upgrading to WebSocket when the network allows it. cino.no's
+  // proxy does not forward the upgrade, so websocket-only never connects there.
+  transports: ['polling', 'websocket'],
   auth: { token: process.env.CINO_TOKEN },
 });
 
@@ -160,23 +161,28 @@ The server owns the transport clock. Clients never stream positions. They
 receive an **anchor** and derive the rest:
 
 ```js
+const clock = createServerClock(socket);   // from Clocks and timing
 let transport = null;
-socket.on('transport:state', (state) => { transport = state; });
+socket.on('transport:state', (state) => { transport = state; });   // keep it as it arrived
 
 function currentFrame() {
   if (!transport) return null;
   if (!transport.playing) return transport.frame;
-  return transport.frame + ((Date.now() - transport.at) / 1000) * transport.frameRate;
+  if (!clock.synced) return null;          // no server time measured yet
+  return transport.frame + ((clock.now() - transport.at) / 1000) * transport.frameRate;
 }
 ```
 
 This is why an anchor never goes stale, and why a device connecting mid-show
 lands on the right frame immediately.
 
-The one refinement worth adding is a clock offset. `transport.at` is *server*
-time, so a device whose own clock is wrong will be wrong by the same amount.
-Measure the offset with a few `time:ping` round trips at join, the way the web
-client does.
+**`transport.at` is a reading of the server's clock, so compare it with the
+server's clock.** Putting `Date.now()` in place of `clock.now()` makes the
+playhead wrong by however far off the device's own clock is. A few seconds off
+is common, and so is minutes on a box that has never been near a time server.
+[Clocks and timing](./timing.md) covers measuring server time with `time:ping`
+and keeping it right through a show. It is not optional for anything that fires
+on a frame.
 
 If you only need to know which cue is live, prefer `clip:active` over doing your
 own frame maths. The server walks the clip boundaries and tells you when the
@@ -188,4 +194,8 @@ socket.on('clip:active', ({ trackId, clipId, label, frame }) => {
 });
 ```
 
-Next: [writing changes](./writing.md).
+It reports a change that has already happened, so it arrives slightly after the
+frame it names. That is fine for a display. For cues that must land on the
+frame, see [Clocks and timing](./timing.md).
+
+Next: [clocks and timing](./timing.md).

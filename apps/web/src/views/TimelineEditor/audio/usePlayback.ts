@@ -14,8 +14,8 @@ import type { BehaviorController } from './behaviorTypes'
 
 // The SERVER owns the transport clock: clients send commands (play/pause/seek)
 // and continuously converge on the server's anchor — position now =
-// anchorFrame + (localNow − anchorLocalMs)/1000 × fps. Convergence is checked
-// on an interval while playing.
+// anchorFrame + (serverNow − at)/1000 × fps, with serverNow the live channel's
+// current clock estimate. Convergence is checked on an interval while playing.
 const ANCHOR_CHECK_MS = 500
 
 // Two-tier drift correction: the visual playhead corrects on ANY measurable
@@ -30,10 +30,17 @@ export interface EditorTrack extends TrackWithType {
 }
 
 
-/** The server's authoritative anchor while the shared transport plays. */
+/**
+ * The server's authoritative anchor while the shared transport plays.
+ *
+ * `at` is kept as the SERVER's clock reading and read through `serverNow` every
+ * time. Converting it to local time once would freeze the clock estimate's
+ * error at the moment the anchor arrived — for a joiner, the roughest estimate
+ * of the whole session — until the next play, pause or seek.
+ */
 interface ServerAnchor {
   frame: number
-  localMs: number
+  at: number
   fps: number
 }
 
@@ -48,6 +55,21 @@ export interface PlaybackDeps {
   pxPerFrame: Ref<number>
   canvasRef: Ref<HTMLElement | null>
   sendTransport: (action: TransportAction, frame?: number) => void
+  /**
+   * The server's clock right now, as the live channel currently estimates it.
+   * Anchors are read through this every time rather than converted once on
+   * arrival, so they get more accurate as the estimate does.
+   */
+  serverNow: () => number
+  /**
+   * A room-wide clock resync is running. The server holds any Play until it
+   * ends, then starts it on a fresh anchor — so a live Play is sent but NOT
+   * started here, or this playhead and its audio would run ahead of a room that
+   * has not started yet. The anchor starts it, the same moment as everyone else.
+   */
+  clockSyncing?: () => boolean
+  /** A Play is being held for that resync; pressing play again cancels it. */
+  playHeld?: () => boolean
   /**
    * Live: the transport is the room's — play/pause/seek go to the server and
    * the room's state drives this playhead. Local: the same controls drive a
@@ -76,7 +98,8 @@ const DRIFT_DEADBAND_FRAMES = 0.25
  *
  */
 export function usePlayback({
-  timeline, trackList, trackTypes, mutedTracks, trackVolumes, pxPerFrame, canvasRef, sendTransport, live,
+  timeline, trackList, trackTypes, mutedTracks, trackVolumes, pxPerFrame, canvasRef, sendTransport, serverNow, live,
+  clockSyncing = () => false, playHeld = () => false,
 }: PlaybackDeps) {
   // Stored as float for smooth animation; TC display rounds it.
   const playheadFrame = ref(0)
@@ -107,10 +130,14 @@ export function usePlayback({
   let _lastTs: number | null   = null
 
   // The server's authoritative anchor while the shared transport plays:
-  // { frame, localMs, fps } — null while stopped, and cleared on local
+  // { frame, at, fps } — null while stopped, and cleared on local
   // optimistic actions (play/seek) until the server echoes the new anchor.
   let _serverAnchor: ServerAnchor | null = null
-  let _lastAnchorCheck = 0
+  let _lastAnchorCheck = -Infinity   // performance.now() of the last convergence check
+
+  /** Where an anchor puts the transport right now, on the current clock estimate. */
+  const anchorFrameNow = (anchor: ServerAnchor): number =>
+    anchor.frame + ((serverNow() - anchor.at) / 1000) * anchor.fps
 
   // Mute is client-local (cookie), not the server's isMuted flag.
   const isMuted = (track: EditorTrack): boolean => !!mutedTracks?.value?.[track.id]
@@ -294,10 +321,16 @@ export function usePlayback({
     if (playheadFrame.value >= timeline.value.endFrame) {
       playheadFrame.value = timeline.value.startFrame
     }
+    // The room's clocks are being re-measured, and the server holds this Play
+    // until they are. Ask for it, but let the anchor start us — with everyone.
+    if (broadcast && live.value && clockSyncing()) {
+      sendTransport('play', playheadFrame.value)
+      return
+    }
     isPlaying.value  = true
     _lastTs          = null
     _serverAnchor    = null   // set by the server's echo of our play command
-    _lastAnchorCheck = 0
+    _lastAnchorCheck = -Infinity
     if (_rafId !== null) cancelAnimationFrame(_rafId)
     _rafId           = requestAnimationFrame(_tick)
 
@@ -331,6 +364,9 @@ export function usePlayback({
   }
 
   function togglePlayback() {
+    // A Play waiting on the room's clocks: pressing again takes it back, the way
+    // pausing would stop one that had started.
+    if (!isPlaying.value && live.value && playHeld()) { sendTransport('pause'); return }
     isPlaying.value ? stopPlayback() : startPlayback()
   }
 
@@ -385,10 +421,10 @@ export function usePlayback({
     // NOW vs where we are. resyncAudioFull applies the two-tier correction
     // (sub-deadband ignored, small drift nudges the audio anchor inaudibly,
     // ≥ AUDIO_RESYNC_FRAMES re-anchors audio for real).
-    const now = Date.now()
+    const now = performance.now()
     if (_serverAnchor && now - _lastAnchorCheck >= ANCHOR_CHECK_MS) {
       _lastAnchorCheck = now
-      const serverFrame = _serverAnchor.frame + ((now - _serverAnchor.localMs) / 1000) * _serverAnchor.fps
+      const serverFrame = anchorFrameNow(_serverAnchor)
       if (Math.abs(serverFrame - playheadFrame.value) > DRIFT_DEADBAND_FRAMES) {
         setPlayhead(serverFrame, { broadcast: false })
         resyncAudioFull()
@@ -402,11 +438,11 @@ export function usePlayback({
    * Apply the server's authoritative transport state (every command — ours
    * included — echoes back as one of these).
    *
-   * While playing, the state is a clock anchor: `frame` at server time `at`,
-   * mapped to our clock as `anchorLocalMs`. The current position is PREDICTED
-   * as frame + elapsed-since-anchor × fps — however delayed the message was,
-   * every client lands on the same wall-clock-aligned frame. The anchor is
-   * kept and `_tick` keeps converging on it, so the server decides how fast
+   * While playing, the state is a clock anchor: `frame` at server time `at`.
+   * The current position is PREDICTED as frame + (serverNow − at) × fps —
+   * however delayed the message was, every client lands on the same frame.
+   * The anchor is kept, still in server time, and `_tick` keeps converging on
+   * it through the latest clock estimate, so the server decides how fast
    * frames go from then on. A stopped timeline is browsed privately: a stop
    * ends the shared run at the server-computed frame but is ignored when
    * we're already stopped — it must never yank a privately-seeking user.
@@ -417,12 +453,13 @@ export function usePlayback({
     // A local playhead neither follows the room nor is followed by it.
     if (!live.value) return
 
-    const { playing, frame, frameRate, anchorLocalMs } = state
+    const { playing, frame, frameRate, at } = state
     if (!timeline.value) return
     const fps = frameRate || parseFloat(timeline.value.frameRate)
 
     if (playing) {
-      const predicted = frame + ((Date.now() - anchorLocalMs) / 1000) * fps
+      const anchor: ServerAnchor = { frame, at, fps }
+      const predicted = anchorFrameNow(anchor)
 
       // A run that outlived the timeline (driver vanished mid-play, nobody
       // paused) — treat as ended rather than chasing an impossible position.
@@ -438,8 +475,8 @@ export function usePlayback({
       }
       // Adopt the anchor AFTER a possible startPlayback (which clears it);
       // the next tick converges us onto it via the two-tier correction.
-      _serverAnchor    = { frame, localMs: anchorLocalMs, fps }
-      _lastAnchorCheck = 0
+      _serverAnchor    = anchor
+      _lastAnchorCheck = -Infinity
     } else {
       _serverAnchor = null
       if (!isPlaying.value) return
@@ -466,7 +503,7 @@ export function usePlayback({
 
     const anchor = _serverAnchor
     if (anchor) {
-      const serverFrame = anchor.frame + ((Date.now() - anchor.localMs) / 1000) * anchor.fps
+      const serverFrame = anchorFrameNow(anchor)
       if (serverFrame >= timeline.value.endFrame) { stopPlayback(false); return }
       setPlayhead(serverFrame, { broadcast: false })
     }

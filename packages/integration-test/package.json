@@ -7,9 +7,9 @@
     "cino-watch": "./src/index.ts"
   },
   "scripts": {
-    "start": "node src/index.ts",
+    "start": "node --env-file-if-exists=.env src/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node src/cameraWatch.test.ts"
+    "test": "node src/serverClock.test.ts && node src/clipScheduler.test.ts && node src/cameraWatch.test.ts"
   },
   "dependencies": {
     "@starling/realtime": "*",

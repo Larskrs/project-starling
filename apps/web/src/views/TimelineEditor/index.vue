@@ -411,6 +411,9 @@ const transportLive = useLocalStorage<boolean>('editor-transport-live', true)
 const playback = usePlayback({
   timeline, trackList, trackTypes, mutedTracks, trackVolumes, pxPerFrame, canvasRef,
   sendTransport: (...args) => sync.sendTransport(...args),
+  serverNow: () => sync.serverNow(),
+  clockSyncing: () => sync.clockStatus.value?.state === 'measuring',
+  playHeld: () => !!sync.clockStatus.value?.playHeld,
   live: transportLive,
 })
 const {
@@ -1319,6 +1322,8 @@ provide('editor-group',      { drag: groupDrag, membersFor: groupMembersFor, del
         :readonly="readonly"
         :transport-live="transportLive"
         :room-playing="roomPlaying"
+        :clock-status="sync.clockStatus.value ?? undefined"
+        :resync-clocks="sync.requestResync"
         @update:transport-live="setLiveMode"
         @go-back="goBack"
         @zoom-in="zoomIn"

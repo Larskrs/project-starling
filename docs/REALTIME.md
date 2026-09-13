@@ -12,40 +12,41 @@ native client see [swiftSocket.md](./swiftSocket.md).
 
 ## 1. The shape of it
 
-<figure class="diagram wide">
-<svg viewBox="0 0 780 210" role="img" aria-label="An author PATCHes a REST route, which checks permission, writes to Postgres, relays the change to peers, then returns the row to the author.">
+<figure class="diagram">
+<svg viewBox="0 0 720 210" role="img" aria-label="The author sends a PATCH to a REST route. The route checks permission, writes the row, relays the change to peers with emitTimelineChange, and only then returns the row, so peers usually have the change before the author gets the 200.">
   <defs>
     <marker id="rt-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" class="d-arrow" />
     </marker>
+    <marker id="rt-arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="d-arrow d-accent" />
+    </marker>
   </defs>
-
-  <rect class="d-box" x="14" y="64" width="116" height="76" rx="10" />
-  <text class="d-text" x="72" y="107" text-anchor="middle">author</text>
-
-  <rect class="d-box d-box--wide" x="222" y="18" width="336" height="174" rx="12" />
-  <text class="d-label" x="244" y="44">REST route</text>
-  <text class="d-step" x="244" y="76">1. permission check</text>
-  <text class="d-step" x="244" y="104">2. write to Postgres</text>
-  <text class="d-step d-accent" x="244" y="132">3. emitTimelineChange(…)</text>
-  <text class="d-step" x="244" y="160">4. return the row</text>
-
-  <rect class="d-box" x="650" y="64" width="116" height="76" rx="10" />
-  <text class="d-text" x="708" y="107" text-anchor="middle">peer</text>
-
-  <line class="d-line" x1="132" y1="88" x2="218" y2="88" marker-end="url(#rt-arrow)" />
-  <text class="d-sub" x="175" y="79" text-anchor="middle">PATCH</text>
-
-  <line class="d-line" x1="218" y1="122" x2="132" y2="122" marker-end="url(#rt-arrow)" />
-  <text class="d-sub" x="175" y="139" text-anchor="middle">200</text>
-
-  <line class="d-line d-line--accent" x1="562" y1="128" x2="646" y2="108" marker-end="url(#rt-arrow)" />
-  <text class="d-sub" x="604" y="96" text-anchor="middle">relay</text>
+  <rect class="d-box" x="16" y="40" width="130" height="136" rx="10" />
+  <text class="d-text" x="81" y="113" text-anchor="middle">author</text>
+  <rect class="d-box d-box--wide" x="250" y="20" width="230" height="170" rx="12" />
+  <text class="d-label" x="270" y="46">REST route</text>
+  <text class="d-step" x="270" y="82">1. check permission</text>
+  <text class="d-step" x="270" y="112">2. write the row</text>
+  <text class="d-step" x="270" y="142">3. emitTimelineChange(…)</text>
+  <text class="d-step" x="270" y="172">4. return the row</text>
+  <rect class="d-box d-box--accent" x="574" y="40" width="130" height="136" rx="10" />
+  <text class="d-text" x="639" y="100" text-anchor="middle">peers</text>
+  <text class="d-sub" x="639" y="124" text-anchor="middle">usually before</text>
+  <text class="d-sub" x="639" y="140" text-anchor="middle">the author's 200</text>
+  <text class="d-sub" x="198" y="70" text-anchor="middle">PATCH</text>
+  <text class="d-sub" x="198" y="188" text-anchor="middle">200</text>
+  <text class="d-sub" x="527" y="130" text-anchor="middle">clip:change</text>
+  <g>
+    <path class="d-line" d="M146,78 L246,78" marker-end="url(#rt-arrow)" />
+    <path class="d-line" d="M250,168 L150,168" marker-end="url(#rt-arrow)" />
+    <path class="d-line d-line--accent" d="M480,138 L570,138" marker-end="url(#rt-arrow-accent)" />
+  </g>
 </svg>
 </figure>
 
-Two rules follow from this picture, and most confusion comes from missing one
-of them.
+Two rules sit behind that diagram, and most confusion comes from missing one of
+them.
 
 **Postgres is the source of truth; the socket only announces.** Nothing is ever
 "saved by sending a socket event". Every persisted change goes through a REST
@@ -53,8 +54,8 @@ route that checks permissions and writes the row; the broadcast is a
 notification that it happened. A dropped socket therefore loses live updates
 and never loses data — reconnecting and refetching is always a complete repair.
 
-**The relay is the server's job, not the client's.** Step 3 happens inside the
-route, before the response is even serialised, so a peer usually learns about
+**The relay is the server's job, not the client's.** `emitTimelineChange` runs
+inside the route, before the response is even serialised, so a peer usually learns about
 the change *before* the author's own HTTP call returns.
 
 ### Why it works this way
@@ -264,12 +265,61 @@ the next room.
 not taken from whichever client pressed the key, so everyone stops at the same
 place.
 
-Clients map `at` onto their own clock with an NTP-style offset: five
-`time:ping` round trips at join, in
-[`transportClock.ts`](../apps/web/src/views/TimelineEditor/audio/transportClock.ts).
-That module also buffers anchors arriving *before* the offset is measured —
-which is routine, because the server answers `timeline:join` with the anchor
-immediately, and that reply usually beats the ping burst.
+`at` is a reading of the server's **monotonic** clock
+([`clock.ts`](../apps/api/src/lib/clock.ts)), never `Date.now()`. A wall clock
+gets stepped by NTP or an operator, and a step would move every room's playhead
+at once, because every client's offset was measured against the old reading.
+
+Clients estimate the server's clock as their own monotonic clock plus an offset
+measured with `time:ping`
+([`transportClock.ts`](../apps/web/src/views/TimelineEditor/audio/transportClock.ts),
+scheduled from
+[`useTimelineSync.ts`](../apps/web/src/views/TimelineEditor/data/useTimelineSync.ts)).
+They ping in a burst on connect, after the WebSocket upgrade and on wake, then
+once every 15 seconds. The fastest sample of the last two minutes wins, because
+its error is bounded by half its round trip. A sample that contradicts a newer
+one means a clock jumped, so it is thrown away. Corrections over 40ms apply at
+once, and smaller ones glide.
+
+Three rules keep this correct, and each exists because breaking it was a bug:
+
+- **Read the anchor through the clock at use time.** Store `at` as it arrived
+  and compute `frame + (serverNow() − at) × fps` whenever the position is
+  needed. Converting `at` to local time once froze the estimate's error at that
+  moment into the anchor — for a joiner, the worst estimate of the session —
+  until the next play, pause or seek.
+- **Do not read an anchor before any offset exists.** The server answers
+  `timeline:join` with the anchor immediately, and that reply usually beats the
+  first ping. `transportClock.ts` holds it until the first sample lands.
+- **Never time against the wall clock.** Both sides use monotonic clocks, so
+  only a sleeping machine or a server restart can move the offset, and the
+  consistency check catches both.
+
+The integrator-facing version of all this, with a worked camera-cut example, is
+[integrations/timing.md](./integrations/timing.md).
+[`packages/integration-test`](../packages/integration-test) implements it in a
+real client.
+
+### Syncing every clock before a show
+
+The editor's **Sync clocks** button makes every socket in the room re-measure
+its clock and report how good its estimate now is (`clock:resync` →
+`clock:measure` → `clock:report` → `clock:status`). While a run is going, the
+server **holds any Play** and starts it on a fresh anchor once the run ends, so
+nobody starts the show on an estimate still being refined.
+
+The rules live in [`clockResync.ts`](../apps/api/src/lib/clockResync.ts), pure
+and tested, and the two that matter most are about not trusting the room:
+
+- **A deadline ends every run** (4 seconds). A crashed desk, a closed laptop, or
+  an older client that does not know the event is listed as not answering, and
+  the Play goes ahead. Otherwise any one of them could hold a show hostage.
+- **A socket that leaves mid-run counts as answered**, for the same reason.
+
+On the web, a live Play pressed during a run is sent but not started locally
+(`clockSyncing` in `usePlayback.ts`). The server's anchor starts it on every
+client at once; starting locally would put this playhead and its audio ahead of
+a room that had not started yet.
 
 `transport:state` goes to the whole room **including the sender**, unlike every
 other event, so the initiator derives its position from the same anchor as

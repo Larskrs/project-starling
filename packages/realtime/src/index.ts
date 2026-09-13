@@ -38,11 +38,81 @@ export const TimelineEvent = {
   transportState: 'transport:state',
   /** S→C. The clip under the playhead changed on a track. */
   clipActive: 'clip:active',
-  /** C→S. NTP-style clock probe; acked with the server's epoch ms. */
+  /** C→S. NTP-style clock probe; acked with the server's clock in ms (monotonic, not wall-clock). */
   timePing: 'time:ping',
+  /** C→S. Make every client in the room re-measure its clock. Acked with the run's id. */
+  clockResync: 'clock:resync',
+  /** S→C. Re-measure your clock now, then send `clock:report` within `deadlineMs`. */
+  clockMeasure: 'clock:measure',
+  /** C→S. The answer to a `clock:measure`. */
+  clockReport: 'clock:report',
+  /** S→C. A resync's progress, per client. */
+  clockStatus: 'clock:status',
 } as const;
 
 export type TimelineEventName = (typeof TimelineEvent)[keyof typeof TimelineEvent];
+
+// ── Clock resync ──────────────────────────────────────────────────────────────
+// Before a show, an operator presses "Sync clocks": every client in the room
+// re-measures its clock against the server and reports how good its estimate
+// now is. While that runs, the server holds any Play, so nobody starts the show
+// on an estimate still being refined. Rules: apps/api/src/lib/clockResync.ts.
+
+export interface ClockMeasureRequest {
+  requestId: string;
+  /** Answer within this many ms, or be listed as not answering. */
+  deadlineMs: number;
+}
+
+export interface ClockReport {
+  requestId: string;
+  /**
+   * Round trip (ms) of the sample the client's estimate rests on — its offset is
+   * never wrong by more than half this. Null when no ping answered at all.
+   */
+  rtt: number | null;
+}
+
+/**
+ * - `waiting`   asked, has not answered yet
+ * - `synced`    answered with a measured estimate
+ * - `failed`    answered, but no ping got through
+ * - `no-report` the deadline passed first — an older client, or a stuck one
+ * - `left`      disconnected or left the room mid-run
+ */
+export type ClockClientState = 'waiting' | 'synced' | 'failed' | 'no-report' | 'left';
+
+export interface ClockClientStatus {
+  socketId: string;
+  /** Presence id; a device's carries TOKEN_PRESENCE_PREFIX. */
+  id: string;
+  name: string;
+  state: ClockClientState;
+  rtt: number | null;
+}
+
+export interface ClockSyncStatus {
+  requestId: string;
+  state: 'measuring' | 'done';
+  requestedBy: { id: string; name: string };
+  /** Server clock ms. */
+  startedAt: number;
+  finishedAt: number | null;
+  deadlineMs: number;
+  /** A Play is waiting for this run to end, and starts the moment it does. */
+  playHeld: boolean;
+  /** One entry per socket: two tabs are two clocks. */
+  clients: ClockClientStatus[];
+}
+
+export type ClockResyncAck = { ok: true; requestId: string } | { error: string };
+
+export function isClockReport(value: unknown): value is ClockReport {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.requestId !== 'string' || !v.requestId) return false;
+  return v.rtt === null || (typeof v.rtt === 'number' && Number.isFinite(v.rtt) && v.rtt >= 0);
+}
 
 /**
  * Header carrying the sender's socket id on a mutating REST request.

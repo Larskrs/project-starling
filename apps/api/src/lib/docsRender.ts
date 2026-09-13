@@ -150,5 +150,30 @@ export function renderMarkdown(source: string, fromDir: string): RenderedDoc {
     },
   });
 
-  return { html: marked.parse(source) as string, headings };
+  const figures = protectFigures(source);
+  return { html: figures.restore(marked.parse(figures.source) as string), headings };
+}
+
+/**
+ * Lifts diagram figures out of the source before marked sees it.
+ *
+ * A markdown HTML block ends at the first blank line, and a hand-authored SVG
+ * is full of them. marked closes the block there and reads the rest of the
+ * drawing as markdown: a `<text>` line is wrapped in `<p>` — which the browser's
+ * HTML parser treats as leaving the SVG — and a four-space-indented line becomes
+ * a code block. Either way the source looks perfect and the page shows debris.
+ *
+ * Each figure is swapped for a placeholder that marked passes through as its
+ * own HTML block, then put back byte for byte.
+ */
+function protectFigures(source: string): { source: string; restore: (html: string) => string } {
+  const figures: string[] = [];
+  const lifted = source.replace(/^<figure\b[^>]*>[\s\S]*?^<\/figure>/gm, (figure) => {
+    figures.push(figure);
+    return `\n<div data-docs-figure="${figures.length - 1}"></div>\n`;
+  });
+  return {
+    source: lifted,
+    restore: html => html.replace(/<div data-docs-figure="(\d+)"><\/div>/g, (_, i: string) => figures[Number(i)]!),
+  };
 }

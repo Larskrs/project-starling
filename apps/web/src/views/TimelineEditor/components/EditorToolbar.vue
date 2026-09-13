@@ -4,6 +4,7 @@ import { Icon } from '@iconify/vue'
 import { Avatar, Button } from '@starling/ui'
 import { isDevicePresence } from '@starling/realtime'
 import { framesToTC } from '../lib/editorUtils'
+import ClockSyncControl from './ClockSyncControl.vue'
 
 const props = defineProps({
   timeline:      { type: Object,  required: true },
@@ -25,6 +26,10 @@ const props = defineProps({
   transportLive: { type: Boolean, default: true },
   /** The room's transport is running — worth showing while this client is local. */
   roomPlaying:   { type: Boolean, default: false },
+  /** The room's latest clock sync (ClockSyncStatus), or null. */
+  clockStatus:   { type: Object,  default: null },
+  /** Starts a room-wide clock sync; resolves to the server's ack. */
+  resyncClocks:  { type: Function, required: true },
 })
 
 const emit = defineEmits([
@@ -34,6 +39,9 @@ const emit = defineEmits([
 ])
 
 const tc = computed(() => framesToTC(props.playheadFrame, props.timeline.frameRate))
+
+// A Play is waiting for the room's clocks. Pressing the button again cancels it.
+const playHeld = computed(() => !!props.clockStatus?.playHeld && !props.isPlaying)
 
 // People only: API accounts are listed in their own row under the toolbar (DeviceRow).
 const MAX_AVATARS    = 5
@@ -172,6 +180,15 @@ const iconButton = 'size-7 flex items-center justify-center rounded-md text-mute
       </button>
     </div>
 
+    <!-- Room-wide clock sync. Beside the transport it protects: press it before
+         a show, and a Play pressed while it runs waits for every clock. -->
+    <ClockSyncControl
+      :status="clockStatus"
+      :connected="syncConnected"
+      :frame-rate="timeline.frameRate"
+      :resync="resyncClocks"
+    />
+
     <!-- Playback controls -->
     <div class="flex items-center gap-1 shrink-0">
       <!-- Rewind to start -->
@@ -184,16 +201,22 @@ const iconButton = 'size-7 flex items-center justify-center rounded-md text-mute
         <Icon icon="mdi:skip-backward" class="size-4" />
       </Button>
 
-      <!-- Play / Pause -->
+      <!-- Play / Pause — or waiting on the room's clocks -->
       <Button
         class="w-10 h-7 flex p-0 items-center justify-center rounded-md transition-colors"
         :class="isPlaying
           ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-          : 'text-muted-foreground hover:text-foreground hover:bg-accent'"
-        :title="$t('editor.playPause')"
+          : playHeld
+            ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/30'
+            : 'text-muted-foreground hover:text-foreground hover:bg-accent'"
+        :title="playHeld ? $t('editor.clockSync.playHeldTitle') : $t('editor.playPause')"
         @click="$emit('toggle-play')"
       >
-         <Icon :icon="isPlaying ? 'mdi:pause' : 'mdi:play'" class="text-white w-6 h-6" />
+        <Icon
+          :icon="isPlaying ? 'mdi:pause' : playHeld ? 'mdi:timer-sand' : 'mdi:play'"
+          class="w-6 h-6"
+          :class="playHeld ? 'animate-pulse' : 'text-white'"
+        />
       </Button>
 
       <!-- Jump to end -->

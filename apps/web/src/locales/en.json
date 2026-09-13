@@ -528,6 +528,28 @@
       "liveHint": "Live: play, pause and seek follow the shared transport, and yours move it for everyone in this timeline (L)",
       "localHint": "Local: a private playhead — nothing you do moves anyone else, and the live transport does not move yours (L)",
       "roomPlaying": "The live transport is playing"
+    },
+    "clockSync": {
+      "button": "Sync clocks",
+      "buttonHint": "Make every connected editor and device re-measure its clock against the server. Play waits until they all have.",
+      "intro": "Before a show starts, make every connected editor and device re-measure its clock, so they all play the same frame at the same moment.",
+      "measuring": "Syncing clocks…",
+      "allSynced": "Every clock is synced",
+      "someNotSynced": "Some clocks are not synced",
+      "requestedBy": "Started by {name}",
+      "playHeld": "Play starts as soon as every clock has reported",
+      "playHeldTitle": "Waiting for every clock to sync — press again to cancel",
+      "syncNow": "Sync all clocks",
+      "syncAgain": "Sync again",
+      "failed": "Could not start a clock sync",
+      "state": {
+        "waiting": "Measuring…",
+        "synced": "±{ms} ms",
+        "loose": "±{ms} ms, looser than a frame",
+        "failed": "No ping got through",
+        "noReport": "Did not answer",
+        "left": "Left the timeline"
+      }
     }
   },
   "trackTypes": {

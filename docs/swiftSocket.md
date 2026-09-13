@@ -75,7 +75,6 @@ final class TimelineSocket {
             config: [
                 .path("/socket"),
                 .extraHeaders(["Cookie": "\(cookie.name)=\(cookie.value)"]),
-                .forceWebSockets(true),   // skip the polling upgrade dance
                 .reconnects(true),
                 .compress,
             ]
@@ -85,11 +84,11 @@ final class TimelineSocket {
 }
 ```
 
-`forceWebSockets(true)` is recommended: the cookie rides the single websocket upgrade request and you avoid long-polling edge cases behind the reverse proxy.
+Leave `forceWebSockets` off. The client then starts on long-polling and upgrades to WebSocket when the network allows it. cino.no's reverse proxy does **not** forward WebSocket upgrades, so a websocket-only client never connects there; against a server that does forward them, the upgrade happens on its own. Every polling request carries the `Cookie` header from `extraHeaders`.
 
 ## 4. The wire types
 
-Mirror the TypeScript interfaces from `apps/api/src/lib/timelineSockets.ts`. Socket.IO hands you `[Any]` arrays; decode via `JSONSerialization` → `JSONDecoder` or read dictionaries directly. Codable models:
+Mirror the TypeScript declarations in `packages/realtime/src/index.ts` — the one wire contract the API and the web client both compile against. Socket.IO hands you `[Any]` arrays; decode via `JSONSerialization` → `JSONDecoder` or read dictionaries directly. Codable models:
 
 ```swift
 /// The room's authoritative transport anchor. `frame` is the position at
@@ -131,7 +130,7 @@ One socket follows one timeline at a time; join with an ack and treat a non-`ok`
 ```swift
 socket.on(clientEvent: .connect) { [weak self] _, _ in
     self?.join()
-    self?.syncClock()   // §6 — re-measure on every reconnect
+    self?.burst()       // §6 — re-measure on every reconnect
 }
 
 func join() {
@@ -149,42 +148,160 @@ func join() {
 
 ## 6. Clock sync (`time:ping`)
 
-Everything about tight sync rests on knowing the offset between the server clock and the device clock. Same algorithm as the web client: a 5-sample burst, keep the lowest-RTT sample (least queueing noise), `offset = serverNow + rtt/2 − localNow`:
+Everything about tight sync rests on knowing what time it is **on the server**. `time:ping` acks the server's clock in milliseconds. That clock is monotonic: its readings look like epoch ms, but they are not wall-clock time, so never compare them with `Date()`.
+
+The device side must be monotonic too. `Date()` is the wall clock, and iOS corrects it against network time whenever it likes. Each correction moves your side of the offset without moving the server's, and the playhead moves with it. `CACurrentMediaTime()` only counts forward. It does stop while the device sleeps, which is why the app re-measures on returning to the foreground.
+
+The algorithm and constants are the same as the web client's and as [integrations/timing.md](integrations/timing.md), which explains each one:
+
+- A sample's offset is `serverNow + rtt/2 − t2`, and its error is at most `rtt/2`. Keep the **lowest-RTT** sample from the last 2 minutes (at most 24), never an average.
+- A new sample that disagrees with an older one by more than `(rttA + rttB)/2 + 10ms` means a clock jumped. Drop the older samples.
+- When the estimate moves by more than 40ms, apply it at once. Otherwise glide towards it at no more than 5ms per second.
+- Ping 5 times, 120ms apart, on every connect and on returning to the foreground, then once every 15 seconds.
 
 ```swift
-private(set) var clockOffsetMs: Double?   // serverNow − localNow; nil until measured
+import QuartzCore
 
-private func nowMs() -> Double { Date().timeIntervalSince1970 * 1000 }
+/// The server's clock, estimated. Use from the socket's handle queue (main by default).
+final class ServerClock {
+    private struct Sample { let offset: Double; let rtt: Double; let at: Double }
 
-func syncClock(samples: Int = 5) {
-    var best: (offset: Double, rtt: Double)?
-    func ping(_ remaining: Int) {
-        guard remaining > 0 else { clockOffsetMs = best?.offset; return }
-        let t0 = nowMs()
-        socket.emitWithAck("time:ping").timingOut(after: 2) { [weak self] response in
-            guard let self else { return }
-            if let serverNow = response.first as? Double {
-                let t2  = self.nowMs()
-                let rtt = t2 - t0
-                let sample = (offset: serverNow + rtt / 2 - t2, rtt: rtt)
-                if best == nil || sample.rtt < best!.rtt { best = sample }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { ping(remaining - 1) }
-        }
+    private var samples: [Sample] = []
+    private var target: Double?           // nil until the first ping answers
+    private var from = 0.0, since = 0.0   // the applied offset glides from `from` towards `target`
+
+    static func localNow() -> Double { CACurrentMediaTime() * 1000 }
+
+    var synced: Bool { target != nil }
+
+    /// Round trip of the best sample the estimate rests on; the offset is good to
+    /// half this. What the app reports when the editor asks for a clock sync (§6.1).
+    var bestRtt: Double? { samples.map(\.rtt).min() }
+
+    /// The server's clock right now; nil until synced — never a guess.
+    func now() -> Double? {
+        let t = Self.localNow()
+        guard let offset = offset(at: t) else { return nil }
+        return t + offset
     }
-    ping(samples)
-}
 
-/// Server stamp (epoch ms) → the same instant on the device clock.
-func anchorLocalMs(_ serverAt: Double) -> Double {
-    guard let offset = clockOffsetMs else { return nowMs() }   // degrade gracefully
-    return serverAt - offset
+    private func offset(at t: Double) -> Double? {
+        guard let target else { return nil }
+        let room = 5 * max(0, t - since) / 1000
+        return from + max(-room, min(room, target - from))
+    }
+
+    func add(t0: Double, t2: Double, serverNow: Double) {
+        let rtt = t2 - t0
+        guard rtt >= 0 else { return }
+        let sample = Sample(offset: serverNow + rtt / 2 - t2, rtt: rtt, at: t2)
+
+        let fresh = samples.filter { sample.at - $0.at <= 120_000 }
+        let agree = fresh.filter { abs($0.offset - sample.offset) <= ($0.rtt + sample.rtt) / 2 + 10 }
+        samples = Array((agree + [sample]).suffix(24))
+
+        let best    = samples.min { $0.rtt < $1.rtt }!
+        let t       = Self.localNow()
+        let jumped  = agree.count < fresh.count
+        if let current = offset(at: t), !jumped, abs(best.offset - current) <= 40 {
+            from = current
+        } else {
+            from = best.offset
+        }
+        since  = t
+        target = best.offset
+    }
 }
 ```
 
+Pinging, in `TimelineSocket`:
+
+```swift
+import UIKit
+
+let clock = ServerClock()
+private var bursting = false
+
+private func ping(then next: (() -> Void)? = nil) {
+    let t0 = ServerClock.localNow()
+    socket.emitWithAck("time:ping").timingOut(after: 2) { [weak self] response in
+        guard let self else { return }
+        // A timed-out ack arrives as ["NO ACK"] and is simply not a sample.
+        if let serverNow = response.first as? Double {
+            self.clock.add(t0: t0, t2: ServerClock.localNow(), serverNow: serverNow)
+        }
+        next?()
+    }
+}
+
+private var burstWaiters: [() -> Void] = []
+private var rerun = false
+
+/// Five pings, 120ms apart. On every connect, on returning to the foreground,
+/// and when the editor asks (§6.1). `done` runs after a burst that STARTED after
+/// the call: one already under way began before the request, so a fresh one follows.
+func burst(then done: (() -> Void)? = nil) {
+    if let done {
+        burstWaiters.append(done)
+        if bursting { rerun = true }
+    }
+    guard !bursting else { return }
+    bursting = true
+    step(5)
+}
+
+private func step(_ remaining: Int) {
+    guard remaining > 0, socket.status == .connected else {
+        bursting = false
+        if rerun, socket.status == .connected { rerun = false; burst(); return }
+        rerun = false
+        let waiters = burstWaiters
+        burstWaiters = []
+        waiters.forEach { $0() }
+        return
+    }
+    ping { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { self?.step(remaining - 1) }
+    }
+}
+
+/// Call once, after creating the socket.
+func startClockSync() {
+    Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        guard let self, !self.bursting, self.socket.status == .connected else { return }
+        self.ping()
+    }
+    NotificationCenter.default.addObserver(
+        forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+        self?.burst()
+    }
+}
+```
+
+### 6.1 Syncing on request (`clock:measure`)
+
+Before a show, an operator presses **Sync clocks** in the editor. Every client in the room is asked to re-measure and report, and the server **holds any Play** until each one has answered or 4 seconds have passed. Answer with a fresh burst and the round trip your estimate rests on:
+
+```swift
+socket.on("clock:measure") { [weak self] data, _ in
+    guard let self,
+          let request = data.first as? [String: Any],
+          let requestId = request["requestId"] as? String else { return }
+    self.burst { [weak self] in
+        guard let self else { return }
+        // nil → NSNull: tells the operator this device has no server time.
+        let rtt: Any = self.clock.bestRtt ?? NSNull()
+        self.socket.emit("clock:report", ["requestId": requestId, "rtt": rtt])
+    }
+}
+```
+
+The app shows up in the editor's sync panel as `±` half that round trip. Anything looser than one frame is flagged, and an app that never answers is listed as *did not answer*. A held Play reaches you as an ordinary `transport:state` once the run ends, so §7 needs no changes.
+
 ## 7. Following the transport — the core loop
 
-The app is a *follower* of the server anchor. Store the latest `TransportState`, convert its stamp to local time once, and derive the playhead every UI frame:
+The app is a *follower* of the server anchor. Store the latest `TransportState` **exactly as it arrived**, and derive the playhead every UI frame by reading its `at` through the clock from §6. Never convert `at` to local time once and store that: the clock estimate keeps improving, and a stored conversion freezes whatever error it had when the anchor landed — for a device joining mid-playback, the worst estimate of the session.
 
 ```swift
 @MainActor
@@ -193,21 +310,16 @@ final class TransportModel: ObservableObject {
     @Published var playheadFrame: Double = 0
 
     var timelineEndFrame: Double = 0        // from the REST bootstrap
-    private var anchor: (frame: Double, localMs: Double, fps: Double)?
+    /// The anchor as the server sent it; `at` is server time and stays that way.
+    private var anchor: TransportState?
 
     /// transport:state listener — every accepted command (yours included)
     /// echoes one of these; joiners get one if the timeline is playing.
     func apply(_ state: TransportState, sync: TimelineSocket) {
         if state.playing {
-            let localMs   = sync.anchorLocalMs(state.at)
-            let predicted = state.frame + (sync.nowMs() - localMs) / 1000 * state.frameRate
-
-            // A run that outlived the timeline (driver vanished) — treat as ended.
-            guard predicted < timelineEndFrame else { anchor = nil; playing = false; return }
-
-            anchor  = (state.frame, localMs, state.frameRate)
+            anchor  = state
             playing = true
-            playheadFrame = predicted
+            tick(sync: sync)
         } else {
             anchor = nil
             // Private browsing: ignore a stop when we're already stopped.
@@ -219,8 +331,10 @@ final class TransportModel: ObservableObject {
 
     /// Call once per rendered frame while `playing` (see the view below).
     func tick(sync: TimelineSocket) {
-        guard playing, let anchor else { return }
-        let predicted = anchor.frame + (sync.nowMs() - anchor.localMs) / 1000 * anchor.fps
+        // No server time yet — a join's anchor usually beats the first ping.
+        // Hold still rather than guess; the first frame after it lands is right.
+        guard playing, let anchor, let serverNow = sync.clock.now() else { return }
+        let predicted = anchor.frame + (serverNow - anchor.at) / 1000 * anchor.frameRate
         if predicted >= timelineEndFrame {
             playheadFrame = timelineEndFrame
             playing = false
@@ -319,7 +433,13 @@ socket.on("track:change") { data, _ in
 }
 ```
 
-If the app also *edits*: persist through REST first (`POST/PATCH/DELETE /api/timeline/{tlId}/…`), then emit the same `clip:change`/`track:change` shape with the REST response row. Emitting requires the member to hold `EDIT_TIMELINE` (or `RENAME_CLIPS` for label-only clip upserts) — sockets without the permission are silently dropped, and payloads over 32 KB are discarded.
+If the app also *edits*: persist through REST (`POST/PATCH/DELETE /api/timeline/{tlId}/…`) and **do not emit anything**. The route relays the change to the room itself the moment the row is written, usually before your HTTP response arrives. Send your socket id as `x-socket-id` on those requests so the relay skips you:
+
+```swift
+req.setValue(socket.sid, forHTTPHeaderField: "x-socket-id")
+```
+
+Without the header your own change comes back as a `clip:change`, which is harmless (every payload is an idempotent upsert or delete) but will fight optimistic UI. Emitting `clip:change`/`track:change` from the client is still accepted for older clients, gated on `EDIT_TIMELINE` (or `RENAME_CLIPS` for label-only upserts) with a 32 KB cap — but doing it as well as the REST write makes every peer apply the change twice.
 
 ## 10. `clip:active` — server-computed "now playing" per track
 
@@ -333,7 +453,7 @@ struct ActiveClipEvent: Codable {
     let label: String?
     let sourceId: String?   // prefix the source short name, e.g. "K1 - Total shot"
     let frame: Double       // transport frame at emit time
-    let at: Double          // server epoch ms — age with anchorLocalMs if needed
+    let at: Double          // server clock ms — compare only with clock.now(), never Date()
 }
 
 socket.on("clip:active") { data, _ in
@@ -354,9 +474,10 @@ Semantics to rely on:
 | Moment | Do |
 | --- | --- |
 | App start | REST login (or reuse stored cookie) → `GET /api/timeline/{tlId}` bootstrap → connect socket |
-| `.connect` | `timeline:join` (with ack) + `syncClock()` — both on *every* reconnect |
-| Enter background | Nothing required; socket may drop |
-| Return to foreground | The client auto-reconnects → rejoin + clock re-sync fire from the `.connect` handler; the join's `transport:state` snaps you to the live position |
+| Socket created | `startClockSync()` once — the 15s ping and the foreground observer (§6) |
+| `.connect` | `timeline:join` (with ack) + `burst()` — both on *every* reconnect |
+| Enter background | Nothing required; socket may drop, and `CACurrentMediaTime()` stops while the device sleeps |
+| Return to foreground | `burst()` fires from the foreground observer, which catches the time the clock stood still; the client auto-reconnects → rejoin, and the join's `transport:state` snaps you to the live position |
 | Timeline end reached locally | send `pause` (idempotent — first client wins, the rest are dropped) |
 | Leaving the editor screen | `socket.emit("timeline:leave")` then `socket.disconnect()` |
 
@@ -365,6 +486,8 @@ Semantics to rely on:
 - **Don't cache the cookie string** — read `HTTPCookieStorage` before each connect (sliding renewal rotates the expiry, and logout invalidates it server-side immediately).
 - **Numbers are `Double`** on the wire (JSON). Frames are fractional by design — only round for display.
 - **Permission bitfields are strings** in REST payloads (`role.permissions`) — they're bigints; parse with `UInt64(string)` if you need them, never as JSON numbers.
-- **Clock offset before first sync**: `anchorLocalMs` falls back to "now", which degrades to un-compensated behavior — fine for the first second; the anchor check self-corrects once the burst completes.
-- The Swift client's `.forceWebSockets(false)` (polling) also works, but every polling request must carry the cookie — websockets keep that surface small.
+- **No playhead before the first ping answers.** `clock.now()` is nil until then, and `tick` holds still rather than guessing. That is usually well under a second after connecting; if it never answers, show it rather than falling back to `Date()`.
+- **Never store `at` converted to local time.** Keep the anchor as sent and read it through `clock.now()` every frame (§7).
+- **Never time anything with `Date()`.** It is the wall clock and iOS steps it. Use `CACurrentMediaTime()`, and only compare server stamps (`at`, `time:ping`) with `clock.now()`.
+- **Don't force WebSockets.** Behind a proxy that does not forward the upgrade (cino.no), long-polling is the only transport that connects. Every polling request carries the cookie from `extraHeaders`.
 - Server restarts clear all rooms and transports. The reconnect → rejoin flow recovers everything; design the UI so a brief "reconnecting" state is unremarkable.
