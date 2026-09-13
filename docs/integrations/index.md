@@ -6,27 +6,29 @@ order: 0
 
 # Integrating third-party equipment
 
-How an installed device — a lighting desk, a playback machine, a show-control
-box, a status display — authenticates against Cino and follows or edits a
-timeline. Written for someone building that device, who has no browser, no
-person sitting at it, and no interest in the rest of the product.
-
-> **Status: specified, not yet built.** These pages are the contract the API
-> token implementation is being written against. Nothing here answers on the
-> server today. The design is stable enough to build a client against, but do
-> not point production equipment at it until this notice is gone.
+How an installed device — a lighting desk, a vision mixer, a playback machine, a
+status display — authenticates against Cino and follows or edits a timeline.
+Written for someone building that device, who has no browser, no person sitting
+at it, and no interest in the rest of the product.
 
 ---
 
 ## Where to start
+
+Read the pages in order the first time. Each one assumes the ones before it.
 
 | Page | What it covers |
 | --- | --- |
 | [Authentication](./authentication.md) | The token model, getting one, and sending it |
 | [Expiry and revocation](./lifecycle.md) | The 30-day lifetime, rotation, and killing a token |
 | [Reading a timeline](./reading.md) | Bootstrapping, then following clips, tracks and the playhead |
+| [Clocks and timing](./timing.md) | Measuring server time, and firing cues on the frame all night |
 | [Writing changes](./writing.md) | Creating and editing clips and tracks, and driving playback |
-| [Limits and logging](./limits.md) | Rate limits, hard caps, and what gets audited |
+| [Limits and logging](./limits.md) | Hard caps, what gets audited, and a checklist before you ship |
+
+If you are building something that reacts to the playhead — cutting cameras,
+firing lighting cues — [clocks and timing](./timing.md) ends with a complete
+worked example.
 
 ---
 
@@ -56,41 +58,40 @@ its own after 30 days whether or not anyone remembers it exists.
 
 ## The shape of an integration
 
-<figure class="diagram wide">
-<svg viewBox="0 0 780 280" role="img" aria-label="A device fetches the whole timeline state over REST, then receives live changes over a socket, and sends its own writes back over REST.">
+<figure class="diagram">
+<svg viewBox="0 0 780 290" role="img" aria-label="Three flows between a device and the Cino API. First the device fetches the whole timeline state over REST. Then it follows clip, track and transport events over the socket. Its own writes go back over REST.">
   <defs>
     <marker id="sh-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" class="d-arrow" />
     </marker>
+    <marker id="sh-arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="d-arrow d-accent" />
+    </marker>
   </defs>
-
-  <rect class="d-box" x="14" y="40" width="150" height="200" rx="12" />
-  <text class="d-text" x="89" y="132" text-anchor="middle">your</text>
-  <text class="d-text" x="89" y="152" text-anchor="middle">device</text>
-
-  <rect class="d-box d-box--accent" x="616" y="40" width="150" height="200" rx="12" />
-  <text class="d-text" x="691" y="142" text-anchor="middle">Cino API</text>
-
-  <text class="d-label" x="190" y="58">1 · bootstrap</text>
-  <line class="d-line" x1="190" y1="76" x2="610" y2="76" marker-end="url(#sh-arrow)" />
-  <text class="d-step" x="190" y="96">GET /api/timeline/{id}</text>
-  <text class="d-sub" x="606" y="96" text-anchor="end">the whole current state</text>
-
-  <text class="d-label" x="190" y="140">2 · follow</text>
-  <line class="d-line d-line--accent" x1="610" y1="158" x2="190" y2="158" marker-end="url(#sh-arrow)" />
-  <text class="d-step" x="190" y="178">clip:change · track:change</text>
-  <text class="d-step" x="190" y="198">transport:state</text>
-  <text class="d-sub" x="606" y="178" text-anchor="end">over the socket</text>
-
-  <text class="d-label" x="190" y="226">3 · write</text>
-  <line class="d-line" x1="190" y1="244" x2="610" y2="244" marker-end="url(#sh-arrow)" />
-  <text class="d-step" x="190" y="264">POST · PATCH · DELETE</text>
-  <text class="d-sub" x="606" y="264" text-anchor="end">writes go over REST</text>
+  <rect class="d-box" x="14" y="24" width="150" height="242" rx="12" />
+  <text class="d-text" x="89" y="139" text-anchor="middle">your</text>
+  <text class="d-text" x="89" y="159" text-anchor="middle">device</text>
+  <rect class="d-box d-box--accent" x="616" y="24" width="150" height="242" rx="12" />
+  <text class="d-text" x="691" y="149" text-anchor="middle">Cino API</text>
+  <text class="d-label" x="190" y="52">1 · bootstrap</text>
+  <text class="d-sub" x="606" y="52" text-anchor="end">the whole state, on every connect</text>
+  <text class="d-step" x="190" y="92">GET /api/timeline/{id}</text>
+  <text class="d-label" x="190" y="134">2 · follow</text>
+  <text class="d-sub" x="606" y="134" text-anchor="end">over the socket</text>
+  <text class="d-step" x="190" y="174">clip:change · track:change · transport:state</text>
+  <text class="d-label" x="190" y="216">3 · write</text>
+  <text class="d-sub" x="606" y="216" text-anchor="end">over REST, never a socket emit</text>
+  <text class="d-step" x="190" y="256">POST · PATCH · DELETE</text>
+  <g>
+    <path class="d-line" d="M168,68 L610,68" marker-end="url(#sh-arrow)" />
+    <path class="d-line d-line--accent" d="M612,150 L170,150" marker-end="url(#sh-arrow-accent)" />
+    <path class="d-line" d="M168,232 L610,232" marker-end="url(#sh-arrow)" />
+  </g>
 </svg>
 </figure>
 
-Three rules follow from that picture, and most integration bugs come from
-missing one.
+Four rules sit behind that diagram, and most integration bugs come from missing
+one.
 
 **Bootstrap over REST, always.** The socket carries changes, not state. A
 client that builds its model from events alone is wrong from the first one it
@@ -103,5 +104,10 @@ event. The server persists the row and then relays it to the room itself.
 receive an anchor and derive the current frame from it, which is what makes a
 command's network delay cancel out.
 
-The reasoning behind all three is in the internal
+**Time is the server's time.** Deriving a frame from the anchor only works if
+the device knows what time it is *on the server*, measured with `time:ping` and
+never taken from the device's own wall clock. [Clocks and
+timing](./timing.md) covers how.
+
+The reasoning behind the first three is in the internal
 [live updates](../realtime.md) page, which needs a sign-in.

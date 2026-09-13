@@ -6,8 +6,7 @@ order: 1
 
 # Authentication
 
-> Part of the [integration guide](./index.md). The token system is specified
-> but not yet live on the server.
+> Part of the [integration guide](./index.md).
 
 A token is issued **for one production** and carries **one production role**.
 It has no access to anything outside that production — not the company, not
@@ -15,11 +14,11 @@ other productions, not the issuing user's account.
 
 | | |
 | --- | --- |
-| Format | `cino_svc_<id>_<secret>` |
+| Format | `cino_svc_<id>_<secret>` — `id` is 32 hex characters |
 | Scope | exactly one production |
 | Permissions | one production role, masked (see below) |
 | Lifetime | **30 days** from creation |
-| Revocation | immediate for new requests, within 60s on live sockets |
+| Revocation | immediate for REST; live sockets are closed straight away, and within 60s at worst |
 | Storage | SHA-256 of the secret; the plaintext is never stored |
 
 The `id` segment is the token's row id. It lets the server find the row with one
@@ -45,6 +44,10 @@ The mask is applied when access is resolved, not when the token is created, so
 editing the role later cannot widen the token. A device must never be able to
 grant access, and `ADMINISTRATOR` passes every other check by design.
 
+If the role is deleted, the token keeps working as a credential but holds **no
+permissions at all**. It fails visibly with `403`s rather than quietly picking up
+someone else's access.
+
 ---
 
 ## What a token cannot reach
@@ -58,6 +61,10 @@ including the account-shaped routes: `/api/user/me`, `/api/production/list`,
 This matters more than it looks. Several of those routes filter by the caller's
 user id rather than by a production, so a token allowed through would report on
 the account of whoever issued it.
+
+The same rule holds for sockets. A token may connect to the `/timeline`
+namespace only. The root namespace is chat between people, and refuses a token
+with `errors.auth.tokenNotPermitted`.
 
 ---
 
@@ -83,7 +90,7 @@ keep: it is how you find the tokens nobody remembers issuing.
 ## Sending the token over REST
 
 ```
-Authorization: Bearer cino_svc_8f2c1a94_R7pQ...
+Authorization: Bearer cino_svc_8f2c1a94e0b34d7f9a61c2d5b7e08f13_R7pQ...
 ```
 
 ```bash
@@ -94,6 +101,9 @@ curl -s "https://cino.no/api/timeline/$TIMELINE_ID" \
 Send no cookies. If a request carries both a session cookie and a bearer token
 the token wins, so a misconfigured proxy cannot quietly upgrade a device to a
 person's access.
+
+Every successful response carries the token's expiry in `X-Cino-Token-Expires`.
+See [expiry and revocation](./lifecycle.md) for what to do with it.
 
 ## Sending the token over Socket.IO
 
@@ -106,7 +116,10 @@ import { io } from 'socket.io-client';
 
 const socket = io('https://cino.no/timeline', {
   path: '/socket',
-  transports: ['websocket'],
+  // Start on long-polling and upgrade when the network allows it. cino.no's
+  // proxy does not forward WebSocket upgrades, so a websocket-only client
+  // never connects there.
+  transports: ['polling', 'websocket'],
   auth: { token: process.env.CINO_TOKEN },
 });
 ```
@@ -125,15 +138,18 @@ explicitly, so there is no CORS configuration to do.
 | 401 | `errors.auth.tokenNotPermitted` | Valid, but this route is not on the allowlist |
 | 403 | `errors.permission.missing` | Valid, but the role lacks the bit — `data.missingPermission` names it |
 | 423 | `errors.track.locked` | Someone locked the track in the editor |
-| 429 | `errors.generic.rateLimited` | See [limits](./limits.md) |
+
+A revoked token answers `tokenInvalid`, not something more specific. Confirming
+that a particular secret once existed would tell an attacker something.
 
 On a socket, a handshake failure arrives as `connect_error` with one of the same
-keys as its message.
+keys as its message. Losing access while connected arrives as `access:revoked`,
+just before the server closes the socket.
 
 **Do not reconnect in a tight loop on `tokenInvalid` or `tokenExpired`.** The
 credential will not fix itself, and a device hammering the handshake is what
-takes an API instance down on a show night. Back off to minutes and surface the
-state on the device's own display.
+takes an API instance down on a show night. Stop, and surface the state on the
+device's own display.
 
 ```js
 socket.on('connect_error', (err) => {
@@ -142,4 +158,14 @@ socket.on('connect_error', (err) => {
     console.error('auth failed, not retrying:', err.message);
   }
 });
+
+socket.on('access:revoked', () => {
+  socket.disconnect();
+  console.error('access revoked, not retrying');
+});
 ```
+
+Every rejected token is written to the production's audit log with the reason
+and the source address, so a device stuck retrying a dead token is easy to find.
+
+Next: [expiry and revocation](./lifecycle.md).

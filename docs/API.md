@@ -150,42 +150,79 @@ Two kinds of caller reach this API, and they are resolved in one place.
 `getPrincipal` in `lib/handler.ts` returns a **`Principal`**: a signed-in person
 holding a session cookie, or a machine holding an API token.
 
-<figure class="diagram wide">
-<svg viewBox="0 0 780 320" role="img" aria-label="A request with a bearer token resolves to a token principal, which only production-scoped preambles accept. A request with a session cookie resolves to a user principal, which every route accepts.">
+<figure class="diagram">
+<svg viewBox="0 0 720 690" role="img" aria-label="Flowchart. A request with a bearer token is verified; an invalid or expired token gets 401, a valid one becomes a token principal, which a requireAuth route refuses with 401 tokenNotPermitted and a production-scoped route lets through. A request without one falls back to the session cookie; no valid session gets 401, a valid one becomes a user principal that any route accepts.">
   <defs>
     <marker id="pr-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" class="d-arrow" />
     </marker>
+    <marker id="pr-arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="d-arrow d-accent" />
+    </marker>
   </defs>
-
-  <rect class="d-box" x="14" y="128" width="132" height="64" rx="10" />
-  <text class="d-text" x="80" y="166" text-anchor="middle">request</text>
-
-  <line class="d-line" x1="148" y1="150" x2="216" y2="80" marker-end="url(#pr-arrow)" />
-  <line class="d-line" x1="148" y1="172" x2="216" y2="242" marker-end="url(#pr-arrow)" />
-
-  <rect class="d-box d-box--accent" x="220" y="42" width="210" height="76" rx="10" />
-  <text class="d-step" x="240" y="72">Authorization: Bearer</text>
-  <text class="d-sub" x="240" y="96">wins over a cookie</text>
-
-  <rect class="d-box" x="220" y="204" width="210" height="76" rx="10" />
-  <text class="d-step" x="240" y="234">Cookie: syncsw_sid</text>
-  <text class="d-sub" x="240" y="258">30s cache, sliding renewal</text>
-
-  <line class="d-line d-line--accent" x1="434" y1="80" x2="500" y2="80" marker-end="url(#pr-arrow)" />
-  <line class="d-line" x1="434" y1="242" x2="500" y2="242" marker-end="url(#pr-arrow)" />
-
-  <rect class="d-box d-box--accent" x="504" y="42" width="176" height="76" rx="10" />
-  <text class="d-text" x="592" y="76" text-anchor="middle">token principal</text>
-  <text class="d-sub" x="592" y="98" text-anchor="middle">one production</text>
-
-  <rect class="d-box" x="504" y="204" width="176" height="76" rx="10" />
-  <text class="d-text" x="592" y="238" text-anchor="middle">user principal</text>
-  <text class="d-sub" x="592" y="260" text-anchor="middle">whole account</text>
-
-  <rect class="d-box" x="240" y="136" width="440" height="48" rx="10" />
-  <text class="d-step" x="260" y="166">requireAuth → 401 for tokens</text>
-  <text class="d-sub" x="660" y="166" text-anchor="end">requireProductionAccess → both</text>
+  <g>
+    <path class="d-line" d="M360,54 L360,80" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M260,120 L130,120 L130,202" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M460,120 L590,120 L590,202" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M130,260 L130,298" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M205,334 L263,334" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M130,368 L130,406" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M130,464 L130,500" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M230,540 L263,540" marker-end="url(#pr-arrow)" />
+    <path class="d-line d-line--accent" d="M130,578 L130,616" marker-end="url(#pr-arrow-accent)" />
+    <path class="d-line" d="M590,260 L590,296" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M495,334 L457,334" marker-end="url(#pr-arrow)" />
+    <path class="d-line" d="M590,370 L590,406" marker-end="url(#pr-arrow)" />
+    <path class="d-line d-line--accent" d="M590,464 L590,512" marker-end="url(#pr-arrow-accent)" />
+  </g>
+  <g>
+    <rect class="d-box" x="285" y="14" width="150" height="40" rx="20" />
+    <text class="d-text" x="360" y="38.2" text-anchor="middle">request</text>
+    <polygon class="d-box" points="360,82 460,120 360,158 260,120" />
+    <text class="d-text" x="360" y="124.2" text-anchor="middle">Bearer token?</text>
+    <rect class="d-box" x="30" y="204" width="200" height="56" rx="10" />
+    <text class="d-text" x="130" y="228.2" text-anchor="middle">verify the token</text>
+    <text class="d-sub" x="130" y="245.0" text-anchor="middle">hash · revoked · expired</text>
+    <polygon class="d-box" points="130,300 205,334 130,368 55,334" />
+    <text class="d-text" x="130" y="338.2" text-anchor="middle">valid?</text>
+    <rect class="d-box" x="30" y="408" width="200" height="56" rx="10" />
+    <text class="d-text" x="130" y="432.2" text-anchor="middle">token principal</text>
+    <text class="d-sub" x="130" y="449.0" text-anchor="middle">one production · masked role</text>
+    <polygon class="d-box" points="130,502 230,540 130,578 30,540" />
+    <text class="d-step" x="130" y="544.0" text-anchor="middle">requireAuth?</text>
+    <rect class="d-box d-box--accent" x="25" y="618" width="210" height="52" rx="26" />
+    <text class="d-text" x="130" y="640.2" text-anchor="middle">route runs</text>
+    <text class="d-sub" x="130" y="657.0" text-anchor="middle">production-scoped routes only</text>
+    <rect class="d-box d-line--dashed" x="265" y="297" width="190" height="74" rx="10" />
+    <text class="d-text" x="360" y="322.2" text-anchor="middle">401</text>
+    <text class="d-sub" x="360" y="339.0" text-anchor="middle">tokenInvalid · tokenExpired</text>
+    <text class="d-sub" x="360" y="355.0" text-anchor="middle">authRequired</text>
+    <rect class="d-box d-line--dashed" x="265" y="512" width="190" height="56" rx="10" />
+    <text class="d-text" x="360" y="536.2" text-anchor="middle">401</text>
+    <text class="d-sub" x="360" y="553.0" text-anchor="middle">tokenNotPermitted</text>
+    <rect class="d-box" x="490" y="204" width="200" height="56" rx="10" />
+    <text class="d-text" x="590" y="228.2" text-anchor="middle">read the session</text>
+    <text class="d-sub" x="590" y="245.0" text-anchor="middle">syncsw_sid cookie</text>
+    <polygon class="d-box" points="590,298 685,334 590,370 495,334" />
+    <text class="d-text" x="590" y="338.2" text-anchor="middle">valid session?</text>
+    <rect class="d-box" x="490" y="408" width="200" height="56" rx="10" />
+    <text class="d-text" x="590" y="432.2" text-anchor="middle">user principal</text>
+    <text class="d-sub" x="590" y="449.0" text-anchor="middle">the whole account</text>
+    <rect class="d-box d-box--accent" x="490" y="514" width="200" height="52" rx="26" />
+    <text class="d-text" x="590" y="536.2" text-anchor="middle">route runs</text>
+    <text class="d-sub" x="590" y="553.0" text-anchor="middle">any preamble</text>
+  </g>
+  <g>
+    <text class="d-sub" x="195" y="113" text-anchor="middle">yes</text>
+    <text class="d-sub" x="525" y="113" text-anchor="middle">no</text>
+    <text class="d-sub" x="234" y="327" text-anchor="middle">no</text>
+    <text class="d-sub" x="138" y="383" text-anchor="start">yes</text>
+    <text class="d-sub" x="246.5" y="533" text-anchor="middle">yes</text>
+    <text class="d-sub" x="138" y="593" text-anchor="start">no</text>
+    <text class="d-sub" x="476" y="327" text-anchor="middle">no</text>
+    <text class="d-sub" x="598" y="385" text-anchor="start">yes</text>
+    <text class="d-sub" x="360" y="178" text-anchor="middle">checked before any cookie</text>
+  </g>
 </svg>
 </figure>
 
@@ -556,14 +593,18 @@ Design: **REST is the source of truth for persistent data.** The socket layer (a
 | C→S | `timeline:join` `{ timelineId }` + ack | `resolveTimelineAccess` check: timeline→production→company; allowed if global admin, company owner/admin, or production member (mirrors §5 layers 1–2 + membership). The member's role permission bits are resolved in the same pass and the resulting `EDIT_TIMELINE` capability is cached on the socket to gate the mutation relays below. Ack `{ ok }` or `{ error: 'Access denied' … }`. On success: join room, add to presence, emit presence to the room, and record an `open` activity row for the timeline (fire-and-forget — see §6 "Activity & recents"). |
 | C→S | `timeline:leave` | leave room + presence (also on `disconnect`) |
 | S→C | `timeline:presence` | `PresenceUser[]` — `{ id, name, avatarImageId, createdAt }`, deduped per user across tabs; sent to the whole room on every join/leave |
-| C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — relayed verbatim to the room **except the sender** (`socket.to(room)`). **Requires `EDIT_TIMELINE` or `RENAME_CLIPS`** (cached join-time capabilities) — rename-only members must be able to relay their label PATCHes, but are restricted to `upsert` (they have no REST path to a remove); sockets with neither permission are silently dropped. `clip` is the full REST response row. Payloads over **32 KB** are dropped (relay amplification guard). |
+| C→S / S→C | `clip:change` | `{ type: 'upsert'\|'remove', trackId, clip? , clipId? }` — normally emitted by the **server** from inside the REST route that persisted the change (`emitTimelineChange`), to the room except the socket named in the request's `x-socket-id` header. C→S is a compatibility path for clients that still relay by hand: relayed verbatim to the room **except the sender** (`socket.to(room)`), and a client doing both makes peers apply the row twice (idempotent, but wasteful). **Requires `EDIT_TIMELINE` or `RENAME_CLIPS`** (cached join-time capabilities) — rename-only members must be able to relay their label PATCHes, but are restricted to `upsert` (they have no REST path to a remove); sockets with neither permission are silently dropped. `clip` is the full REST response row. Payloads over **32 KB** are dropped (relay amplification guard). |
 | C→S / S→C | `track:change` | `{ type: 'upsert'\|'remove'\|'reorder', track?, trackId?, order? }` — same relay semantics, **`EDIT_TIMELINE` gate**, and size cap. `reorder` carries `order: [trackId…]` (the ids the REST reorder applied; index = sortOrder) and requires `order` to be an array |
 | C→S | `transport:command` | `{ action: 'play'\|'pause'\|'seek', frame? }` — VIEW-level (any joined member drives the shared transport). `play` requires `frame` (the sender's position becomes the shared one); `seek` requires `frame` and is accepted **only while playing** (a stopped timeline is browsed privately), rate-bounded to one per 80ms per socket; `pause` is idempotent and its frame is computed **from the server clock**, never taken from the client. The timeline's `frameRate` comes from the DB at join — clients cannot drive the clock with a fake fps. |
-| S→C | `transport:state` | `{ playing, frame, frameRate, userId, at }` — the room's **authoritative transport anchor**, sent to the whole room *including the sender* after every accepted command, and to joiners while playing. `frame` is the position at server time `at`; while playing the position at any server time t is `frame + (t − at)/1000 × frameRate` — **the server decides how fast frames go**. Clients map `at` through their measured clock offset and PREDICT the current frame, so a command's network delay cancels out and every client lands on the same wall-clock-aligned frame. Kept per room in `roomTransport` (anchors never go stale); cleared when the room empties; clients treat a run predicted past the timeline's end as ended. |
+| S→C | `transport:state` | `{ playing, frame, frameRate, userId, at }` — the room's **authoritative transport anchor**, sent to the whole room *including the sender* after every accepted command, and to joiners while playing. `frame` is the position at server time `at`; while playing the position at any server time t is `frame + (t − at)/1000 × frameRate` — **the server decides how fast frames go**. `at` is on the server's monotonic clock (see `time:ping`). Clients keep `at` exactly as sent and PREDICT the current frame through their *current* server-clock estimate every time they read it — never a local time converted once on arrival, which would freeze that moment's estimation error into the anchor — so a command's network delay cancels out and every client lands on the same frame. Kept per room in `roomTransport` (anchors never go stale); cleared when the room empties; clients treat a run predicted past the timeline's end as ended. |
 | S→C | `clip:active` | `{ trackId, clipId, label, sourceId, frame, at }` — emitted while the transport **plays**, whenever the clip under the playhead changes on a track (`clipId: null` = the track went silent). Computed by the **server** from its transport clock: on arm (play/seek) it loads the timeline's clip windows and walks boundary-to-boundary with timers; clip/track edits reload it; pause/empty room disarm it. Active-clip semantics mirror the editor: active from `position`, for `end − mediaStart` frames when `end` is set, else until the track's next clip. Joiners mid-playback get a snapshot of currently active clips. Lets lightweight clients (mobile) show "now playing" per track without holding the clip model. |
-| C→S | `time:ping` | ack-only NTP-style probe: acks `Date.now()` (server epoch ms). The client runs a 5-sample burst on every (re)connect and keeps the lowest-RTT sample's offset (`serverNow + rtt/2 − localNow`) to place transport anchors on its own clock. |
+| C→S | `time:ping` | ack-only NTP-style probe: acks the server's clock in ms (`serverNow()` in `lib/clock.ts` — monotonic, epoch-like, **not** wall-clock time; transport `at` and `clip:active` `at` use the same clock). Clients estimate `serverNow = localMonotonicNow + offset`: a 5-ping burst on every (re)connect, after the WebSocket upgrade and on wake, one ping every 15s; the lowest-RTT sample of the last 2 minutes wins (`serverNow + rtt/2 − t2`, error ≤ rtt/2), samples contradicting a newer one are discarded, and changes > 40ms step while smaller ones slew at ≤ 5ms/s. See `transportClock.ts` and [integrations/timing.md](integrations/timing.md). |
+| C→S | `clock:resync` | `{}` + ack — starts a **room-wide clock resync** (join-level, like the transport it protects). Every socket in the room is asked to re-measure. Ack `{ ok: true, requestId }`; pressing again during a run joins that run instead of starting another. Rules in `lib/clockResync.ts`. |
+| S→C | `clock:measure` | `{ requestId, deadlineMs }` to the whole room, the requester included: run a fresh ping burst now and answer with `clock:report` within `deadlineMs` (4000). |
+| C→S | `clock:report` | `{ requestId, rtt }` — the round trip of the sample the client's estimate rests on (offset good to `rtt/2`), or `null` if no ping answered. Reports for another run, from a socket that was not asked, or repeated, are ignored. |
+| S→C | `clock:status` | `ClockSyncStatus` — `{ requestId, state: 'measuring'\|'done', requestedBy, startedAt, finishedAt, deadlineMs, playHeld, clients: [{ socketId, id, name, state, rtt }] }`, one entry per socket, `state` one of `waiting · synced · failed · no-report · left`. Sent on every change, and to a socket joining mid-run. **While `measuring`, a `transport:command` `play` is held** (the newest wins, `pause` cancels it) and started on a fresh anchor when the run ends: every client answered, left, or the deadline passed. |
 
-**Transport protocol (client contract)** — implemented in `useTimelineSync.js` + `usePlayback.js`:
+**Transport protocol (client contract)** — implemented in `useTimelineSync.ts` + `transportClock.ts` + `usePlayback.ts`:
 
 - Clients never stream positions. Local play/seek act optimistically (audio starts at once) and send a command; the server's echoed anchor then takes over as the time base. Seek commands are throttled at 120ms client-side (trailing send carries the burst's latest frame); play/pause send immediately and drop any queued seek.
 - While playing, each client checks its position against the server anchor every 500ms and corrects any drift > 0.25 frames — corrections < 10 frames shift the audio-clock anchor (voices play on, inaudible), only bigger ones re-anchor audio.

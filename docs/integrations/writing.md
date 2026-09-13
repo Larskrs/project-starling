@@ -1,13 +1,12 @@
 ---
 public: true
 title: Writing changes
-order: 4
+order: 5
 ---
 
 # Writing clips and tracks
 
-> Part of the [integration guide](./index.md). The token system is specified
-> but not yet live on the server.
+> Part of the [integration guide](./index.md).
 
 **Every write is a REST call.** Nothing is ever saved by emitting a socket
 event. The server persists the row, then relays it to the room itself, so peers
@@ -103,6 +102,9 @@ A locked track rejects writes with `423`. The lock is a collaboration signal,
 not a permission — someone in the editor is asking to be left alone. Surface it
 rather than retrying.
 
+Every successful write is recorded against the token in the production's audit
+log. See [limits and logging](./limits.md#what-gets-logged).
+
 ---
 
 ## Not receiving your own writes
@@ -117,6 +119,10 @@ Without it your own change comes back as a `clip:change`, which is harmless but
 wasteful, and will fight any optimistic state you keep. The header is optional
 everywhere: a device with no socket open simply omits it.
 
+Do not also emit `clip:change` or `track:change` yourself after a write. The
+server already relayed it, and a second copy makes every peer apply the change
+twice.
+
 ---
 
 ## Driving playback
@@ -130,8 +136,17 @@ socket.emit('transport:command', { action: 'seek',  frame: 2000 });
 socket.emit('transport:command', { action: 'pause' });
 ```
 
-`pause` takes no frame. The server computes the stop position from its own
-clock, so every client stops on the same one.
+`play` makes your frame the room's frame. `seek` is only accepted while the room
+is playing, because a stopped timeline is browsed privately by each person in
+the editor. `pause` takes no frame: the server computes the stop position from
+its own clock, so every client stops on the same one.
+
+The server stamps the new anchor when the command **arrives**, not when you sent
+it, and sends it to the whole room including you. Your own playhead is therefore
+about one network hop ahead of the room until that `transport:state` comes
+back. Start locally if you want the button to feel instant, but follow the
+anchor as soon as it lands, as described in [reading](./reading.md) and
+[clocks and timing](./timing.md).
 
 Seeks are rate-bounded per socket, and excess commands are dropped rather than
 queued. See [limits](./limits.md).

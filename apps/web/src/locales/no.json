@@ -528,6 +528,28 @@
       "liveHint": "Direkte: avspilling, pause og søk følger den delte transporten, og dine endringer flytter den for alle i denne tidslinjen (L)",
       "localHint": "Lokalt: et privat spillehode — ingenting du gjør flytter andre, og den direkte transporten flytter ikke ditt (L)",
       "roomPlaying": "Den direkte transporten spiller"
+    },
+    "clockSync": {
+      "button": "Synk klokker",
+      "buttonHint": "Få alle tilkoblede redigerere og enheter til å måle klokken sin på nytt mot serveren. Avspilling venter til alle har gjort det.",
+      "intro": "Før en forestilling starter: få alle tilkoblede redigerere og enheter til å måle klokken sin på nytt, så de spiller samme bilde i samme øyeblikk.",
+      "measuring": "Synkroniserer klokker…",
+      "allSynced": "Alle klokker er synkronisert",
+      "someNotSynced": "Noen klokker er ikke synkronisert",
+      "requestedBy": "Startet av {name}",
+      "playHeld": "Avspillingen starter så snart alle klokker har svart",
+      "playHeldTitle": "Venter på at alle klokker synkroniseres — trykk igjen for å avbryte",
+      "syncNow": "Synk alle klokker",
+      "syncAgain": "Synk på nytt",
+      "failed": "Kunne ikke starte klokkesynkronisering",
+      "state": {
+        "waiting": "Måler…",
+        "synced": "±{ms} ms",
+        "loose": "±{ms} ms, grovere enn ett bilde",
+        "failed": "Ingen ping kom fram",
+        "noReport": "Svarte ikke",
+        "left": "Forlot tidslinjen"
+      }
     }
   },
   "trackTypes": {

@@ -115,6 +115,28 @@ check('inline SVG diagrams pass through untouched', () => {
   assert(html.includes('viewBox'), 'svg attributes were mangled');
 });
 
+check('a diagram with blank lines and indentation survives whole', () => {
+  // marked ends an HTML block at the first blank line and reads a four-space
+  // indent as code. Real diagrams have both, and every one in the docs rendered
+  // as debris — <text> wrapped in <p>, or a chunk of SVG shown as a code block —
+  // while the one-line figure above passed.
+  const figure = [
+    '<figure class="diagram">',
+    '<svg viewBox="0 0 10 10">',
+    '  <g>',
+    '    <rect width="10" height="10" />',
+    '',
+    '    <text x="1" y="5">label</text>',
+    '  </g>',
+    '</svg>',
+    '</figure>',
+  ].join('\n');
+  const { html } = renderMarkdown(`Before.\n\n${figure}\n\nAfter.`, '');
+  assert(html.includes(figure), 'the figure did not come through byte for byte');
+  assert(!/<p>\s*<text|<pre>|&lt;rect/.test(html), 'marked parsed the inside of the figure');
+  assert(html.includes('<p>Before.</p>') && html.includes('<p>After.</p>'), 'the prose around the figure stopped rendering');
+});
+
 console.log(failed ? `\n${failed} failed\n` : '\nall passed\n');
 if (failed) process.exit(1);
 
