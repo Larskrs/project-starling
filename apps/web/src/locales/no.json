@@ -16,7 +16,8 @@
     "configuration": "Konfigurasjon",
     "trackTypes": "Sportyper",
     "sourceSets": "Kildesett",
-    "timelines": "Tidslinjer"
+    "timelines": "Tidslinjer",
+    "integrations": "Integrasjoner"
   },
   "greeting": {
     "morning": "God morgen",
@@ -281,6 +282,21 @@
     },
     "track": {
       "locked": "Sporet er låst"
+    },
+    "auth": {
+      "tokenInvalid": "API-nøkkelen er ikke gyldig",
+      "tokenExpired": "API-nøkkelen har utløpt",
+      "tokenNotPermitted": "API-nøkler kan ikke brukes her"
+    },
+    "token": {
+      "notFound": "Fant ikke nøkkelen"
+    },
+    "role": {
+      "notFound": "Fant ikke rollen"
+    },
+    "docs": {
+      "notFound": "Fant ikke dokumentasjonssiden",
+      "signInRequired": "Logg inn for å lese den siden"
     }
   },
   "danger": {
@@ -634,6 +650,41 @@
     "gifAttachment": "GIF-vedlegg"
   },
   "common": {
-    "dismiss": "Lukk"
+    "dismiss": "Lukk",
+    "cancel": "Avbryt"
+  },
+  "integrations": {
+    "title": "Integrasjoner",
+    "description": "API-nøkler lar fast utstyr lese og endre denne produksjonen. Hver nøkkel varer i {days} dager og kan trekkes tilbake når som helst.",
+    "readTheGuide": "Les integrasjonsveiledningen.",
+    "newToken": "Ny nøkkel",
+    "labelPlaceholder": "Navngi utstyret, f.eks. Lysbord FOH",
+    "choseRole": "Velg en rolle",
+    "create": "Opprett",
+    "failedToCreate": "Kunne ikke opprette nøkkelen",
+    "couldNotLoad": "Kunne ikke laste nøkler",
+    "noTokens": "Ingen nøkler ennå. Opprett én for å koble til utstyr.",
+    "expiresIn": "utløper om {days} d",
+    "expired": "utløpt",
+    "lastUsed": "sist brukt for {when} siden",
+    "neverUsed": "aldri brukt",
+    "roleDeleted": "rollen er slettet",
+    "revoke": "Trekk tilbake",
+    "revokeTitle": "Trekke tilbake «{label}»?",
+    "revokeWarning": "Utstyret som bruker nøkkelen slutter å virke umiddelbart, og aktive tilkoblinger lukkes innen ett minutt. Dette kan ikke angres — opprett en ny nøkkel for å koble til igjen.",
+    "revoked": "Trakk tilbake «{label}»",
+    "failedToRevoke": "Kunne ikke trekke tilbake nøkkelen",
+    "secretTitle": "Nøkkel for «{label}»",
+    "secretWarning": "Kopier den nå. Den vises kun én gang og kan ikke hentes fram igjen — mister du den, må du trekke tilbake nøkkelen og opprette en ny.",
+    "copy": "Kopier nøkkel",
+    "copied": "Kopiert",
+    "secretNext": "Lagre den på utstyret som Cino-legitimasjon. Send den som Authorization bearer-header på REST-kall, eller i auth-objektet ved socket-tilkobling.",
+    "secretDone": "Ferdig",
+    "activity": "Nylig aktivitet",
+    "activityHint": "Innloggingshendelser og endringer gjort av nøkler. Lesing logges ikke.",
+    "unknownToken": "Ukjent nøkkel",
+    "withheldNotice": "En nøkkel kan aldri ha {permissions}. Disse holdes tilbake fra rollen, og nøkkelen får alt annet den gir.",
+    "noRoles": "Denne produksjonen har ingen roller ennå. Opprett en på Roller-siden først.",
+    "limited": "begrenset"
   }
 }

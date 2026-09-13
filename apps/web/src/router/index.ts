@@ -22,6 +22,10 @@ const router = createRouter({
     { path: '/chat',     component: () => import('../views/Chat/index.vue'),    meta: { requiresAuth: true, layout: EmptyLayout,   title: 'Chat' } },
     // Kept for links minted while the pitch lived at its own URL.
     { path: '/welcome',  redirect: '/' },
+    // Public by default: the integration guide is written for third parties
+    // who have no account yet, and the API refuses the internal pages to a
+    // signed-out reader on its own. No requiresAuth here on purpose.
+    { path: '/docs/:path(.*)*', component: () => import('../views/Docs/index.vue'), meta: { layout: EmptyLayout, title: 'Documentation' } },
     // Signed-out visitors landing on the home page get the product pitch rather
     // than a login form — every other protected route still routes to /login.
     { path: '/home',       component: () => import('../views/Home/index.vue'),             meta: { requiresAuth: true, guestRedirect: '/', layout: DefaultLayout, title: 'Home' } },
@@ -40,6 +44,7 @@ const router = createRouter({
         { path: 'settings',               component: () => import('../views/Production/SettingsView.vue') },
         { path: 'members',                component: () => import('../views/Production/MembersView.vue') },
         { path: 'roles',                  component: () => import('../views/Production/RolesView.vue') },
+        { path: 'integrations',           component: () => import('../views/Production/IntegrationsView.vue') },
         { path: 'timelines',              component: () => import('../views/Production/TimelinesView.vue') },
         { path: 'track-types',            component: () => import('../views/Production/TrackTypesView.vue') },
         { path: 'source-sets',            component: () => import('../views/Production/SourceSetsView.vue') },

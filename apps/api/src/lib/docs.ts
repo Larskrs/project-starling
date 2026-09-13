@@ -1,39 +1,55 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve, relative, extname, basename, dirname, sep } from 'node:path';
-import { Marked } from 'marked';
-import hljs from 'highlight.js';
-import { DOCS_CSS, DOCS_JS } from './docsTheme.js';
 
 /**
- * Serves `docs/` as a browsable site under `/docs/`.
+ * Discovery and visibility for the `docs/` folder.
  *
  * The URL structure IS the file structure — there is no route table to keep in
  * step with the folder. Drop `docs/deploy/plesk.md` in and `/docs/deploy/plesk`
  * exists; delete it and the page is gone. The only transformation is
  * lowercasing, so `API.md` answers to `/docs/api`.
  *
- * Pages are rendered on demand and cached by mtime, the same way the static
- * asset cache works: editing a file and refreshing shows the change, without a
- * restart and without re-parsing markdown on every request.
+ * This module used to render HTML and serve a whole site of its own. The pages
+ * now live in the web app, next to the timeline editor, so they share its shell,
+ * theme and navigation instead of being a second site with a second design.
+ *
+ * This module only DISCOVERS and describes. Rendering, caching, search and the
+ * public projections live in docsStore, which builds on top of it.
+ *
+ * A DocPage carries an absolute path on disk and the flag that decides who may
+ * read it. Neither belongs in a response, so nothing here is ever returned to a
+ * caller directly — the store projects it first.
  */
 
 const DOCS_ROOT = resolve(join(import.meta.dirname, '../../../../docs'));
 
-/** Where a source-file link should point, since a served page has no filesystem. */
-const REPO_BLOB_URL = 'https://github.com/Larskrs/project-starling/blob/main';
+/** Sidebar group for pages that sit directly in `docs/`. */
+export const ROOT_CATEGORY = 'Reference';
 
 export interface DocPage {
-  /** URL path below /docs, e.g. 'api' or 'deploy/plesk'. */
+  /** URL path below /docs, e.g. 'api' or 'integrations/writing'. */
   slug: string;
   /** Absolute path on disk. */
   file: string;
-  /** Display title — the first H1, falling back to the filename. */
+  /** Display title — front matter `title`, else the first H1, else the filename. */
   title: string;
+  /**
+   * Readable without signing in.
+   *
+   * Opt-in per page via `public: true` front matter, so a new file is private
+   * by default and publishing one is a deliberate act rather than something
+   * that happens because a folder was named a particular way.
+   */
+  isPublic: boolean;
+  /** Sidebar group — front matter `category`, else the containing folder. */
+  category: string;
+  /** Sort key inside a category; ties fall back to slug. */
+  order: number;
+  /** Folder relative to `docs/`, '' at the root. Drives relative links. */
+  dir: string;
+  /** Last modified, so a prebuilt bundle can tell whether it is still current. */
+  mtimeMs: number;
 }
-
-interface RenderedPage { mtimeMs: number; html: string }
-
-const pageCache = new Map<string, RenderedPage>();
 
 /** Tree discovery is cheap but not free; re-scan at most this often. */
 const INDEX_TTL_MS = 2000;
@@ -47,17 +63,51 @@ function slugFor(file: string): string {
     .split(sep)
     .join('/')
     .replace(/\.md$/i, '')
-    .toLowerCase();
+    .toLowerCase()
+    // A folder's index page IS the folder: docs/integrations/index.md answers
+    // at /docs/integrations, so a category has a landing page instead of a URL
+    // ending in the word "index".
+    .replace(/\/index$/, '');
 }
 
-async function firstHeading(file: string): Promise<string | null> {
-  try {
-    const text = await readFile(file, 'utf8');
-    const m = text.match(/^#\s+(.+)$/m);
-    return m ? m[1]!.trim() : null;
-  } catch {
-    return null;
+/** The folder a file sits in, relative to `docs/` — '' at the root. */
+function dirOf(file: string): string {
+  const rel = relative(DOCS_ROOT, dirname(file));
+  return rel === '' || rel === '.' ? '' : rel.split(sep).join('/').toLowerCase();
+}
+
+/** 'integrations' → 'Integrations', 'live-updates' → 'Live updates'. */
+function titleCase(segment: string): string {
+  const spaced = segment.replace(/[-_]+/g, ' ').trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * Minimal `key: value` front matter.
+ *
+ * Deliberately not a YAML parser. The only consumers are a handful of scalar
+ * fields, and pulling in something that can evaluate arbitrary structures is a
+ * poor trade for that — particularly for the field that decides whether a page
+ * is readable without signing in. Anything unrecognised is ignored rather than
+ * fatal, so a malformed header costs a default and never the page.
+ */
+function parseFrontMatter(source: string): { meta: Record<string, string>; body: string } {
+  const m = source.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!m) return { meta: {}, body: source };
+
+  const meta: Record<string, string> = {};
+  for (const line of m[1]!.split(/\r?\n/)) {
+    const idx = line.indexOf(':');
+    if (idx === -1) continue;
+    meta[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
   }
+  return { meta, body: source.slice(m[0].length) };
+}
+
+/** Reads a page's front matter and body, or null when it cannot be read. */
+async function readPage(file: string): Promise<{ meta: Record<string, string>; body: string } | null> {
+  try { return parseFrontMatter(await readFile(file, 'utf8')); }
+  catch { return null; }
 }
 
 async function walk(dir: string, out: string[]): Promise<void> {
@@ -80,251 +130,183 @@ export async function listDocs(): Promise<DocPage[]> {
   const files: string[] = [];
   await walk(DOCS_ROOT, files);
 
-  const pages = await Promise.all(files.map(async (file) => ({
-    slug:  slugFor(file),
-    file,
-    title: (await firstHeading(file)) ?? basename(file, extname(file)),
-  })));
+  const pages = await Promise.all(files.map(async (file): Promise<DocPage> => {
+    const parsed  = await readPage(file);
+    const meta    = parsed?.meta ?? {};
+    const heading = parsed?.body.match(/^#\s+(.+)$/m)?.[1]?.trim();
+    const dir     = dirOf(file);
+    const order   = Number(meta.order);
+    const mtimeMs = (await stat(file).catch(() => null))?.mtimeMs ?? 0;
 
-  pages.sort((a, b) => a.slug.localeCompare(b.slug));
+    return {
+      slug:     slugFor(file),
+      file,
+      dir,
+      mtimeMs,
+      title:    meta.title ?? heading ?? basename(file, extname(file)),
+      // Anything other than an explicit `public: true` is private. A typo in
+      // the value fails closed, which is the direction a visibility flag
+      // should fail in.
+      isPublic: meta.public?.toLowerCase() === 'true',
+      category: meta.category ?? (dir ? titleCase(dir.split('/')[0]!) : ROOT_CATEGORY),
+      order:    Number.isFinite(order) ? order : 100,
+    };
+  }));
+
+  pages.sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug));
   indexCache = { at: Date.now(), pages };
   return pages;
 }
 
-/**
- * The file a slug refers to, or null.
- *
- * Resolved by matching against the DISCOVERED list rather than by joining the
- * slug onto a path. A slug never reaches the filesystem, so `../../.env` has
- * nothing to traverse — it simply matches no page. The containment check below
- * is a second line of defence for the same reason the static handler keeps one.
- */
-async function fileForSlug(slug: string): Promise<DocPage | null> {
-  const clean = slug.replace(/^\/+|\/+$/g, '').toLowerCase();
-  if (!clean) return null;
-
-  const page = (await listDocs()).find(p => p.slug === clean);
-  if (!page) return null;
-  if (!resolve(page.file).startsWith(DOCS_ROOT)) return null;
-  return page;
+/** A page's markdown with its front matter stripped, or null when unreadable. */
+export async function readDocMarkdown(page: DocPage): Promise<string | null> {
+  const parsed = await readPage(page.file);
+  return parsed?.body ?? null;
 }
 
+// ── Search ────────────────────────────────────────────────────────────────────
 
-// ── Rendering ─────────────────────────────────────────────────────────────────
+export interface SearchEntry {
+  slug: string;
+  title: string;
+  category: string;
+  /** The H2 this text sits under, or null for the page's opening. */
+  heading: string | null;
+  headingId: string | null;
+  text: string;
+}
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, c =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+export interface DocSearchHit {
+  slug: string;
+  title: string;
+  category: string;
+  heading: string | null;
+  headingId: string | null;
+  snippet: string;
+  score: number;
+}
+
+/** Mirrors the id the web renderer gives a heading, so results can deep-link. */
+function slugifyHeading(text: string): string {
+  return text.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
 }
 
 /**
- * Rewrites the two kinds of relative link the docs contain.
+ * Splits a page into one entry per H2 section.
  *
- * `./REALTIME.md` → `/docs/realtime`, so cross-references work as navigation
- * rather than as broken file paths.
- *
- * `../apps/api/src/lib/liveRoom.ts` → the file on GitHub. A served page has no
- * filesystem to point at, and these links are the docs' way of saying "the code
- * is here" — dropping them would lose the most useful thing about them.
+ * Sections rather than whole pages, because a hit deep in a long reference page
+ * is useless if it can only say "this page somewhere" — the section gives the
+ * result a subtitle and an anchor to jump to.
  */
-function rewriteLink(href: string, fromSlug: string): string {
-  if (/^(https?:|mailto:|#)/i.test(href)) return href;
+export function splitSections(page: DocPage, markdown: string): SearchEntry[] {
+  const entries: SearchEntry[] = [];
+  let heading: string | null = null;
+  let buffer: string[] = [];
 
-  const md = href.match(/^\.{1,2}\/(.+)\.md(#.*)?$/i);
-  if (md) {
-    const dir = dirname(fromSlug);
-    const target = href.startsWith('../')
-      ? md[1]!.toLowerCase()
-      : (dir === '.' ? md[1]!.toLowerCase() : `${dir}/${md[1]!.toLowerCase()}`);
-    return `/docs/${target}${md[2] ?? ''}`;
+  const flush = () => {
+    const text = buffer.join('\n').trim();
+    if (text) {
+      entries.push({
+        slug: page.slug, title: page.title, category: page.category,
+        heading,
+        headingId: heading ? slugifyHeading(heading) : null,
+        text,
+      });
+    }
+    buffer = [];
+  };
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const h2 = /^##\s+(.+)$/.exec(line);
+    if (h2) { flush(); heading = h2[1]!.trim(); continue; }
+    buffer.push(line);
+  }
+  flush();
+  return entries;
+}
+
+/**
+ * Roughly de-markdowns text so a snippet reads as prose, not as syntax.
+ *
+ * Emphasis is unwrapped by matching the PAIR, never by deleting the characters.
+ * A blanket `[*_]` strip also eats the underscores inside identifiers, which
+ * silently made every snake_case term unsearchable — `cino_svc` indexed as
+ * `cinosvc`, so the one string an integrator is most likely to paste into the
+ * search box matched nothing.
+ */
+function plainText(s: string): string {
+  return s
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^[>#\-*|]+\s*/gm, ' ')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    // Underscore emphasis only when it wraps a word, so identifiers survive.
+    .replace(/(^|[^\w])_([^_\n]+)_(?=[^\w]|$)/g, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const SNIPPET_RADIUS = 90;
+
+function snippetAround(text: string, at: number, length: number): string {
+  const start = Math.max(0, at - SNIPPET_RADIUS);
+  const end   = Math.min(text.length, at + length + SNIPPET_RADIUS);
+  return (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : '');
+}
+
+/**
+ * Ranks sections against a query.
+ *
+ * Pure, so the ranking can be tested without touching the filesystem. The
+ * weights encode one judgement: a page whose TITLE matches is almost always
+ * what you meant, and a passing mention in body text almost never is.
+ */
+export function searchIndex(entries: SearchEntry[], query: string, limit = 12): DocSearchHit[] {
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+
+  const hits: DocSearchHit[] = [];
+
+  for (const entry of entries) {
+    const title   = entry.title.toLowerCase();
+    const heading = (entry.heading ?? '').toLowerCase();
+    const plain   = plainText(entry.text);
+    const body    = plain.toLowerCase();
+
+    let score = 0;
+    if (title === q)               score += 120;
+    else if (title.startsWith(q))  score += 80;
+    else if (title.includes(q))    score += 50;
+
+    if (heading.includes(q))       score += 30;
+
+    const bodyAt = body.indexOf(q);
+    if (bodyAt !== -1) {
+      score += 12;
+      // A term that recurs is more likely the section's subject than one that
+      // appears once in passing. Capped so a glossary cannot dominate.
+      let count = 0, from = 0, next: number;
+      while ((next = body.indexOf(q, from)) !== -1 && count < 5) { count++; from = next + q.length; }
+      score += Math.min(count, 5) * 2;
+    }
+
+    if (score === 0) continue;
+
+    hits.push({
+      slug: entry.slug,
+      title: entry.title,
+      category: entry.category,
+      heading: entry.heading,
+      headingId: entry.headingId,
+      snippet: bodyAt !== -1 ? snippetAround(plain, bodyAt, q.length) : plain.slice(0, 160),
+      score,
+    });
   }
 
-  if (href.startsWith('../')) return `${REPO_BLOB_URL}/${href.replace(/^(\.\.\/)+/, '')}`;
-  return href;
-}
-
-/** Stable id for a heading, so the sidebar and deep links can reach it. */
-function headingId(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/<[^>]+>/g, '')
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-');
-}
-
-export interface Heading { id: string; text: string }
-
-/** highlight.js names for the fence labels the docs actually use. */
-const LANG_ALIASES: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript',
-  js: 'javascript', jsx: 'javascript',
-  sh: 'bash', shell: 'bash', console: 'bash',
-  yml: 'yaml',
-};
-
-function renderMarkdown(source: string, slug: string): { html: string; headings: Heading[] } {
-  const headings: Heading[] = [];
-  const marked = new Marked({ gfm: true, breaks: false });
-
-  marked.use({
-    renderer: {
-      link({ href, title, tokens }: { href: string; title?: string | null; tokens: unknown[] }) {
-        const text = this.parser.parseInline(tokens as never);
-        const to = rewriteLink(href, slug);
-        // Anything leaving the site opens in a new tab, with noopener so the
-        // opened page cannot reach back through window.opener.
-        const external = /^https?:/i.test(to);
-        const attrs = external ? ' target="_blank" rel="noopener noreferrer"' : '';
-        return `<a href="${escapeHtml(to)}"${title ? ` title="${escapeHtml(title)}"` : ''}${attrs}>${text}</a>`;
-      },
-
-      heading({ tokens, depth }: { tokens: unknown[]; depth: number }) {
-        const text = this.parser.parseInline(tokens as never);
-        if (depth === 1) return `<h1>${text}</h1>\n`;
-        const id = headingId(text);
-        // Only H2s reach the sidebar: H1 is the page title, H3+ is detail that
-        // would bury the sections you actually navigate between.
-        if (depth === 2) headings.push({ id, text });
-        const anchor = `<a class="hanchor" href="#${id}" aria-label="Link to this section">#</a>`;
-        return `<h${depth} id="${id}">${anchor}${text}</h${depth}>\n`;
-      },
-
-      /**
-       * Code blocks get a toolbar: the language, and a copy button.
-       *
-       * Highlighting is done HERE, on the server, and cached with the page — so
-       * it costs the reader nothing. A client-side highlighter would ship a
-       * parser for every language and then re-run it on every page load.
-       */
-      code({ text, lang }: { text: string; lang?: string }) {
-        const raw = (lang ?? '').trim().split(/\s+/)[0]?.toLowerCase() ?? '';
-        const language = LANG_ALIASES[raw] ?? raw;
-        const known = language && hljs.getLanguage(language);
-
-        let body: string;
-        try {
-          body = known
-            ? hljs.highlight(text, { language, ignoreIllegals: true }).value
-            : escapeHtml(text);
-        } catch {
-          // A grammar that chokes must not take the page down with it.
-          body = escapeHtml(text);
-        }
-
-        const label = known ? language : (raw || 'text');
-        return `<div class="codeblock wide">`
-          + `<div class="codeblock__bar">`
-          + `<span class="codeblock__lang">${escapeHtml(label)}</span>`
-          + `<button class="codeblock__copy" type="button">Copy</button>`
-          + `</div>`
-          + `<pre><code class="hljs">${body}</code></pre>`
-          + `</div>\n`;
-      },
-
-      /**
-       * The WRAPPER scrolls, not the table.
-       *
-       * `display: block` on a <table> — the usual quick fix — throws away table
-       * layout, so columns stop aligning and the header stops being sticky.
-       * Wrapping keeps the table a table and gives the overflow somewhere to go.
-       */
-      table({ header, rows }: { header: unknown[]; rows: unknown[][] }) {
-        const head = (header as never[]).map(cell =>
-          `<th>${this.parser.parseInline((cell as { tokens: never[] }).tokens)}</th>`).join('');
-        const body = (rows as never[][]).map(row =>
-          `<tr>${row.map(cell =>
-            `<td>${this.parser.parseInline((cell as { tokens: never[] }).tokens)}</td>`).join('')}</tr>`).join('');
-        return `<div class="tablewrap wide"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>\n`;
-      },
-    },
-  });
-
-  return { html: marked.parse(source) as string, headings };
-}
-
-// ── Page shell ────────────────────────────────────────────────────────────────
-
-function navHtml(pages: DocPage[], activeSlug: string, headings: Heading[]): string {
-  const links = pages.map((p) => {
-    const active = p.slug === activeSlug;
-    const toc = active && headings.length
-      ? `<div class="side__toc">${headings
-          .map(h => `<a href="#${h.id}">${h.text}</a>`).join('')}</div>`
-      : '';
-    return `<a href="/docs/${p.slug}"${active ? ' aria-current="page"' : ''}>${escapeHtml(p.title)}</a>${toc}`;
-  }).join('');
-
-  return `<div class="side__group">Documentation</div>${links}`;
-}
-
-function shell(title: string, activeSlug: string, pages: DocPage[], headings: Heading[], body: string): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
-<meta name="color-scheme" content="light dark">
-<title>${escapeHtml(title)} — Cino docs</title>
-<style>${DOCS_CSS}</style>
-</head>
-<body>
-<div class="layout">
-  <aside class="side">
-    <div class="side__head">
-      <span class="side__mark" aria-hidden="true"></span>
-      <a class="side__title" href="/docs/" style="text-decoration:none">Cino docs</a>
-      <button class="side__theme" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
-    </div>
-    <div class="side__search">
-      <input type="search" placeholder="Filter pages…" aria-label="Filter pages">
-    </div>
-    <nav class="side__nav">${navHtml(pages, activeSlug, headings)}</nav>
-  </aside>
-  <main><article class="prose">${body}</article></main>
-</div>
-<script>${DOCS_JS}</script>
-</body>
-</html>`;
-}
-
-// ── Public surface ────────────────────────────────────────────────────────────
-
-/** The generated index at `/docs/`. */
-export async function renderIndex(): Promise<string> {
-  const pages = await listDocs();
-  const cards = pages.map(p =>
-    `<li><a class="card" href="/docs/${p.slug}">`
-    + `<div class="card__title">${escapeHtml(p.title)}</div>`
-    + `<div class="card__slug">/docs/${escapeHtml(p.slug)}</div>`
-    + `</a></li>`
-  ).join('');
-
-  const body = `<h1>Documentation</h1>
-<p class="lede">Every page here is a file in <code>docs/</code>. The URL mirrors the path,
-so adding a markdown file publishes a page and deleting one takes it down.</p>
-<ul class="cards wide">${cards || '<li>No pages found.</li>'}</ul>`;
-
-  return shell('Documentation', '', pages, [], body);
-}
-
-/** A single page, or null when the slug matches nothing. */
-export async function renderPage(slug: string): Promise<string | null> {
-  const page = await fileForSlug(slug);
-  if (!page) return null;
-
-  const st = await stat(page.file).catch(() => null);
-  if (!st) return null;
-
-  const cached = pageCache.get(page.slug);
-  if (cached && cached.mtimeMs === st.mtimeMs) return cached.html;
-
-  const source = await readFile(page.file, 'utf8');
-  const { html, headings } = renderMarkdown(source, page.slug);
-  const pages = await listDocs();
-  const full = shell(page.title, page.slug, pages, headings, html);
-
-  pageCache.set(page.slug, { mtimeMs: st.mtimeMs, html: full });
-  return full;
+  // One result per section already; sort by score, then stable by slug so the
+  // list does not reshuffle between identical-scoring keystrokes.
+  hits.sort((a, b) => b.score - a.score || a.slug.localeCompare(b.slug));
+  return hits.slice(0, limit);
 }

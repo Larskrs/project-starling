@@ -12,15 +12,37 @@ native client see [swiftSocket.md](./swiftSocket.md).
 
 ## 1. The shape of it
 
-```
-                    ┌──────────────────────────────────────────┐
-   ┌────────┐       │  REST route                              │       ┌────────┐
-   │ author │──────▶│   1. permission check                    │       │  peer  │
-   │        │ PATCH │   2. write to Postgres                   │       │        │
-   │        │       │   3. emitTimelineChange(...) ────────────┼──────▶│        │
-   │        │◀──────│   4. return the row                      │       │        │
-   └────────┘  200  └──────────────────────────────────────────┘       └────────┘
-```
+<figure class="diagram wide">
+<svg viewBox="0 0 780 210" role="img" aria-label="An author PATCHes a REST route, which checks permission, writes to Postgres, relays the change to peers, then returns the row to the author.">
+  <defs>
+    <marker id="rt-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="d-arrow" />
+    </marker>
+  </defs>
+
+  <rect class="d-box" x="14" y="64" width="116" height="76" rx="10" />
+  <text class="d-text" x="72" y="107" text-anchor="middle">author</text>
+
+  <rect class="d-box d-box--wide" x="222" y="18" width="336" height="174" rx="12" />
+  <text class="d-label" x="244" y="44">REST route</text>
+  <text class="d-step" x="244" y="76">1. permission check</text>
+  <text class="d-step" x="244" y="104">2. write to Postgres</text>
+  <text class="d-step d-accent" x="244" y="132">3. emitTimelineChange(…)</text>
+  <text class="d-step" x="244" y="160">4. return the row</text>
+
+  <rect class="d-box" x="650" y="64" width="116" height="76" rx="10" />
+  <text class="d-text" x="708" y="107" text-anchor="middle">peer</text>
+
+  <line class="d-line" x1="132" y1="88" x2="218" y2="88" marker-end="url(#rt-arrow)" />
+  <text class="d-sub" x="175" y="79" text-anchor="middle">PATCH</text>
+
+  <line class="d-line" x1="218" y1="122" x2="132" y2="122" marker-end="url(#rt-arrow)" />
+  <text class="d-sub" x="175" y="139" text-anchor="middle">200</text>
+
+  <line class="d-line d-line--accent" x1="562" y1="128" x2="646" y2="108" marker-end="url(#rt-arrow)" />
+  <text class="d-sub" x="604" y="96" text-anchor="middle">relay</text>
+</svg>
+</figure>
 
 Two rules follow from this picture, and most confusion comes from missing one
 of them.

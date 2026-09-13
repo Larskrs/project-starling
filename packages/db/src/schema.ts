@@ -353,3 +353,80 @@ export const clipNotes = pgTable(
     index("clip_notes_clip_idx").on(t.clipId),
   ],
 );
+
+// ─── API tokens ──────────────────────────────────────────────────────
+// Credentials for installed equipment: a lighting desk, a playback machine, a
+// status display. See docs/integrations for the contract these implement.
+
+/**
+ * A machine credential scoped to ONE production.
+ *
+ * Deliberately not a user row. A token belongs to the production rather than to
+ * whoever installed it, so it keeps working when that person leaves and it can
+ * be revoked without touching anybody's password. It also carries its own
+ * label, which is what makes an audit trail say "Lighting Desk" instead of
+ * naming a human who was asleep at the time.
+ *
+ * Permissions come from a production role rather than a parallel scope
+ * vocabulary — see TOKEN_PERMISSION_MASK in lib/apiTokens.ts for the bits a
+ * token may never hold, whatever its role says.
+ */
+export const apiTokens = pgTable('api_tokens', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  productionId: uuid('production_id').notNull().references(() => productions.id, { onDelete: 'cascade' }),
+  // A deleted role leaves the token with no permissions at all rather than
+  // silently inheriting someone else's — it stops working, visibly, which is
+  // the safe direction for a credential to fail in.
+  roleId:       uuid('role_id').references(() => productionRoles.id, { onDelete: 'set null' }),
+  label:        text('label').notNull(),
+  /** SHA-256 of the secret half, hex. The plaintext is never stored. */
+  tokenHash:    text('token_hash').notNull(),
+  /** Who issued it. Nullable so deleting a person does not delete the desk. */
+  createdBy:    uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  expiresAt:    timestamp('expires_at').notNull(),
+  /** Coarse liveness for the management page, not an audit record. */
+  lastUsedAt:   timestamp('last_used_at'),
+  /** Set rather than deleting the row, so the audit trail keeps its subject. */
+  revokedAt:    timestamp('revoked_at'),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('api_tokens_production_idx').on(t.productionId),
+  uniqueIndex('api_tokens_hash_uq').on(t.tokenHash),
+]);
+
+export const apiTokenEventEnum = pgEnum('api_token_event', [
+  'issued', 'revoked', 'rejected', 'create', 'update', 'delete',
+]);
+
+/**
+ * Append-only audit log for token activity.
+ *
+ * Separate from `activity` on purpose. That table COALESCES repeats onto one
+ * row inside a 30-minute window and skips the write entirely for a repeat
+ * inside 60 seconds, which is right for "recently opened" and destroys an audit
+ * trail — 500 edits would become one row, and some would never land at all.
+ * Nothing here is ever coalesced.
+ *
+ * Only auth events and mutations are recorded. Reads and transport commands are
+ * not: a desk scrubbing at speed would write millions of rows saying nothing,
+ * and a log nobody can read is decoration rather than evidence.
+ */
+export const apiTokenEvents = pgTable('api_token_events', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  // Kept when the token row goes, so history outlives its subject.
+  tokenId:      uuid('token_id').references(() => apiTokens.id, { onDelete: 'set null' }),
+  productionId: uuid('production_id').references(() => productions.id, { onDelete: 'cascade' }),
+  event:        apiTokenEventEnum('event').notNull(),
+  /** Free-form entity label ('clip', 'track'), no FK — one log, many kinds. */
+  entityType:   text('entity_type'),
+  entityId:     uuid('entity_id'),
+  /** The person, when a person did it: issuing and revoking. */
+  actorUserId:  uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  /** Source address, recorded for rejections above all. */
+  ip:           text('ip'),
+  detail:       text('detail'),
+  occurredAt:   timestamp('occurred_at').notNull().defaultNow(),
+}, (t) => [
+  index('api_token_events_token_idx').on(t.tokenId, t.occurredAt),
+  index('api_token_events_production_idx').on(t.productionId, t.occurredAt),
+]);

@@ -1,10 +1,10 @@
 import type { Server as SocketIOServer, Namespace } from 'socket.io';
 import { eq } from 'drizzle-orm';
 import { db, timelines, productions, tracks, clips } from '@starling/db';
-import type { SocketUser } from './sockets.js';
+import type { SocketUser, SocketPrincipal } from './sockets.js';
 import { createLiveRoom, type LiveRoomContext } from './liveRoom.js';
 import { trackActivity } from './activity.js';
-import { resolveAccessLevel, type AccessLevel } from './production.js';
+import { resolveAccessLevel, type AccessLevel, type AccessPrincipal } from './production.js';
 import { can } from './permissions.js';
 import { Permission } from '@starling/auth/permissions';
 import {
@@ -181,7 +181,7 @@ function evaluateWatcher(nsp: Namespace, timelineId: string): void {
 // two layers can never drift.
 
 async function resolveTimelineAccess(
-  user: SocketUser,
+  principal: SocketPrincipal,
   timelineId: string,
 ): Promise<{ level: AccessLevel; frameRate: number; productionId: string; companyId: string } | null> {
   const [tl] = await db
@@ -192,7 +192,11 @@ async function resolveTimelineAccess(
     .limit(1);
   if (!tl) return null;
 
-  const level = await resolveAccessLevel({ id: user.id, role: user.role }, tl.companyId, tl.productionId);
+  const access: AccessPrincipal = principal.kind === 'token'
+    ? { kind: 'token', id: principal.tokenId, productionId: principal.productionId, permissions: principal.permissions }
+    : { kind: 'user',  id: principal.userId,  role: principal.role };
+
+  const level = await resolveAccessLevel(access, tl.companyId, tl.productionId);
   if (!level) return null;
 
   return {
@@ -265,8 +269,8 @@ export function setupTimelineSockets(io: SocketIOServer): void {
     presenceEvent: TimelineEvent.presence,
     roomIdField:   'timelineId',
 
-    async authorize(user, timelineId) {
-      const resolved = await resolveTimelineAccess(user, timelineId);
+    async authorize({ user, principal }, timelineId) {
+      const resolved = await resolveTimelineAccess(principal, timelineId);
       if (!resolved) return null;
 
       return {
@@ -291,13 +295,19 @@ export function setupTimelineSockets(io: SocketIOServer): void {
     onJoined(socket, timelineId, caps) {
       // Joining the room IS opening the timeline — this is what puts it in the
       // user's "recently opened" list on the home page.
-      trackActivity({
-        userId:       socket.data.user.id,
-        entityType:   'timeline',
-        entityId:     timelineId,
-        productionId: caps.productionId,
-        companyId:    caps.companyId,
-      });
+      //
+      // People only: a token's presence id is not a user id, so this would
+      // break the foreign key, and a device reconnecting all night has no place
+      // in anybody's recents.
+      if (socket.data.principal.kind === 'user') {
+        trackActivity({
+          userId:       socket.data.user.id,
+          entityType:   'timeline',
+          entityId:     timelineId,
+          productionId: caps.productionId,
+          companyId:    caps.companyId,
+        });
+      }
 
       // An ACTIVE timeline is shared: the joiner receives the authoritative
       // anchor and derives the current frame from it — anchors never go stale.

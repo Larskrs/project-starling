@@ -3,6 +3,10 @@ import { gzipSync } from 'node:zlib';
 import type { ZodType } from 'zod';
 import type { SessionData } from './session.js';
 import { parseSessionCookie, getSession, renewSessionIfDue } from './session.js';
+import {
+  verifyApiToken, recordTokenEvent, TOKEN_EXPIRES_HEADER, type TokenPrincipal,
+} from './apiTokens.js';
+import { getClientIp } from './security.js';
 import { SOCKET_ID_HEADER } from '@starling/realtime';
 
 // ── Route metadata ────────────────────────────────────────────────────────────
@@ -30,6 +34,16 @@ export interface ApiEvent {
   method: string;
   url:    URL;
   params: Record<string, string>;
+  /**
+   * Set by getPrincipal once the caller is resolved.
+   *
+   * Exists so the server can audit a token's mutations in ONE place after the
+   * handler returns, instead of every mutating route remembering to log. That
+   * is the same reasoning that moved live relays out of the client: a rule
+   * enforced at one chokepoint cannot be forgotten by the next route someone
+   * adds.
+   */
+  principal?: Principal;
 }
 
 export type EventHandler<T = unknown> = (event: ApiEvent) => T | Promise<T>;
@@ -60,6 +74,22 @@ export function createError(opts: { statusCode: number; message: string; data?: 
 
 export type AuthContext = SessionData;
 
+/** A signed-in person. */
+export interface UserPrincipal extends SessionData {
+  kind: 'user';
+}
+
+/**
+ * Who is making a request: a person holding a session, or a machine holding an
+ * API token.
+ *
+ * `resolveAccessLevel` never cared what kind of thing an id belonged to, which
+ * is what lets a second kind of caller exist without a parallel permission
+ * system. The two differ in exactly two places: which memberships they resolve
+ * through, and which routes they may reach at all.
+ */
+export type Principal = UserPrincipal | TokenPrincipal;
+
 /** Returns the session for the request cookie, or null. */
 export async function getAuth(event: ApiEvent): Promise<AuthContext | null> {
   const id = parseSessionCookie(event.req.headers.cookie);
@@ -78,11 +108,68 @@ export async function getAuth(event: ApiEvent): Promise<AuthContext | null> {
   return session;
 }
 
-/** Returns the session or throws 401. */
+function bearerToken(event: ApiEvent): string | null {
+  const raw = event.req.headers.authorization;
+  if (typeof raw !== 'string') return null;
+  const m = /^Bearer\s+(\S+)$/i.exec(raw.trim());
+  return m ? m[1]! : null;
+}
+
+/**
+ * Resolves the caller, token first.
+ *
+ * A bearer token BEATS a session cookie when both are present, so a
+ * misconfigured proxy that forwards someone's cookie alongside a device's
+ * token cannot silently upgrade the device to that person's access.
+ */
+export async function getPrincipal(event: ApiEvent): Promise<Principal | null> {
+  const raw = bearerToken(event);
+
+  if (raw) {
+    const result = await verifyApiToken(raw);
+    if (!result.ok) {
+      recordTokenEvent({
+        event:  'rejected',
+        ip:     getClientIp(event.req),
+        detail: `${result.reason} on ${event.method} ${event.url.pathname}`,
+      });
+      throw new ApiError(401, 'Invalid or expired token', undefined, `errors.auth.${result.reason}`);
+    }
+
+    // Lets a device alarm locally before it is locked out, rather than
+    // discovering the problem as a 401 in the middle of a show.
+    if (!event.res.headersSent) {
+      event.res.setHeader(TOKEN_EXPIRES_HEADER, result.principal.expiresAt.toISOString());
+    }
+    event.principal = result.principal;
+    return result.principal;
+  }
+
+  const session = await getAuth(event);
+  if (!session) return null;
+
+  const principal: Principal = { kind: 'user', ...session };
+  event.principal = principal;
+  return principal;
+}
+
+/**
+ * Returns the signed-in user, or throws 401.
+ *
+ * Tokens are refused here by design. Access for a machine is an ALLOWLIST: a
+ * route opts in by resolving a principal itself, and everything else stays
+ * closed. That matters because several routes filter by the caller's own user
+ * id rather than by a production — `/api/production/list` and `/api/user/me`
+ * among them — so a token admitted here would report on the account of whoever
+ * issued it.
+ */
 export async function requireAuth(event: ApiEvent): Promise<AuthContext> {
-  const auth = await getAuth(event);
-  if (!auth) throw new ApiError(401, 'Authentication required', undefined, 'errors.generic.authRequired');
-  return auth;
+  const principal = await getPrincipal(event);
+  if (!principal) throw new ApiError(401, 'Authentication required', undefined, 'errors.generic.authRequired');
+  if (principal.kind === 'token') {
+    throw new ApiError(401, 'This endpoint is not available to API tokens', undefined, 'errors.auth.tokenNotPermitted');
+  }
+  return principal;
 }
 
 /** Returns the session (admin only) or throws 401/403. */

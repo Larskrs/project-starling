@@ -5,17 +5,23 @@ import { requireTimelineParam } from '../../../lib/production.js';
 import { trackActivity } from '../../../lib/activity.js';
 
 export default defineEventHandler(async (event) => {
-  const { auth, company, production, timeline } = await requireTimelineParam(event);
+  const { auth, principal, company, production, timeline } = await requireTimelineParam(event);
 
   // Bootstrapping a timeline counts as opening it — covers clients that read
   // the timeline without joining the socket room.
-  trackActivity({
-    userId:       auth.userId,
-    entityType:   'timeline',
-    entityId:     timeline.id,
-    productionId: production.id,
-    companyId:    company.id,
-  });
+  //
+  // People only. A device re-bootstraps on every reconnect, and "recently
+  // opened" is a human's list of what they were working on — filling it from a
+  // playback machine that polls all night makes it useless.
+  if (principal.kind === 'user') {
+    trackActivity({
+      userId:       auth.userId,
+      entityType:   'timeline',
+      entityId:     timeline.id,
+      productionId: production.id,
+      companyId:    company.id,
+    });
+  }
 
   const [trackRows, trackTypeRows, sourceRows] = await Promise.all([
     db.select({

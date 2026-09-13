@@ -9,6 +9,18 @@
     @apply border-border;
   }
 
+  /*
+   * Reserve the scrollbar's width whether or not one is showing.
+   *
+   * Without this, navigating from a page that scrolls to one that does not
+   * removes the scrollbar and every centred layout jumps sideways by its width.
+   * It reads as the whole page twitching on each route change, and it is most
+   * obvious in the docs, where page lengths vary wildly.
+   */
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;

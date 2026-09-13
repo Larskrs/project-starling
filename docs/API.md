@@ -21,7 +21,9 @@ apps/api/src/
 │  ├─ company.ts       company resolution + company-admin guard
 │  ├─ storage.ts       disk layout, sharp image pipeline, audio writes
 │  ├─ sockets.ts       Socket.IO server, shared auth middleware, chat namespace
-│  ├─ docs.ts         renders docs/ as pages under /docs (file path = URL)
+│  ├─ apiTokens.ts     machine credentials: issue, verify, mask, audit log
+│  ├─ docs.ts          docs/ discovery, per-page visibility, full-text search
+│  ├─ docsRender.ts    markdown → HTML, cached by file mtime
 │  ├─ liveRoom.ts      createLiveRoom: rooms, presence, join/leave, capability cache
 │  └─ timelineSockets.ts  /timeline namespace: transport clock, relays, emitTimelineChange
 └─ routes/             one file per endpoint (see Routing)
@@ -142,7 +144,59 @@ Lower-level pieces they compose: `requireProductionAccess(event, ref)` (accepts 
 
 ---
 
-## 4. Authentication — sessions (`lib/session.ts`)
+## 4. Authentication — sessions and tokens
+
+Two kinds of caller reach this API, and they are resolved in one place.
+`getPrincipal` in `lib/handler.ts` returns a **`Principal`**: a signed-in person
+holding a session cookie, or a machine holding an API token.
+
+<figure class="diagram wide">
+<svg viewBox="0 0 780 320" role="img" aria-label="A request with a bearer token resolves to a token principal, which only production-scoped preambles accept. A request with a session cookie resolves to a user principal, which every route accepts.">
+  <defs>
+    <marker id="pr-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="d-arrow" />
+    </marker>
+  </defs>
+
+  <rect class="d-box" x="14" y="128" width="132" height="64" rx="10" />
+  <text class="d-text" x="80" y="166" text-anchor="middle">request</text>
+
+  <line class="d-line" x1="148" y1="150" x2="216" y2="80" marker-end="url(#pr-arrow)" />
+  <line class="d-line" x1="148" y1="172" x2="216" y2="242" marker-end="url(#pr-arrow)" />
+
+  <rect class="d-box d-box--accent" x="220" y="42" width="210" height="76" rx="10" />
+  <text class="d-step" x="240" y="72">Authorization: Bearer</text>
+  <text class="d-sub" x="240" y="96">wins over a cookie</text>
+
+  <rect class="d-box" x="220" y="204" width="210" height="76" rx="10" />
+  <text class="d-step" x="240" y="234">Cookie: syncsw_sid</text>
+  <text class="d-sub" x="240" y="258">30s cache, sliding renewal</text>
+
+  <line class="d-line d-line--accent" x1="434" y1="80" x2="500" y2="80" marker-end="url(#pr-arrow)" />
+  <line class="d-line" x1="434" y1="242" x2="500" y2="242" marker-end="url(#pr-arrow)" />
+
+  <rect class="d-box d-box--accent" x="504" y="42" width="176" height="76" rx="10" />
+  <text class="d-text" x="592" y="76" text-anchor="middle">token principal</text>
+  <text class="d-sub" x="592" y="98" text-anchor="middle">one production</text>
+
+  <rect class="d-box" x="504" y="204" width="176" height="76" rx="10" />
+  <text class="d-text" x="592" y="238" text-anchor="middle">user principal</text>
+  <text class="d-sub" x="592" y="260" text-anchor="middle">whole account</text>
+
+  <rect class="d-box" x="240" y="136" width="440" height="48" rx="10" />
+  <text class="d-step" x="260" y="166">requireAuth → 401 for tokens</text>
+  <text class="d-sub" x="660" y="166" text-anchor="end">requireProductionAccess → both</text>
+</svg>
+</figure>
+
+The split matters because several routes filter by the caller's own user id
+rather than by a production — `/api/user/me`, `/api/production/list`,
+`/api/companies`, `/api/activity/recent`. A token admitted to those would report
+on the account of whoever issued it. So `requireAuth` **refuses tokens outright**
+and machine access is an allowlist: `requireProductionAccess` is the one
+preamble that lets a token in, bounded by the production it was issued for.
+
+### 4.1 Sessions (`lib/session.ts`)
 
 - Cookie: **`syncsw_sid`**, `HttpOnly; SameSite=Lax; Path=/` (+ `Secure` when `NODE_ENV=production`), `Max-Age` = **24h**. Value is a 64-hex-char random id. Cookie strings are built only by `sessionCookieHeader()` / `clearSessionCookieHeader()` — never assembled inline.
 - In production the cookie also carries `Domain` so the session is valid across the whole site — `cino.no`, `app.cino.no`, `api.cino.no`. Defaults to `Domain=cino.no`; override with the `COOKIE_DOMAIN` env var for other deployments. Dev (localhost) stays host-only. Requests from `app.cino.no` to the API are cross-origin but **same-site**, so `SameSite=Lax` does not block them — clients just need `credentials: 'include'` (the web app's `useApi` and direct fetches already do).
@@ -158,6 +212,50 @@ Endpoints:
 | `POST /api/auth/login` | rate-limited **10 / min per IP+email** (429 `errors.generic.rateLimited`); timing-equalized — a missing user still costs one scrypt verify against a dummy hash, so response time doesn't leak account existence; `401` on mismatch; sets cookie, returns `{ user }` |
 | `POST /api/auth/logout` | destroy session from cookie, clear cookie |
 | `GET /api/auth/me`, `GET /api/user/me` | current user info |
+
+### 4.2 API tokens (`lib/apiTokens.ts`)
+
+Credentials for installed equipment — a lighting desk, a playback machine, a
+status display. The integrator-facing contract is [the integration guide](./integrations/index.md);
+this is the server side of it.
+
+- Format **`cino_svc_<32 hex id>_<secret>`**. The id half is the token's row id, so
+  verification is a primary-key lookup rather than a scan; only the secret half is
+  hashed.
+- Hashed with **SHA-256, not scrypt**. The secret is 32 CSPRNG bytes, so there is no
+  low-entropy guess to slow down — the work factor buys nothing and would be paid on
+  every request from a device that polls.
+- **30 day** lifetime, fixed. Rows carry `lastUsedAt` (throttled to one write a minute,
+  fire-and-forget) and `revokedAt`. Revoking marks the row rather than deleting it, so
+  the audit log keeps its subject.
+- Verified through a **30s row cache** keyed by token id, mirroring the session cache.
+  The secret is never cached — the hash is re-checked against the cached row every time,
+  which costs one SHA-256.
+- Sockets authenticate with the same token through the handshake `auth` payload, since
+  browsers cannot set headers on a WebSocket upgrade.
+
+Revocation has to reach three places, and skipping any one leaves a dead
+credential working somewhere:
+
+| Step | What it stops |
+| --- | --- |
+| `revokedAt` set | a cold lookup |
+| `invalidateToken()` | a warm cache hit in this process |
+| `disconnectTokenSockets()` | a live socket, whose capabilities were cached at join |
+
+The third is why `createLiveRoom` also re-resolves every joined socket on a
+60-second interval: an in-process disconnect cannot reach a socket held by
+another instance, so the interval is the guarantee and the immediate disconnect
+is the fast path. That sweep also catches role edits and membership changes, and
+it closed a pre-existing hole where signing out left your socket fully capable.
+
+**Audit log** (`api_token_events`) is append-only and deliberately **not** the
+`activity` table: that one coalesces repeats onto a single row inside a 30-minute
+window and skips the write entirely for a repeat inside 60 seconds, which is
+right for "recently opened" and destroys an audit trail. Only auth events and
+mutations are recorded — never reads, and never transport traffic. Mutations are
+logged once, centrally, in `auditTokenMutation` after the handler returns, so no
+route has to remember.
 
 ---
 
@@ -185,6 +283,43 @@ Permission bits (`@starling/auth/permissions` — bit positions are frozen forev
 
 `can(globalRole, rolePermissions, required)` implements: global admin → yes; `ADMINISTRATOR` bit → yes; else `(perms & required) !== 0n` — so `required` may be a **mask of alternatives** (any bit passes; a denial names the first permission in the mask). A denied check throws `403` with a human message from `PERMISSION_MESSAGES` and `data: { missingPermission: 'MANAGE_ROLES', role }` (`errorKey: errors.permission.missing`).
 
+### Tokens resolve through the same function
+
+`resolveAccessLevel` never cared what kind of thing an id belonged to, which is
+what let machine access exist without a second permission system. A token
+carries one production and one permission set already, so it resolves without
+touching the membership tables at all:
+
+```ts
+if (principal.kind === 'token') {
+  if (principal.productionId !== productionId) return null;
+  return { privileged: false, memberRoleId: null, rolePermissions: principal.permissions };
+}
+```
+
+Two properties are load-bearing, and both are easy to break by accident:
+
+**A token is never `privileged`.** Company-admin and global-admin are how a
+person escapes a single production, and a device has no business escaping.
+
+**A token's `role` is pinned to `'user'`.** `can()` short-circuits on the global
+`'admin'` role, so a token that carried the global role of whoever issued it
+would pass every check everywhere.
+
+Three bits are stripped from whatever role a token is given:
+
+```
+ADMINISTRATOR      MANAGE_MEMBERS      MANAGE_ROLES
+```
+
+Masked when access is **resolved**, not when the token is created, so editing a
+role later cannot widen a token that already exists. `ADMINISTRATOR` is in the
+list because `can()` treats it as passing every other check. The mask is applied
+rather than the role refused: most productions run a single broad role, so
+refusing left operators unable to issue any token at all. What the UI must never
+do is mask *silently* — the withheld permissions are named before the token is
+created and on every row in the listing.
+
 **Query cost** — an access-checked request is 2–3 queries total: one joined company⋈production resolve, then (non-admins) the company-membership check and the production-membership⋈role join **in parallel**. The member's `rolePermissions` ride along in `ProductionContext`, so `requirePermission` is pure bit math with no DB access.
 
 ---
@@ -205,6 +340,7 @@ All paths are prefixed `/api`. "Access" is what the handler enforces beyond a va
 
 | Method + path | Access | Notes |
 | --- | --- | --- |
+| `GET /docs`, `GET /docs/page?slug=…`, `GET /docs/search?q=…` | **none / session** | Documentation for the web app's `/docs` pages. Visibility is per page, declared in front matter and defaulting to private: a signed-out caller sees only pages marked `public: true`, and a private slug answers `401`. Pages are returned as **HTML**, rendered on the server and cached by file mtime — a docs page changes only when its file changes, so parsing it per visitor is work repeated for no reason, and it keeps the markdown parser and highlighter out of the browser. Search runs here for the same reason visibility does: a client-side index would mean shipping every private page to the browser. |
 | `GET /welcome` | **none** | Server-wide totals for the signed-out welcome page: `{ companies, productions, timelines, tracks, clips, users, files, mediaBytes, generatedAt }`. Every value is a bare `COUNT(*)`/`SUM` over a whole table — no row, name or id is exposed, which is why there is no access check to make. One snapshot is computed at most once a minute (`TtlCache`) and served to every caller with a matching `Cache-Control: public, max-age=60`; only a cache miss reaches the DB, and misses are rate limited to 60/min per IP. It is the **only** unauthenticated read in the API — anything that returns rows needs a session. |
 
 ### Auth & user
@@ -264,6 +400,15 @@ Recorded at:
 | `POST /production/[pid]/members` · `PATCH/DELETE /production/[pid]/members/[memberId]` | `MANAGE_MEMBERS` |
 | `GET /production/[pid]/roles` | production access |
 | `POST /production/[pid]/roles` · `PATCH/DELETE /production/[pid]/roles/[roleId]` | `MANAGE_ROLES` — `permissions` travels as a **string** bigint |
+
+### API tokens (`ADMINISTRATOR` throughout — see §4.2)
+
+| Method + path | Notes |
+| --- | --- |
+| `GET /production/[pid]/tokens` | live tokens, newest first. Never returns a hash. `permissions` is reported **masked**, with `withheld` naming what the role granted but the token cannot hold — the listing must not imply a device has powers it was never given |
+| `POST /production/[pid]/tokens` | mints one. The plaintext secret is in **this response and nowhere else, ever** — only the hash is stored |
+| `DELETE /production/[pid]/tokens/[tokenId]` | revokes. Scoped by production as well as id, so an administrator of one production cannot revoke another's by guessing a uuid |
+| `GET /production/[pid]/tokens/events` | the audit trail, newest first. Rejections are included deliberately: a burst of them against one address is the most useful thing this log can show |
 
 ### Source sets & sources (both under `MANAGE_TRACK_TYPES` for writes)
 
@@ -355,7 +500,33 @@ One Socket.IO server rides the HTTP server at **path `/socket`**. Handshakes enf
 export async function socketAuth(socket, next)
 ```
 
-which resolves the `syncsw_sid` cookie → session → user row and stores `socket.data.user = { id, name, avatarImageId, createdAt, role }`. No/invalid session → connection is rejected (`Authentication required`), so every connected socket is a known user. **Note:** `sockets.ts` and `timelineSockets.ts` import each other (shared middleware/types) — a deliberate, runtime-safe circular ESM import; bindings are only referenced at call time.
+which resolves a caller and stores two things on `socket.data`:
+
+- **`user`** — the PRESENCE identity, what the room displays.
+- **`principal`** — the ACCESS identity, `{ kind: 'user' }` or `{ kind: 'token' }`.
+
+They are kept apart because for a machine they are genuinely different things. A
+token checked first (handshake `auth.token`, since browsers cannot set headers on
+a WebSocket upgrade), then the `syncsw_sid` cookie. Neither → rejected, so every
+connected socket is a known caller.
+
+A token's presence id is namespaced **`token:<id>`** and its name is the token's
+label. Without that, a desk would join under the id of whoever issued it: it
+would collapse into that person's avatar in the presence list and be announced as
+leaving the moment they closed a tab. Its `role` is pinned to `'user'` for the
+same reason as on REST.
+
+**Tokens are refused on the root namespace.** Global chat is between people and
+is scoped to no production, so there is nothing to bound a machine's access with.
+`/timeline` is the only namespace they reach.
+
+A handshake failure's message is the **errorKey** (`errors.auth.tokenExpired`
+and friends), so a device can tell a dead credential from a transient failure and
+stop retrying instead of hammering the handshake on a show night.
+
+**Note:** `sockets.ts` and `timelineSockets.ts` import each other (shared
+middleware/types) — a deliberate, runtime-safe circular ESM import; bindings are
+only referenced at call time.
 
 Client side, the web app connects with `io({ path: '/socket', withCredentials: true })` (chat, `useSocket.js`) and `io('/timeline', { path: '/socket', withCredentials: true })` (editor, `useTimelineSync.js`).
 

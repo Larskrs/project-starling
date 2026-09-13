@@ -16,7 +16,8 @@
     "configuration": "Configuration",
     "trackTypes": "Track Types",
     "sourceSets": "Source Sets",
-    "timelines": "Timelines"
+    "timelines": "Timelines",
+    "integrations": "Integrations"
   },
   "greeting": {
     "morning": "Good morning",
@@ -281,6 +282,21 @@
     },
     "track": {
       "locked": "That track is locked"
+    },
+    "auth": {
+      "tokenInvalid": "That API token is not valid",
+      "tokenExpired": "That API token has expired",
+      "tokenNotPermitted": "API tokens cannot be used here"
+    },
+    "token": {
+      "notFound": "Token not found"
+    },
+    "role": {
+      "notFound": "Role not found"
+    },
+    "docs": {
+      "notFound": "No such documentation page",
+      "signInRequired": "Sign in to read that page"
     }
   },
   "danger": {
@@ -634,6 +650,41 @@
     "gifAttachment": "GIF attachment"
   },
   "common": {
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "cancel": "Cancel"
+  },
+  "integrations": {
+    "title": "Integrations",
+    "description": "API tokens let installed equipment read and edit this production. Each one is valid for {days} days and can be revoked at any time.",
+    "readTheGuide": "Read the integration guide.",
+    "newToken": "New token",
+    "labelPlaceholder": "Name the device, e.g. FOH Lighting Desk",
+    "choseRole": "Choose a role",
+    "create": "Create",
+    "failedToCreate": "Could not create the token",
+    "couldNotLoad": "Could not load tokens",
+    "noTokens": "No tokens yet. Create one to connect a device.",
+    "expiresIn": "expires in {days}d",
+    "expired": "expired",
+    "lastUsed": "last used {when} ago",
+    "neverUsed": "never used",
+    "roleDeleted": "role deleted",
+    "revoke": "Revoke",
+    "revokeTitle": "Revoke “{label}”?",
+    "revokeWarning": "The device using this token stops working immediately, and live connections close within a minute. This cannot be undone — issue a new token to reconnect it.",
+    "revoked": "Revoked “{label}”",
+    "failedToRevoke": "Could not revoke the token",
+    "secretTitle": "Token for “{label}”",
+    "secretWarning": "Copy this now. It is shown once and cannot be recovered — if you lose it, revoke this token and issue a new one.",
+    "copy": "Copy token",
+    "copied": "Copied",
+    "secretNext": "Store it on the device as its Cino credential. Send it as an Authorization bearer header on REST calls, or in the socket handshake auth payload.",
+    "secretDone": "Done",
+    "activity": "Recent activity",
+    "activityHint": "Authentication events and changes made by tokens. Reads are not recorded.",
+    "unknownToken": "Unknown token",
+    "withheldNotice": "A token can never hold {permissions}. Those are withheld from this role, and the token gets everything else it grants.",
+    "noRoles": "This production has no roles yet. Create one on the Roles page first.",
+    "limited": "limited"
   }
 }
