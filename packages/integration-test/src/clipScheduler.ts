@@ -1,10 +1,10 @@
 /**
  * Decides exactly when the clip under the playhead changes, on this process's
- * own estimate of the server clock — instead of waiting to be told.
+ * own estimate of the server clock.
  *
- * The server does send `clip:active`, but only once its own boundary timer has
- * fired, so it reaches a device late by that timer plus the network: a frame or
- * two on a good connection, more over long-polling. A device that must act ON
+ * The server does not announce clip changes, and could not usefully: an event
+ * sent as a boundary passed would reach a device late by the network — a frame
+ * or two on a good connection, more over long-polling. A device that must act ON
  * the frame has to know in advance, and it can: it holds every clip
  * (timelineModel.ts), the room's anchor, and the server's time (serverClock.ts).
  * The next boundary is arithmetic.

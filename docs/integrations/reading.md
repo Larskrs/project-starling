@@ -184,18 +184,27 @@ is common, and so is minutes on a box that has never been near a time server.
 and keeping it right through a show. It is not optional for anything that fires
 on a frame.
 
-If you only need to know which cue is live, prefer `clip:active` over doing your
-own frame maths. The server walks the clip boundaries and tells you when the
-clip under the playhead changes on a track:
+To know which cue is live on a track, work it out from the clips you already
+hold and `currentFrame()`. The server does not send an event when the live clip
+changes: one would arrive after the change it describes, and the arithmetic is
+cheap on the device.
 
 ```js
-socket.on('clip:active', ({ trackId, clipId, label, frame }) => {
-  console.log(`track ${trackId}: ${clipId ? label : '(none)'} at frame ${frame}`);
-});
+function liveClip(track, frame) {
+  let live = null;
+  for (const clip of track.clips) {          // sorted by position
+    if (clip.position > frame) break;
+    live = clip;
+  }
+  if (!live || live.end == null) return live; // no end: live until the next clip
+  return frame < live.position + (live.end - (live.mediaStart ?? 0)) ? live : null;
+}
 ```
 
-It reports a change that has already happened, so it arrives slightly after the
-frame it names. That is fine for a display. For cues that must land on the
-frame, see [Clocks and timing](./timing.md).
+A clip is live from its `position`. With an `end` it lasts `end − mediaStart`
+frames; without one it lasts until the next clip on the track. For cues that must
+land on the frame, schedule the boundary rather than polling this;
+[the worked example](./timing.md#worked-example-cutting-cameras-on-the-frame)
+shows how.
 
 Next: [clocks and timing](./timing.md).

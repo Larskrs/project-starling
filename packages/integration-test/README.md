@@ -54,10 +54,10 @@ Output looks like this:
 
 ## How it times cuts
 
-The server's `clip:active` is sent once the server's own timer for a clip
-boundary fires, so it reaches a client late by that timer plus the network. A
-device that has to act *on* the frame cannot wait for it. This client works the
-boundary out itself:
+The server does not announce clip changes. It sends the anchor, the clips and
+every edit, and a device works the boundaries out for itself. An announcement
+sent as a boundary passed would reach a device late by the network, and a device
+that has to act *on* the frame cannot wait for one. This client:
 
 1. **It measures the server's clock.** `time:ping` round trips on a monotonic
    clock give an offset that is never wrong by more than half the round trip.
@@ -78,9 +78,13 @@ boundary out itself:
 The anchor from `transport:state` is kept exactly as it arrived and read through
 the clock every time, so it gets more accurate as the clock estimate improves.
 
-`clip:active` is still received, as an audit. A moment after it lands the client
-checks it already agrees and got there first, and prints `out of step:` or
-`late cut:` if not. Silence means the timing is working.
+If the process itself stalls — heavy output, CPU load, a paused terminal —
+every cut due during it is late, so the client says so rather than leaving it to
+look like a clock problem:
+
+```
+14:22:08 process stalled 850ms — cuts due during it were late
+```
 
 If the connection drops mid-show, the client keeps cutting from what it already
 knows: the anchor does not go stale and every clip is in memory. The reconnect

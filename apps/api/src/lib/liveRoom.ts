@@ -183,10 +183,14 @@ export function createLiveRoom<TCaps, TPresence extends { id: string }>(
       room.set(user.id, entry);
       entry.sockets.add(socket.id);
 
-      broadcastPresence(roomId);
-      // Sent directly as well: the room broadcast reaches this socket too, but
-      // emitting here means an ack-ordered client never paints an empty list.
-      socket.emit(options.presenceEvent as never, occupants(roomId) as never);
+      // Everyone already in the room hears about the joiner from the broadcast;
+      // the joiner gets the list directly, before its ack, so an ack-ordered
+      // client never paints an empty list. It is excluded from the broadcast —
+      // which would otherwise reach it too, sending it the same list twice on
+      // every join.
+      const list = occupants(roomId);
+      nsp.to(roomName(roomId)).except(socket.id).emit(options.presenceEvent as never, list as never);
+      socket.emit(options.presenceEvent as never, list as never);
 
       options.onJoined?.(socket, roomId, resolved.caps);
       ack?.({ ok: true, ...(resolved.caps as object) });

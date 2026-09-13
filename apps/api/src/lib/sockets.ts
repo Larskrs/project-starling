@@ -210,6 +210,11 @@ export function setupSockets(httpServer: HttpServer): SocketIOServer {
     // Headers only — reflects the origin allowRequest already vetted, so
     // browsers accept cross-subdomain polling responses (app.cino.no → cino.no).
     cors: { origin: true, credentials: true },
+    // Compress WebSocket messages over a kilobyte. Clip and track relays carry
+    // whole rows and compress well; pings, transport anchors and presence stay
+    // under the threshold and skip the CPU cost. Long-polling responses are
+    // already gzipped by engine.io (`httpCompression`, on by default).
+    perMessageDeflate: { threshold: 1024 },
   });
 
   ioServer = io;

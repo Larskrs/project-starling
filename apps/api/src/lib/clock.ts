@@ -1,5 +1,5 @@
 /**
- * The clock every live timestamp is read from: transport anchors, `clip:active`
+ * The clock every live timestamp is read from: transport anchors, clock sync
  * stamps, and the `time:ping` reply clients measure their offset against.
  *
  * Monotonic, not `Date.now()`. Clients compute positions as

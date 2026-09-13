@@ -4,7 +4,7 @@ import {
   type ClipChange, type TrackChange, type ClockMeasureRequest, type ClockSyncStatus,
 } from '@starling/realtime';
 import { resolveConfig, ConfigError } from './config.ts';
-import { createCameraWatch, formatTimecode, type ActiveClip } from './cameraWatch.ts';
+import { createCameraWatch, formatTimecode } from './cameraWatch.ts';
 import { createServerClock, type SampleOutcome } from './serverClock.ts';
 import { startClockSync } from './clockSync.ts';
 import { answerMeasure, createClockStatusWatch, type MeasurableClock } from './resync.ts';
@@ -22,10 +22,10 @@ import { createClipScheduler, TICK_MS, type TransportAnchor } from './clipSchedu
  * events alone, re-bootstrap on every connect, and stop retrying a dead
  * credential.
  *
- * Timing is its own: it measures the server's clock with `time:ping`
- * (serverClock.ts, clockSync.ts), keeps every track and clip in memory
- * (timelineModel.ts), and works out when each clip boundary arrives
- * (clipScheduler.ts). The server's `clip:active` is only a cross-check.
+ * Timing is its own, because the server does not announce clip changes: it
+ * measures the server's clock with `time:ping` (serverClock.ts, clockSync.ts),
+ * keeps every track and clip in memory (timelineModel.ts), and works out when
+ * each clip boundary arrives (clipScheduler.ts).
  */
 
 const config = (() => {
@@ -55,6 +55,9 @@ const cyan   = (s: string) => c('36', s);
 // Display only. Nothing is ever timed against the wall clock.
 const clockLabel = () => dim(new Date().toLocaleTimeString());
 const log = (...parts: string[]) => console.log(clockLabel(), ...parts);
+
+/** A timer that must not keep the process alive by itself — the socket does that. */
+const background = (timer: unknown) => (timer as { unref?: () => void }).unref?.();
 
 // ── Timeline state, rebuilt from REST on every connect ────────────────────────
 
@@ -165,16 +168,10 @@ socket.on(TimelineEvent.clockStatus, (status: ClockSyncStatus) => {
 
 // ── The actual job ────────────────────────────────────────────────────────────
 
-// What this client last announced per track, and when on the server's clock —
-// the cross-check below compares it with the server's own clip:active.
-const localActive = new Map<string, { clipId: string | null; at: number; onBoundary: boolean }>();
-
 const scheduler = createClipScheduler({
   model,
   serverNow: () => clock.now(),
-  onActive(event, onBoundary) {
-    localActive.set(event.trackId, { clipId: event.clipId, at: event.at, onBoundary });
-
+  onActive(event) {
     const cut = watch.observe(event);
     if (!cut) return;   // same camera, or a gap — not a cut
 
@@ -188,8 +185,23 @@ const scheduler = createClipScheduler({
   },
 });
 
-// Does not keep the process alive on its own; the socket does.
-(setInterval(() => scheduler.tick(), TICK_MS) as { unref?: () => void }).unref?.();
+background(setInterval(() => scheduler.tick(), TICK_MS));
+
+// If this process itself stalls — heavy output, CPU load, a paused terminal —
+// every cut due during it is late. Say so, so it is not read as the clock or the
+// server going wrong.
+const STALL_CHECK_MS = 1000;
+const STALL_MS       = 250;
+let lastStallCheck = performance.now();
+
+background(setInterval(() => {
+  const now   = performance.now();
+  const stall = now - lastStallCheck - STALL_CHECK_MS;
+  lastStallCheck = now;
+  if (stall > STALL_MS) {
+    log(yellow('process stalled'), dim(`${Math.round(stall)}ms — cuts due during it were late`));
+  }
+}, STALL_CHECK_MS));
 
 socket.on('connect', async () => {
   try {
@@ -202,7 +214,6 @@ socket.on('connect', async () => {
     // join below brings a fresh anchor; if not, there is nothing to follow.
     watch.reset();
     scheduler.reset();
-    localActive.clear();
 
     log(green('connected'), bold(data.timeline.name),
         dim(`${data.tracks.length} tracks · ${model.clipCount} clips · ${cameraNames.size} cameras · ${frameRate}fps`));
@@ -272,34 +283,6 @@ socket.on(TimelineEvent.transportState, (state: TransportAnchor) => {
 
 socket.on(TimelineEvent.presence, (users: { id: string; name: string }[]) => {
   log(dim(`in the room: ${users.map(u => u.name).join(', ') || 'nobody'}`));
-});
-
-// ── Cross-check ───────────────────────────────────────────────────────────────
-// The server still sends clip:active once its own boundary timer fires. It no
-// longer drives anything here — it is the audit. A moment after it lands, this
-// client should already agree with it, and should have got there first. Silence
-// means the timing is working.
-
-const CROSS_CHECK_DELAY_MS = TICK_MS * 2;
-
-socket.on(TimelineEvent.clipActive, (event: ActiveClip) => {
-  setTimeout(() => {
-    if (!clock.synced) return;   // still joining; the catch-up has not run yet
-    const local = localActive.get(event.trackId);
-    const track = model.trackName(event.trackId) ?? event.trackId.slice(0, 8);
-
-    if ((local?.clipId ?? null) !== event.clipId) {
-      log(yellow('out of step:'), dim(`[${track}] the server is on ${event.label ?? event.clipId ?? 'nothing'}, this client is not`));
-      return;
-    }
-    // A catch-up is not a timing claim; only a scheduled boundary is.
-    if (!local?.onBoundary) return;
-
-    const lateMs = local.at - event.at;
-    if (lateMs > 1000 / frameRate) {
-      log(yellow('late cut:'), dim(`[${track}] ${lateMs.toFixed(0)}ms behind the server's own timer — ${describeClock()}`));
-    }
-  }, CROSS_CHECK_DELAY_MS);
 });
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
-import type { Server as SocketIOServer, Namespace } from 'socket.io';
+import type { Server as SocketIOServer } from 'socket.io';
 import { eq } from 'drizzle-orm';
-import { db, timelines, productions, tracks, clips } from '@starling/db';
+import { db, timelines, productions } from '@starling/db';
 import type { SocketUser, SocketPrincipal } from './sockets.js';
 import { createLiveRoom, type LiveRoomContext } from './liveRoom.js';
 import { trackActivity } from './activity.js';
@@ -36,146 +36,32 @@ export interface TimelineCaps {
 // An anchor never goes stale — playing position is derived from the server clock
 // — so late joiners simply receive it while playing; a stopped timeline is
 // browsed privately, nothing to replay. Cleared when the room empties.
+//
+// That is ALL the server keeps for a playing room. It does not walk clip
+// boundaries or announce which clip is live: every client holds the clips and
+// the anchor, so the live clip is arithmetic on the client, and an event sent
+// when a boundary passed would arrive late by the network anyway. What that
+// buys here is that a play, a seek or an edit costs no database query and no
+// timer — just the new anchor and one broadcast.
 const roomTransport = new Map<string, TransportState>();
 
 // Seek commands arrive as scrub bursts — bound them per socket.
 const SEEK_MIN_INTERVAL_MS = 80;
 const lastSeekAt = new Map<string, number>();
 
-/** Must match createLiveRoom's roomPrefix below — the watcher emits directly. */
-function roomName(timelineId: string): string {
-  return `tl:${timelineId}`;
-}
+/**
+ * Wire precision for anything sent on every command. A tenth of a millisecond
+ * and a thousandth of a frame are far finer than any client can act on; the
+ * digits past them are float noise — a pause frame of 3100.0000000004 — sent to
+ * every socket in the room.
+ */
+const trimMs    = (ms: number): number => Math.round(ms * 10) / 10;
+const trimFrame = (frame: number): number => Math.round(frame * 1000) / 1000;
 
 /** Whether a resolved access level grants a specific production permission. */
 function accessGrants(access: AccessLevel, user: SocketUser, required: bigint): boolean {
   if (access.privileged) return true;
   return can(user.role, access.rolePermissions, required);
-}
-// ── Active-clip watcher ───────────────────────────────────────────────────────
-// While a room's transport plays, the server walks the timeline's clip
-// boundaries on its own clock and emits `clip:active` whenever the clip under
-// the playhead changes on a track. Semantics mirror the web editor's
-// activeClipLabel: a clip is active from `position`; with an `end` it runs for
-// `end − mediaStart` frames, otherwise until the next clip on the track.
-// Armed on play/seek, reloaded on clip/track edits, disarmed on pause/empty.
-
-interface WatcherClip {
-  id:         string;
-  trackId:    string;
-  position:   number;
-  mediaStart: number | null;
-  end:        number | null;
-  label:      string | null;
-  sourceId:   string | null;
-}
-
-interface RoomWatcher {
-  timer:        ReturnType<typeof setTimeout> | null;
-  clipsByTrack: Map<string, WatcherClip[]>;   // sorted by position
-  active:       Map<string, string | null>;   // trackId → active clipId
-}
-
-const roomWatchers = new Map<string, RoomWatcher>();
-
-function transportFrameAt(state: TransportState, now: number): number {
-  return state.playing ? state.frame + ((now - state.at) / 1000) * state.frameRate : state.frame;
-}
-
-function activeClipAt(trackClips: WatcherClip[], frame: number): WatcherClip | null {
-  let active: WatcherClip | null = null;
-  for (const clip of trackClips) {
-    if (clip.position > frame) break;
-    active = clip;
-  }
-  if (!active) return null;
-  if (active.end != null && frame >= active.position + (active.end - (active.mediaStart ?? 0))) return null;
-  return active;
-}
-
-/** The next frame at which any track's active clip can change. */
-function nextBoundaryAfter(clipsByTrack: Map<string, WatcherClip[]>, frame: number): number | null {
-  let next: number | null = null;
-  const consider = (b: number | null) => {
-    if (b != null && b > frame && (next == null || b < next)) next = b;
-  };
-  for (const trackClips of clipsByTrack.values()) {
-    for (const clip of trackClips) {
-      consider(clip.position);
-      consider(clip.end != null ? clip.position + (clip.end - (clip.mediaStart ?? 0)) : null);
-    }
-  }
-  return next;
-}
-
-function disarmWatcher(timelineId: string): void {
-  const watcher = roomWatchers.get(timelineId);
-  if (watcher?.timer) clearTimeout(watcher.timer);
-  roomWatchers.delete(timelineId);
-}
-
-/** (Re)load the timeline's clip windows and start walking boundaries. */
-async function armWatcher(nsp: Namespace, timelineId: string): Promise<void> {
-  const prev = roomWatchers.get(timelineId);
-  if (prev?.timer) clearTimeout(prev.timer);
-
-  const state = roomTransport.get(timelineId);
-  if (!state?.playing) { roomWatchers.delete(timelineId); return; }
-
-  const rows = await db
-    .select({
-      id:         clips.id,
-      trackId:    clips.trackId,
-      position:   clips.position,
-      mediaStart: clips.mediaStart,
-      end:        clips.end,
-      label:      clips.label,
-      sourceId:   clips.sourceId,
-    })
-    .from(clips)
-    .innerJoin(tracks, eq(clips.trackId, tracks.id))
-    .where(eq(tracks.timelineId, timelineId))
-    .orderBy(clips.position);
-
-  const clipsByTrack = new Map<string, WatcherClip[]>();
-  for (const row of rows) {
-    const list = clipsByTrack.get(row.trackId);
-    if (list) list.push(row);
-    else clipsByTrack.set(row.trackId, [row]);
-  }
-
-  // Keep the previous active map across re-arms (seeks, edits) so only genuine
-  // changes emit; a fresh play starts empty and emits the initial snapshot.
-  roomWatchers.set(timelineId, { timer: null, clipsByTrack, active: prev?.active ?? new Map() });
-  evaluateWatcher(nsp, timelineId);
-}
-
-function evaluateWatcher(nsp: Namespace, timelineId: string): void {
-  const watcher = roomWatchers.get(timelineId);
-  const state   = roomTransport.get(timelineId);
-  if (!watcher || !state?.playing) { disarmWatcher(timelineId); return; }
-
-  const now   = serverNow();
-  const frame = transportFrameAt(state, now);
-
-  for (const [trackId, trackClips] of watcher.clipsByTrack) {
-    const active = activeClipAt(trackClips, frame);
-    if ((active?.id ?? null) === (watcher.active.get(trackId) ?? null)) continue;
-    watcher.active.set(trackId, active?.id ?? null);
-    nsp.to(roomName(timelineId)).emit('clip:active', {
-      trackId,
-      clipId:   active?.id ?? null,
-      label:    active?.label ?? null,
-      sourceId: active?.sourceId ?? null,
-      frame,
-      at:       now,
-    });
-  }
-
-  const boundary = nextBoundaryAfter(watcher.clipsByTrack, frame);
-  if (boundary == null) return;   // no more changes ahead — sleep until re-armed
-  const delayMs = Math.max(10, ((boundary - frame) / state.frameRate) * 1000 + 5);
-  watcher.timer = setTimeout(() => evaluateWatcher(nsp, timelineId), delayMs);
 }
 
 // ── Access check ──────────────────────────────────────────────────────────────
@@ -212,7 +98,7 @@ async function resolveTimelineAccess(
 
 // ── Namespace setup ───────────────────────────────────────────────────────────
 
-/** Relays fan one sender's payload to every peer — bound what that can cost. */
+/** Client-sent relays fan one sender's payload to every peer — bound what that can cost. */
 const MAX_RELAY_BYTES = 32 * 1024;
 
 function relayTooLarge(payload: unknown): boolean {
@@ -246,6 +132,11 @@ let live: LiveRoomContext<TimelineCaps, PresenceUser> | null = null;
  * see SOCKET_ID_HEADER. It is optional everywhere: a caller without a socket
  * (curl, a native client, an older build) simply gets the echo, which is
  * idempotent.
+ *
+ * No size check here, unlike the client-sent relays below: the payload is a row
+ * this server's own route just validated and wrote, bounded by that route's
+ * limits (clip `data` at 2 KB). Measuring it would serialise every relay twice —
+ * once to count, once for socket.io — to guard against a sender that is us.
  */
 export function emitTimelineChange(
   timelineId: string,
@@ -253,23 +144,17 @@ export function emitTimelineChange(
   payload: ClipChange | TrackChange,
   exceptSocketId: string | null = null,
 ): void {
-  if (!live || relayTooLarge(payload)) return;
-  live.emitExcept(timelineId, exceptSocketId, event, payload);
-
-  // A clip or track edit moves the boundaries the active-clip watcher walks, so
-  // reload it if this room is currently playing.
-  if (roomWatchers.has(timelineId)) {
-    void armWatcher(live.nsp, timelineId).catch(() => {});
-  }
+  live?.emitExcept(timelineId, exceptSocketId, event, payload);
 }
 
-/** Makes `next` the room's transport, tells the whole room, and (dis)arms the watcher. */
+/** Makes `next` the room's transport and tells the whole room. */
 function commitTransport(timelineId: string, next: TransportState): void {
   if (!live) return;
-  roomTransport.set(timelineId, next);
-  live.emit(timelineId, TimelineEvent.transportState, next);
-  if (next.playing) void armWatcher(live.nsp, timelineId).catch(() => {});
-  else disarmWatcher(timelineId);
+  // Trimmed before it is stored, so a later pause computes from the same numbers
+  // everyone was sent.
+  const trimmed: TransportState = { ...next, frame: trimFrame(next.frame), at: trimMs(next.at) };
+  roomTransport.set(timelineId, trimmed);
+  live.emit(timelineId, TimelineEvent.transportState, trimmed);
 }
 
 export function setupTimelineSockets(io: SocketIOServer): void {
@@ -347,27 +232,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       // anchor and derives the current frame from it — anchors never go stale.
       // A stopped timeline is browsed privately, so there is nothing to replay.
       const state = roomTransport.get(timelineId);
-      if (!state?.playing) return;
-
-      socket.emit(TimelineEvent.transportState as never, state as never);
-
-      // Catch the joiner up on what is currently active per track.
-      const watcher = roomWatchers.get(timelineId);
-      if (!watcher) return;
-      const now   = serverNow();
-      const frame = transportFrameAt(state, now);
-      for (const [trackId, clipId] of watcher.active) {
-        if (clipId == null) continue;
-        const clip = watcher.clipsByTrack.get(trackId)?.find(c => c.id === clipId);
-        socket.emit(TimelineEvent.clipActive as never, {
-          trackId,
-          clipId,
-          label:    clip?.label ?? null,
-          sourceId: clip?.sourceId ?? null,
-          frame,
-          at:       now,
-        } as never);
-      }
+      if (state?.playing) socket.emit(TimelineEvent.transportState as never, state as never);
     },
 
     onLeaving(socket, timelineId) {
@@ -377,7 +242,6 @@ export function setupTimelineSockets(io: SocketIOServer): void {
 
     onRoomEmpty(timelineId) {
       roomTransport.delete(timelineId);
-      disarmWatcher(timelineId);
       resyncs.clear(timelineId);
     },
 
@@ -406,7 +270,6 @@ export function setupTimelineSockets(io: SocketIOServer): void {
         if (relayTooLarge(change)) return;
 
         ctx.emitExcept(timelineId, socket.id, TimelineEvent.clipChange, change);
-        if (roomWatchers.has(timelineId)) void armWatcher(ctx.nsp, timelineId).catch(() => {});
       }) as never);
 
       socket.on(TimelineEvent.trackChange as never, ((raw: unknown) => {
@@ -418,9 +281,6 @@ export function setupTimelineSockets(io: SocketIOServer): void {
         if (relayTooLarge(change)) return;
 
         ctx.emitExcept(timelineId, socket.id, TimelineEvent.trackChange, change);
-        if (change.type === 'remove' && roomWatchers.has(timelineId)) {
-          void armWatcher(ctx.nsp, timelineId).catch(() => {});
-        }
       }) as never);
 
       // ── Transport ──────────────────────────────────────────────────────
@@ -458,6 +318,7 @@ export function setupTimelineSockets(io: SocketIOServer): void {
         } else if (cmd.action === 'seek') {
           // Stopped timelines are browsed privately — shared seeks exist only
           // while the transport runs. Scrub bursts are rate-bounded per socket.
+          // A seek is only a new anchor: no query, no timer, one small broadcast.
           if (!prev?.playing) return;
           if (lastSeekAt.get(socket.id) && now - lastSeekAt.get(socket.id)! < SEEK_MIN_INTERVAL_MS) return;
           lastSeekAt.set(socket.id, now);
@@ -481,7 +342,9 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       }) as never);
 
       socket.on(TimelineEvent.timePing as never, ((ack: unknown) => {
-        if (typeof ack === 'function') (ack as (n: number) => void)(serverNow());
+        // Trimmed like transport stamps: a twentieth of a millisecond of offset
+        // error is far below anything a ping's round trip can resolve.
+        if (typeof ack === 'function') (ack as (n: number) => void)(trimMs(serverNow()));
       }) as never);
 
       // ── Clock sync ─────────────────────────────────────────────────────

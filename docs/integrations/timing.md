@@ -440,23 +440,15 @@ script: each clip on it has a source, and each source has a short code, such as
 `C1`, `C2` or `CRN`, set in the production's sources. When the playhead enters a
 clip, the mixer cuts to the input mapped to that clip's source code.
 
-### Why not just listen for `clip:active`
+### Why the device works out the cut itself
 
-The server already sends `clip:active` when the clip under the playhead changes,
-but that event reports a change that has **already happened**. The server sets a
-timer for the boundary on its own clock and sends the event when the timer
-fires, so it reaches you late by the server's timer (a few milliseconds, more
-when the API is busy) plus the network. Its `at` lets you measure how late:
-
-```js
-socket.on('clip:active', (event) => {
-  const lateMs = clock.now() - event.at;
-});
-```
-
-That is fine for a status display. For a cut it means every camera change lands
-a frame or two after the script says, and later still on a bad network. The
-device below uses the event only as a cross-check, and schedules each cut itself.
+The server does not announce clip changes. It sends the anchor, the clips and
+every edit, and leaves the arithmetic to the device. That is deliberate: an
+event sent as a boundary passed would reach you late by the network, a frame or
+two on a good connection and more over long-polling, so a camera change would
+always land after the script says. The only place a boundary can be known in
+time is the device itself, which already holds every clip and the anchor. The
+next boundary is a subtraction.
 
 ### How it works
 
@@ -713,13 +705,6 @@ socket.on('track:change', (change) => {
     clips = [];
     disarm();
   }
-});
-
-// Cross-check only: the server's view of the same cut, arriving after the fact.
-socket.on('clip:active', (event) => {
-  if (event.trackId !== CAMERA_TRACK || !clock.synced) return;
-  const code = event.sourceId ? codes.get(event.sourceId) : null;
-  if (code && code !== onAir) console.warn(`server says ${code}, mixer is on ${onAir}`);
 });
 ```
 

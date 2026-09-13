@@ -5,7 +5,7 @@
  * Everything stateful about the client lives in index.ts.
  */
 
-/** The fields of `clip:active` this watcher needs. */
+/** What the clip scheduler announces when a track's live clip changes — the fields this watcher needs. */
 export interface ActiveClip {
   trackId: string;
   clipId: string | null;

@@ -8,7 +8,7 @@
  *
  * The invariant: a line is printed when the timeline cuts to a DIFFERENT
  * camera, and at no other time. The active clip changes far more often than the
- * camera does — every new cue on the same camera fires clip:active — so a
+ * camera does — every new cue on the same camera changes the active clip — so a
  * watcher that prints on every event is a watcher nobody can read.
  */
 
@@ -66,7 +66,7 @@ check('cutting to a different camera is reported', () => {
 });
 
 check('a NEW CLIP on the same camera is silent', () => {
-  // The whole point. clip:active fires per clip, and a camera usually holds
+  // The whole point. The active clip changes per cue, and a camera usually holds
   // several cues in a row — printing each one buries the actual cuts.
   const w = newWatch();
   w.observe(active('t1', 's1', 'clip-a'));

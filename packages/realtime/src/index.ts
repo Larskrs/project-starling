@@ -36,8 +36,6 @@ export const TimelineEvent = {
   transportCommand: 'transport:command',
   /** S→C. The room's authoritative transport anchor. */
   transportState: 'transport:state',
-  /** S→C. The clip under the playhead changed on a track. */
-  clipActive: 'clip:active',
   /** C→S. NTP-style clock probe; acked with the server's clock in ms (monotonic, not wall-clock). */
   timePing: 'time:ping',
   /** C→S. Make every client in the room re-measure its clock. Acked with the run's id. */
@@ -209,15 +207,6 @@ export interface TransportCommand {
   action: TransportAction;
   /** Required for play and seek; ignored for pause, which reads the server clock. */
   frame?: number;
-}
-
-export interface ActiveClipEvent {
-  trackId: string;
-  clipId: string | null;
-  label: string | null;
-  sourceId: string | null;
-  frame: number;
-  at: number;
 }
 
 /** What `timeline:join` acks with, so a client knows its capabilities up front. */

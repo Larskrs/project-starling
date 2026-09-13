@@ -446,35 +446,7 @@ req.setValue(socket.sid, forHTTPHeaderField: "x-socket-id")
 
 Without the header your own change comes back as a `clip:change`, which is harmless (every payload is an idempotent upsert or delete) but will fight optimistic UI. Emitting `clip:change`/`track:change` from the client is still accepted for older clients, gated on `EDIT_TIMELINE` (or `RENAME_CLIPS` for label-only upserts) with a 32 KB cap — but doing it as well as the REST write makes every peer apply the change twice.
 
-## 10. `clip:active` — server-computed "now playing" per track
-
-While the transport plays, the server walks the timeline's clip boundaries on its own clock and emits an event whenever the clip under the playhead **changes** on a track — so a lightweight client can show what's playing without holding the clip model at all:
-
-```swift
-/// clipId == nil → the track went silent (a length clip ended).
-struct ActiveClipEvent: Codable {
-    let trackId: String
-    let clipId: String?
-    let label: String?
-    let sourceId: String?   // prefix the source short name, e.g. "K1 - Total shot"
-    let frame: Double       // transport frame at emit time
-    let at: Double          // server clock ms — compare only with clock.now(), never Date()
-}
-
-socket.on("clip:active") { data, _ in
-    guard let payload = data.first,
-          let event = decode(ActiveClipEvent.self, from: payload) else { return }
-    // e.g. update a per-track "now playing" row keyed by event.trackId
-}
-```
-
-Semantics to rely on:
-
-- Events fire **only while the shared transport is playing** (pause disarms the watcher; a stopped timeline is private anyway).
-- You get **changes**, not a stream — plus an initial snapshot of currently active clips right after play starts and right after you join a room that's mid-playback.
-- Clip and track edits during playback are handled server-side (the watcher reloads); you don't need to recompute anything.
-
-## 11. Lifecycle checklist
+## 10. Lifecycle checklist
 
 | Moment | Do |
 | --- | --- |
@@ -486,7 +458,9 @@ Semantics to rely on:
 | Timeline end reached locally | send `pause` (idempotent — first client wins, the rest are dropped) |
 | Leaving the editor screen | `socket.emit("timeline:leave")` then `socket.disconnect()` |
 
-## 12. Pitfalls
+## 11. Pitfalls
+
+- **Work out the live clip yourself.** The server does not announce clip changes: an event sent as a boundary passed would arrive late by the network. With the clips from the bootstrap and relays and the §7 playhead, a clip is live from its `position`, for `end − mediaStart` frames when it has an `end`, otherwise until the next clip on its track.
 
 - **Don't cache the cookie string** — read `HTTPCookieStorage` before each connect (sliding renewal rotates the expiry, and logout invalidates it server-side immediately).
 - **Numbers are `Double`** on the wire (JSON). Frames are fractional by design — only round for display.

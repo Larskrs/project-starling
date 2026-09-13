@@ -5,8 +5,8 @@
  * `track:change`, so the scheduler can work out where every clip boundary is
  * without asking anyone. Only what timing needs is kept.
  *
- * Clip windows follow the server's own watcher exactly, so this client and the
- * server's `clip:active` agree about what is live:
+ * Clip windows follow the web editor's rules exactly, so this client and
+ * everyone in the editor agree about what is live:
  * - a clip is active from its `position`;
  * - with an `end`, it lasts `end − mediaStart` frames (a null mediaStart is 0);
  * - without an `end`, it lasts until the next clip on the track;
