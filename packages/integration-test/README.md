@@ -5,18 +5,18 @@ the moment it cuts to a **different camera**, timed on its own clock rather than
 after the server says so.
 
 It exists for two reasons: to prove the API token flow works end to end against
-a running server, and to be a worked example of the shape a real integration
-takes. It is built the way [the integration guide](../../docs/integrations)
-tells integrators to build one — bootstrap over REST, never trust socket events
-alone, re-bootstrap on every reconnect, stop retrying a dead credential, and
-time everything against measured server time (see
-[clocks and timing](../../docs/integrations/timing.md)).
+a running server, and to be a worked example of a real integration. It is built
+on [cino-sdk](../cino-sdk), the SDK for the Cino API and live protocol, which handles
+everything [the integration guide](../../docs/integrations) asks of a device.
+What is left here is what a real device adds on top: deciding what counts as a
+cut, and doing something with it.
 
 ## Running it
 
 Create a token in the production settings under **Integrations**, then:
 
 ```bash
+npm run build -w cino-sdk     # the SDK is consumed from its build, like any package
 CINO_TOKEN=cino_svc_… CINO_TIMELINE=<timeline-uuid> npm start -w @starling/integration-test
 ```
 
@@ -55,28 +55,11 @@ Output looks like this:
 ## How it times cuts
 
 The server does not announce clip changes. It sends the anchor, the clips and
-every edit, and a device works the boundaries out for itself. An announcement
-sent as a boundary passed would reach a device late by the network, and a device
-that has to act *on* the frame cannot wait for one. This client:
-
-1. **It measures the server's clock.** `time:ping` round trips on a monotonic
-   clock give an offset that is never wrong by more than half the round trip.
-   It pings in a burst on connect, again after the WebSocket upgrade, once every
-   15 seconds, and in a burst when the machine looks like it slept. The fastest
-   recent sample wins; small corrections glide and big ones jump.
-   [`serverClock.ts`](src/serverClock.ts), [`clockSync.ts`](src/clockSync.ts)
-2. **It keeps the timeline in memory.** Every track and clip from the bootstrap,
-   kept current from `clip:change` and `track:change`, with clip windows
-   computed exactly the way the server computes them.
-   [`timelineModel.ts`](src/timelineModel.ts)
-3. **It schedules the boundary.** Every 20ms it reads the playhead from the
-   room's anchor through the clock and finds the next boundary; when that is
-   under two ticks away it arms a timer for exactly the time left. Joining
-   mid-clip, a seek, an edit, or a boundary the event loop missed are caught on
-   the next tick. [`clipScheduler.ts`](src/clipScheduler.ts)
-
-The anchor from `transport:state` is kept exactly as it arrived and read through
-the clock every time, so it gets more accurate as the clock estimate improves.
+every edit, and a device works the boundaries out for itself. cino-sdk does
+that: it measures the server's clock, keeps every track and clip in memory, and
+emits a `clip` event on the frame a track's live clip changes. This client
+listens for those events. See the [cino-sdk README](../cino-sdk/README.md) for
+how each part works.
 
 If the process itself stalls — heavy output, CPU load, a paused terminal —
 every cut due during it is late, so the client says so rather than leaving it to
@@ -87,31 +70,22 @@ look like a clock problem:
 ```
 
 If the connection drops mid-show, the client keeps cutting from what it already
-knows: the anchor does not go stale and every clip is in memory. The reconnect
-re-bootstraps and replaces all of it.
+knows. The reconnect fetches the whole timeline again and replaces all of it.
 
-When someone presses **Sync clocks** in the editor, the client runs a fresh ping
-burst and reports how good its estimate is (`clock:measure` → `clock:report`).
-It shows up in the editor's sync panel as `±` its error in milliseconds, and any
-Play pressed meanwhile waits for it. It also follows the run's progress
-(`clock:status`) and prints only what an operator needs:
+When someone presses **Sync clocks** in the editor, cino-sdk answers with a fresh
+measurement. This client prints only what an operator needs from the run:
 
 ```
 14:21:50 clock sync started by Stage manager
-14:21:50 clock sync requested answering within 4000ms
 14:21:51 clock reported offset +3.2ms, good to ±6.5ms
 14:21:51 play is held until every clock has reported
 14:21:52 clock sync done: 3/4 within a frame
 14:21:52   Lighting desk: did not answer
 ```
 
-The answer and the status lines are pure and tested in
-[`resync.ts`](src/resync.ts); when a fresh burst runs is tested in
-[`clockSync.test.ts`](src/clockSync.test.ts).
-
 ## What counts as a cut
 
-The active clip changes far more often than the camera does — a single camera
+The live clip changes far more often than the camera does — a single camera
 usually holds several cues in a row. Printing each one buries the thing you are
 watching for.
 
@@ -129,31 +103,17 @@ That logic lives in [`cameraWatch.ts`](src/cameraWatch.ts).
 
 ## Tests
 
-All of the timing and cut logic is pure, and tested without a server:
-
 ```bash
-npm test -w @starling/integration-test
-```
-
-or one at a time:
-
-```bash
-node packages/integration-test/src/serverClock.test.ts
-node packages/integration-test/src/clockSync.test.ts
-node packages/integration-test/src/resync.test.ts
-node packages/integration-test/src/clipScheduler.test.ts
-node packages/integration-test/src/cameraWatch.test.ts
+npm test -w @starling/integration-test   # what counts as a cut
+npm test -w cino-sdk                      # the REST API, the clock, the timeline, scheduling, the protocol
 ```
 
 ## What it demonstrates
 
-- Authenticating with `Authorization: Bearer` on REST and `auth: { token }` on
-  the Socket.IO handshake.
-- Reading `X-Cino-Token-Expires` and warning locally with days to spare, rather
-  than discovering expiry as a 401 mid-show.
-- Backing off permanently on `errors.auth.*` instead of retrying a credential
-  that will not fix itself.
-- Handling `access:revoked`, which the server sends when a token is revoked
-  while connected.
-- Measuring server time with `time:ping` on a monotonic clock, and scheduling
-  frame-accurate events from an in-memory timeline instead of reacting late.
+- Following a timeline with an API token through cino-sdk, in a few event
+  listeners.
+- Warning locally about token expiry with days to spare, rather than discovering
+  it as a failure mid-show.
+- Stopping permanently on a dead or revoked credential instead of retrying it.
+- Cutting on the frame from an in-memory timeline and a measured server clock,
+  instead of reacting late to the server.

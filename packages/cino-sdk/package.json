@@ -1,0 +1,32 @@
+{
+  "name": "cino-sdk",
+  "version": "0.1.0",
+  "description": "The Cino SDK: productions, timelines, tracks, clips, storage, and live frame-accurate playback from any device.",
+  "keywords": ["cino", "sdk", "timeline", "timecode", "show control", "live"],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "sync-protocol": "node scripts/syncProtocol.mjs",
+    "build": "npm run sync-protocol && tsc -p tsconfig.build.json",
+    "typecheck": "npm run sync-protocol && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "node scripts/runTests.mjs",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@starling/realtime": "*",
+    "typescript": "^5.8.3"
+  }
+}
