@@ -283,12 +283,48 @@ socket.on('clock:measure', async ({ requestId }) => {
   name, and anything looser than one frame is flagged.
 - **Report `rtt: null` when no ping answered.** That tells the operator the one
   thing they need to know before starting: this device has no server time.
-- `clock:status` carries the run's progress for every client, in case your device
-  has a panel to show it on.
+- **Listening to `clock:status` is optional.** It carries the run's progress for
+  every client, which is useful if your device has a panel to show it on.
 
 A held Play starts the moment the last client answers, on an anchor stamped at
 that moment. It reaches you as an ordinary `transport:state`, so a device that
 follows the playhead as described on this page needs nothing else.
+
+### The events
+
+| Direction | Event | Payload |
+| --- | --- | --- |
+| anyone → server | `clock:resync` | `{}`, acknowledged with `{ ok: true, requestId }` |
+| server → every client | `clock:measure` | `{ requestId, deadlineMs }` |
+| you → server | `clock:report` | `{ requestId, rtt }`, with `rtt` in milliseconds or `null` |
+| server → every client | `clock:status` | the run's progress, below |
+
+```jsonc
+{
+  "requestId": "4f0c2a…",
+  "state": "measuring",               // then "done"
+  "requestedBy": { "id": "…", "name": "Stage manager" },
+  "startedAt": 1726221450123.4,       // server clock, like a transport anchor's `at`
+  "finishedAt": null,
+  "deadlineMs": 4000,
+  "playHeld": true,                   // a Play starts the moment this run ends
+  "clients": [
+    { "socketId": "…", "id": "token:…", "name": "Vision mixer", "state": "synced", "rtt": 18 },
+    { "socketId": "…", "id": "…", "name": "Lighting desk", "state": "waiting", "rtt": null }
+  ]
+}
+```
+
+A client's `state` is `waiting`, `synced`, `failed` (no ping got through),
+`no-report` (the deadline passed first) or `left`. There is one entry per socket,
+so a device with two connections appears twice. A report only counts if its
+`requestId` matches the run in progress and it comes from a socket that was
+asked. Anything else is ignored, including a second report from the same socket.
+
+A device may send `clock:resync` itself, with the same access it needs to send
+transport commands. A playback server that wants to be sure before it presses
+Play is the usual reason. Sending it while a run is going joins that run rather
+than starting another.
 
 ---
 
@@ -655,6 +691,13 @@ socket.on('transport:state', (state) => {
   transport = state;   // never converted: currentFrame() reads it through the clock
   landed = null;       // a play or seek; the old boundary means nothing now
   disarm();
+});
+
+// "Sync clocks" in the editor: measure afresh, then report. A Play pressed
+// meanwhile waits for this answer, for up to 4 seconds.
+socket.on('clock:measure', async ({ requestId }) => {
+  await clock.measure();
+  if (socket.connected) socket.emit('clock:report', { requestId, rtt: clock.rtt });
 });
 
 socket.on('clip:change', (change) => {

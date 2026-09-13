@@ -299,6 +299,11 @@ socket.on("clock:measure") { [weak self] data, _ in
 
 The app shows up in the editor's sync panel as `±` half that round trip. Anything looser than one frame is flagged, and an app that never answers is listed as *did not answer*. A held Play reaches you as an ordinary `transport:state` once the run ends, so §7 needs no changes.
 
+Two more parts of the protocol are optional:
+
+- **`clock:status`** carries the run's progress (`{ requestId, state, requestedBy, playHeld, clients: [{ socketId, id, name, state, rtt }], … }`), sent on every change. Listen for it if the app shows who is synced or that a Play is waiting. The full shape is in [integrations/timing.md](integrations/timing.md#the-events).
+- **`clock:resync`** starts a run from the app itself, for example from a "Get ready" button: `socket.emitWithAck("clock:resync", [:])` acks `{ ok: true, requestId }`. It needs the same access as a transport command, and sending it while a run is going joins that run.
+
 ## 7. Following the transport — the core loop
 
 The app is a *follower* of the server anchor. Store the latest `TransportState` **exactly as it arrived**, and derive the playhead every UI frame by reading its `at` through the clock from §6. Never convert `at` to local time once and store that: the clock estimate keeps improving, and a stored conversion freezes whatever error it had when the anchor landed — for a device joining mid-playback, the worst estimate of the session.

@@ -15,6 +15,7 @@ order: 6
 | | |
 | --- | --- |
 | Seek commands | 1 per 80ms per socket; excess dropped, not queued |
+| Clock sync answer | `clock:report` within 4 s of `clock:measure`; later answers are ignored |
 | Socket relay payload | 32 KB |
 | JSON request body | 1 MB |
 | Reorder list | 500 tracks |
@@ -79,7 +80,9 @@ record, and it is deliberately cheap rather than exact.
    create-or-update.
 3. Derive the playhead from measured server time on a monotonic clock. Keep the
    anchor's `at` as it arrived and convert it on every read. Re-measure on
-   connect, every 15 seconds, and on waking. See [clocks and timing](./timing.md).
+   connect, every 15 seconds, and on waking. Answer `clock:measure` with a fresh
+   burst and a `clock:report` within 4 seconds. See
+   [clocks and timing](./timing.md).
 4. Send partial patches, never whole rows.
 5. Send `x-socket-id` on mutations if you hold a socket.
 6. Stop on `errors.auth.*` and on `access:revoked`. Do not retry a dead

@@ -89,8 +89,21 @@ re-bootstraps and replaces all of it.
 When someone presses **Sync clocks** in the editor, the client runs a fresh ping
 burst and reports how good its estimate is (`clock:measure` → `clock:report`).
 It shows up in the editor's sync panel as `±` its error in milliseconds, and any
-Play pressed meanwhile waits for it. The terminal logs `clock sync requested`
-and then what it reported.
+Play pressed meanwhile waits for it. It also follows the run's progress
+(`clock:status`) and prints only what an operator needs:
+
+```
+14:21:50 clock sync started by Stage manager
+14:21:50 clock sync requested answering within 4000ms
+14:21:51 clock reported offset +3.2ms, good to ±6.5ms
+14:21:51 play is held until every clock has reported
+14:21:52 clock sync done: 3/4 within a frame
+14:21:52   Lighting desk: did not answer
+```
+
+The answer and the status lines are pure and tested in
+[`resync.ts`](src/resync.ts); when a fresh burst runs is tested in
+[`clockSync.test.ts`](src/clockSync.test.ts).
 
 ## What counts as a cut
 
@@ -122,6 +135,8 @@ or one at a time:
 
 ```bash
 node packages/integration-test/src/serverClock.test.ts
+node packages/integration-test/src/clockSync.test.ts
+node packages/integration-test/src/resync.test.ts
 node packages/integration-test/src/clipScheduler.test.ts
 node packages/integration-test/src/cameraWatch.test.ts
 ```

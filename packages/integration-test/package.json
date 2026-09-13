@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node src/serverClock.test.ts && node src/clipScheduler.test.ts && node src/cameraWatch.test.ts"
+    "test": "node src/serverClock.test.ts && node src/clockSync.test.ts && node src/resync.test.ts && node src/clipScheduler.test.ts && node src/cameraWatch.test.ts"
   },
   "dependencies": {
     "@starling/realtime": "*",

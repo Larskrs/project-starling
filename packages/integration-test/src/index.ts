@@ -1,9 +1,13 @@
 import { io, type Socket } from 'socket.io-client';
-import { TIMELINE_NAMESPACE, TimelineEvent, type ClipChange, type TrackChange } from '@starling/realtime';
+import {
+  TIMELINE_NAMESPACE, TimelineEvent,
+  type ClipChange, type TrackChange, type ClockMeasureRequest, type ClockSyncStatus,
+} from '@starling/realtime';
 import { resolveConfig, ConfigError } from './config.ts';
 import { createCameraWatch, formatTimecode, type ActiveClip } from './cameraWatch.ts';
 import { createServerClock, type SampleOutcome } from './serverClock.ts';
 import { startClockSync } from './clockSync.ts';
+import { answerMeasure, createClockStatusWatch, type MeasurableClock } from './resync.ts';
 import { createTimelineModel, type BootstrapTrack } from './timelineModel.ts';
 import { createClipScheduler, TICK_MS, type TransportAnchor } from './clipScheduler.ts';
 
@@ -128,15 +132,35 @@ const clockSync = startClockSync(socket, clock, (outcome: SampleOutcome) => {
   else if (outcome === 'jump') log(yellow('clock jumped'), dim(`re-synced — ${describeClock()}`));
 });
 
+// ── Clock sync on request ─────────────────────────────────────────────────────
 // Someone pressed "Sync clocks" in the editor. Measure afresh, then report how
-// good the estimate is. The room holds any Play until every client has, so a
-// device that never answers is one the operator sees listed as silent.
-socket.on(TimelineEvent.clockMeasure, async ({ requestId }: { requestId: string }) => {
-  log(cyan('clock sync requested'));
-  await clockSync.measure();
-  socket.emit(TimelineEvent.clockReport, { requestId, rtt: clock.rtt });
-  if (clock.synced) log(green('clock reported'), dim(describeClock()));
-  else log(red('clock reported unsynced'), dim('no ping got through'));
+// good the estimate is. The room holds any Play until every client has answered
+// or the deadline passes — so a device that stays silent is one the operator
+// sees listed, rather than one that starts the show on an unchecked clock.
+// The rules are in resync.ts.
+
+const measurable: MeasurableClock = {
+  measure: () => clockSync.measure(),
+  get rtt() { return clock.rtt; },
+};
+
+socket.on(TimelineEvent.clockMeasure, async (request: ClockMeasureRequest) => {
+  log(cyan('clock sync requested'), dim(`answering within ${request.deadlineMs}ms`));
+  const report = await answerMeasure(request, measurable);
+  // Dropped mid-burst: the run already counts this socket as gone.
+  if (!socket.connected) return;
+  socket.emit(TimelineEvent.clockReport, report);
+  if (report.rtt === null) log(red('clock reported unsynced'), dim('no ping got through'));
+  else log(green('clock reported'), dim(describeClock()));
+});
+
+// The run's progress for the whole room: who started it, whether a Play is
+// waiting on it, and — when it ends — which clients are not within a frame.
+const clockStatusWatch = createClockStatusWatch(() => frameRate);
+const levelColour = { info: cyan, ok: green, warn: yellow } as const;
+
+socket.on(TimelineEvent.clockStatus, (status: ClockSyncStatus) => {
+  for (const line of clockStatusWatch.observe(status)) log(levelColour[line.level](line.text));
 });
 
 // ── The actual job ────────────────────────────────────────────────────────────

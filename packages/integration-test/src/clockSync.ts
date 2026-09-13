@@ -49,8 +49,13 @@ export function startClockSync(
       if (!socket.connected) { resolve(); return; }
       const t0 = monotonicNow();
       socket.timeout(PING_TIMEOUT_MS).emit(TimelineEvent.timePing, (err: Error | null, serverNow: number) => {
-        // A lost ping is just a missing sample.
-        if (!err) onSample?.(clock.addSample({ t0, t2: monotonicNow(), serverNow }));
+        // A lost ping is just a missing sample. Recorded BEFORE the optional
+        // callback: `onSample?.(clock.addSample(…))` skips evaluating its
+        // argument when there is no callback, which silently recorded nothing.
+        if (!err) {
+          const outcome = clock.addSample({ t0, t2: monotonicNow(), serverNow });
+          onSample?.(outcome);
+        }
         resolve();
       });
     });
