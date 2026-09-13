@@ -45,6 +45,11 @@ export function timelineProfileImagePath(companyId: string, productionId: string
   return join(STORAGE_ROOT, 'c', companyId, 'p', productionId, 't', timelineId, 'profile', `${fileId}@${quality}.webp`);
 }
 
+// storage/c/{companyId}/p/{productionId}/tokens/{tokenId}/profile/{fileId}@{quality}.webp
+export function tokenProfileImagePath(companyId: string, productionId: string, tokenId: string, fileId: string, quality: number): string {
+  return join(STORAGE_ROOT, 'c', companyId, 'p', productionId, 'tokens', tokenId, 'profile', `${fileId}@${quality}.webp`);
+}
+
 /** How many quality versions to generate based on raw file size. */
 function versionCount(sizeBytes: number): number {
   if (sizeBytes < 100 * 1024)       return 1; // <100 KB

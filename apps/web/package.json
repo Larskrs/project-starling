@@ -8,11 +8,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
-    "test": "node src/views/TimelineEditor/audio/transportClock.test.ts && node src/views/TimelineEditor/media/mediaDownloads.test.ts && node src/views/TimelineEditor/audio/useAudioEngine.test.ts && node src/views/TimelineEditor/audio/audioUnlock.test.ts && node src/views/TimelineEditor/audio/behaviors.test.ts"
+    "test": "node src/views/TimelineEditor/audio/transportClock.test.ts && node src/views/TimelineEditor/media/mediaDownloads.test.ts && node src/views/TimelineEditor/audio/useAudioEngine.test.ts && node src/views/TimelineEditor/audio/audioUnlock.test.ts && node src/views/TimelineEditor/audio/behaviors.test.ts && node src/views/TimelineEditor/lib/snapping.test.ts && node src/views/TimelineEditor/lib/editHistory.test.ts && node src/views/TimelineEditor/lib/editorUtils.test.ts && node src/views/Production/lib/tokenFormat.test.ts && node src/views/Docs/lib/docsNav.test.ts"
   },
   "dependencies": {
     "@iconify/vue": "^5.0.1",
     "@starling/auth": "*",
+    "@starling/realtime": "*",
     "@starling/ui": "*",
     "clsx": "^2.1.1",
     "easy-speech": "^2.4.0",
@@ -21,8 +22,7 @@
     "tailwind-merge": "^3.3.1",
     "vue": "^3.5.13",
     "vue-i18n": "^9.14.5",
-    "vue-router": "^4.5.1",
-    "@starling/realtime": "*"
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

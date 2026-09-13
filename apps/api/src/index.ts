@@ -6,8 +6,8 @@ import { gzipSync } from 'node:zlib';
 import { loadRoutes, matchRoute, type Route } from './router.js';
 import { ApiError, type ApiEvent, sendJson, appendVary, acceptsGzip, getAuth } from './lib/handler.js';
 import { setupSockets } from './lib/sockets.js';
-import { applyCors, applySecurityHeaders } from './lib/security.js';
-import { renderIndex, renderPage } from './lib/docs.js';
+import { applyCors, applySecurityHeaders, getClientIp } from './lib/security.js';
+import { recordTokenEvent } from './lib/apiTokens.js';
 
 const here         = dirname(fileURLToPath(import.meta.url));
 const apiDir       = join(here, 'routes');
@@ -159,61 +159,40 @@ async function serveSpa(
   }
 }
 
+/** POST → create, PATCH/PUT → update, DELETE → delete. Reads are not audited. */
+const AUDIT_ACTIONS: Record<string, 'create' | 'update' | 'delete'> = {
+  POST: 'create', PATCH: 'update', PUT: 'update', DELETE: 'delete',
+};
+
 /**
- * Serves `docs/` as pages under `/docs/`.
+ * Audits a token's successful mutation, once, for every route.
  *
- * Behind a session, deliberately. These pages describe the permission model,
- * every route and the internals of the live layer — useful to the team, and not
- * something to hand to the open internet by default. Everything here is already
- * readable to anyone with repository access, so a login is the right bar rather
- * than a permission check.
+ * Reads are deliberately not logged, and neither is anything on the socket:
+ * a desk sending transport commands at scrub speed would write millions of rows
+ * saying nothing, and a log nobody can read is decoration rather than evidence.
  *
- * To publish them publicly, drop the getAuth guard below.
+ * Only reached when the handler returned without throwing, so a rejected write
+ * never appears as one that happened.
  */
-async function serveDocs(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    sendJson(res, 405, { error: 'Method not allowed' });
-    return;
-  }
+function auditTokenMutation(event: ApiEvent): void {
+  const principal = event.principal;
+  if (principal?.kind !== 'token') return;
 
-  const session = await getAuth({ req, res, method: req.method, url, params: {} });
-  if (!session) {
-    res.statusCode = 401;
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.end('<!doctype html><meta charset="utf-8"><title>Sign in</title>'
-      + '<p style="font:15px system-ui;padding:40px">Sign in to read the documentation.</p>');
-    return;
-  }
+  const action = AUDIT_ACTIONS[event.method];
+  if (!action) return;
 
-  const slug = url.pathname.replace(/^\/docs\/?/, '');
-  const html = slug ? await renderPage(slug) : await renderIndex();
+  // '/api/timeline/{id}/clips' → 'timeline'. Coarse on purpose: the exact path
+  // is in `detail`, and a readable column beats an accurate-but-unreadable one.
+  const entityType = event.url.pathname.split('/').filter(Boolean)[1] ?? null;
 
-  if (html === null) {
-    res.statusCode = 404;
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.end('<!doctype html><meta charset="utf-8"><title>Not found</title>'
-      + '<p style="font:15px system-ui;padding:40px">No such page. '
-      + '<a href="/docs/">All documentation</a></p>');
-    return;
-  }
-
-  const body = Buffer.from(html);
-  // Always revalidated: docs change often and a stale page is worse than a
-  // request. The render itself is cached in-process by mtime.
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-
-  if (acceptsGzip(req) && body.length > 1024) {
-    const gz = gzipSync(body);
-    appendVary(res, 'Accept-Encoding');
-    res.setHeader('Content-Encoding', 'gzip');
-    res.setHeader('Content-Length', gz.length);
-    res.end(req.method === 'HEAD' ? undefined : gz);
-    return;
-  }
-  res.setHeader('Content-Length', body.length);
-  res.end(req.method === 'HEAD' ? undefined : body);
+  recordTokenEvent({
+    tokenId:      principal.tokenId,
+    productionId: principal.productionId,
+    event:        action,
+    entityType,
+    ip:           getClientIp(event.req),
+    detail:       `${event.method} ${event.url.pathname}`,
+  });
 }
 
 const server = createServer(async (req, res) => {
@@ -235,11 +214,6 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) {
-    await serveDocs(req, res, url);
-    return;
-  }
-
   if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
     const match = matchRoute(routes, req.method ?? 'GET', url.pathname);
     if (!match) { sendJson(res, 404, { error: 'Not found', path: url.pathname }); return; }
@@ -247,6 +221,7 @@ const server = createServer(async (req, res) => {
     const event: ApiEvent = { req, res, method: req.method ?? 'GET', url, params: match.params };
     try {
       const result = await match.route.handler(event);
+      auditTokenMutation(event);
       if (res.writableEnded) return;
       if (result === undefined || result === null) { res.statusCode = 204; res.end(); return; }
       sendJson(res, res.statusCode && res.statusCode !== 200 ? res.statusCode : 200, result);

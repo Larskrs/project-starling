@@ -24,7 +24,9 @@ import SocketIO
 
 ## 2. Authentication — the session cookie
 
-The API uses a DB-backed cookie session: `syncsw_sid`, obtained from `POST /api/auth/login`. The socket handshake authenticates with that same cookie (`socketAuth` middleware on the server); there is no token flow.
+The API uses a DB-backed cookie session: `syncsw_sid`, obtained from `POST /api/auth/login`. The socket handshake authenticates with that same cookie (`socketAuth` middleware on the server).
+
+> **This is the right flow only when a person logs in.** The app below collects a real user's email and password, acts as that user, and inherits their access everywhere. Do not use it for installed equipment — a lighting desk, a playback machine, a status display. Those authenticate with a scoped, revocable API token instead; see [the integration guide](./integrations/index.md). A session is also the wrong shape for unattended kit: it expires in 24 hours, which means storing the password on the device to renew it.
 
 ```swift
 struct AuthClient {

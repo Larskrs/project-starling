@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FormDialog, FormField, Input } from '@starling/ui'
+import { Icon } from '@iconify/vue'
+import { Button, FormDialog, FormField, Input } from '@starling/ui'
+import TimecodeInput from './TimecodeInput.vue'
 import { useApi } from '../../../composables/useApi'
 import type { EditorClip, EditorTrack } from '../../../types/timeline'
 
@@ -13,7 +15,10 @@ const props = withDefaults(defineProps<{
   /** null → create. */
   clip?: EditorClip | null
   defaultPosition?: number
-}>(), { track: null, clip: null, defaultPosition: 0 })
+  frameRate?: string | number
+  /** Where the playhead is, for the "use playhead" shortcut. */
+  playheadFrame?: number
+}>(), { track: null, clip: null, defaultPosition: 0, frameRate: 25, playheadFrame: 0 })
 
 const emit = defineEmits<{
   'update:open': [open: boolean]
@@ -23,11 +28,12 @@ const emit = defineEmits<{
 const { t }      = useI18n()
 const { $fetch } = useApi()
 
-const position    = ref(0)
-const bpm         = ref(120)
-const beatsPerBar = ref(4)
-const loading     = ref(false)
-const error       = ref('')
+const position      = ref(0)
+const positionValid = ref(true)
+const bpm           = ref(120)
+const beatsPerBar   = ref(4)
+const loading       = ref(false)
+const error         = ref('')
 
 const isEdit = computed(() => props.clip !== null)
 
@@ -35,12 +41,19 @@ watch(() => props.open, (open) => {
   if (!open) return
   error.value   = ''
   loading.value = false
+  positionValid.value = true
   position.value    = props.clip?.position ?? props.defaultPosition
   bpm.value         = Number(props.clip?.data?.bpm) || 120
   beatsPerBar.value = Number(props.clip?.data?.beatsPerBar) || 4
 })
 
-const valid = computed(() => bpm.value >= 20 && bpm.value <= 400 && position.value >= 0)
+const valid = computed(() =>
+  bpm.value >= 20 && bpm.value <= 400 && position.value >= 0 && positionValid.value)
+
+function usePlayhead() {
+  position.value = Math.max(0, Math.round(props.playheadFrame))
+  positionValid.value = true
+}
 
 async function submit() {
   if (!valid.value || !props.track) return
@@ -87,7 +100,28 @@ async function submit() {
     </div>
 
     <FormField for="bpm-position" :label="$t('editor.clipPosition')">
-      <Input id="bpm-position" v-model.number="position" type="number" min="0" step="1" />
+      <div class="flex items-center gap-2">
+        <div class="flex-1 min-w-0">
+          <TimecodeInput
+            id="bpm-position"
+            v-model="position"
+            :frame-rate="frameRate"
+            @validity="positionValid = $event"
+          />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          class="shrink-0 text-muted-foreground"
+          :title="$t('editor.usePlayheadHint')"
+          @click="usePlayhead"
+        >
+          <Icon icon="mdi:ray-vertex" class="size-4" />
+          {{ $t('editor.usePlayhead') }}
+        </Button>
+      </div>
+      <p v-if="!positionValid" class="mt-1 text-xs text-destructive">{{ $t('editor.invalidTimecode') }}</p>
     </FormField>
   </FormDialog>
 </template>

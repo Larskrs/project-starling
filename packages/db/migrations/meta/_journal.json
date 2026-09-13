@@ -71,6 +71,20 @@
       "when": 1786060685656,
       "tag": "0009_outgoing_ezekiel_stane",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789217383875,
+      "tag": "0010_ambitious_brood",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789302899586,
+      "tag": "0011_public_zuras",
+      "breakpoints": true
     }
   ]
 }

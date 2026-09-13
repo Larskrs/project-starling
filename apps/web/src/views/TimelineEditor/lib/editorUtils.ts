@@ -14,6 +14,33 @@ export function framesToTC(frame: number, frameRate: string | number): string {
   return `${sign}${pad(hh)}:${pad(mm)}:${pad(ss)}:${pad(ff)}`
 }
 
+/**
+ * Parses what someone types into a timecode field, or null if it is neither
+ * form below.
+ *
+ * - "HH:MM:SS:FF", or any shorter right-aligned form ("SS:FF", "MM:SS:FF").
+ *   `;` and `.` work as separators too (drop-frame notation, numpad typing).
+ *   The leading part may overflow ("90:00" is ninety seconds); the rest must
+ *   be in range, so a typo like "00:75:00:00" is rejected rather than guessed.
+ * - A bare whole number is a frame count, which is what these fields held
+ *   before they spoke timecode.
+ */
+export function tcToFrames(text: string, frameRate: string | number): number | null {
+  const fps = typeof frameRate === 'number' ? frameRate : parseFloat(frameRate)
+  const s   = text.trim()
+  if (!s || !(fps > 0)) return null
+  if (/^\d+$/.test(s)) return Number(s)
+  if (!/^\d+(?:[:;.]\d+){1,3}$/.test(s)) return null
+
+  const parts = s.split(/[:;.]/).map(Number).reverse()   // FF, SS, MM, HH
+  const limits = [Math.round(fps), 60, 60]
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i]! >= limits[i]!) return null
+  }
+  const [ff = 0, ss = 0, mm = 0, hh = 0] = parts
+  return Math.round((hh * 3600 + mm * 60 + ss) * fps) + ff
+}
+
 // Nice ruler interval in frames for a target pixel density. Sub-second ticks
 // use frame counts; anything longer snaps to time-nice steps (1s … 2h) so the
 // timecode labels land on round times.

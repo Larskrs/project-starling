@@ -53,8 +53,13 @@ export interface LiveRoomOptions<TCaps, TPresence extends { id: string }> {
    * Resolve access and capabilities. Returning null denies the join — the same
    * answer for "no such room" and "no permission", so membership is not
    * probeable from outside.
+   *
+   * Takes the whole socket data rather than just the user because the presence
+   * identity and the access identity are different things for a machine token.
+   * Must stay side-effect free: the revalidation sweep below re-runs it on a
+   * timer for every connected socket.
    */
-  authorize(user: SocketUser, roomId: string): Promise<JoinResult<TCaps, TPresence> | null>;
+  authorize(data: SocketData, roomId: string): Promise<JoinResult<TCaps, TPresence> | null>;
 
   /** Ran after a successful join, for activity logging or catch-up state. */
   onJoined?(socket: LiveSocket<TCaps>, roomId: string, caps: TCaps): void;
@@ -153,7 +158,7 @@ export function createLiveRoom<TCaps, TPresence extends { id: string }>(
 
       let resolved: JoinResult<TCaps, TPresence> | null;
       try {
-        resolved = await options.authorize(user, roomId);
+        resolved = await options.authorize(socket.data, roomId);
       } catch {
         ack?.({ error: 'Access check failed' });
         return;
@@ -193,5 +198,64 @@ export function createLiveRoom<TCaps, TPresence extends { id: string }>(
     options.events?.(socket, ctx);
   });
 
+  startRevalidation(nsp, options);
   return ctx;
+}
+
+/**
+ * How long a capability may outlive the access that granted it.
+ *
+ * Capabilities are resolved once at join and cached on the socket, which is
+ * what keeps relays off the database. The cost is that revoking access used to
+ * do nothing at all to a live connection: the socket kept the permissions it
+ * held when it arrived, indefinitely. Signing out did not close your socket
+ * either.
+ *
+ * This is the bound on that. Sixty seconds is also the guarantee the
+ * integration docs promise for token revocation, so the two must not drift.
+ */
+export const REVALIDATE_INTERVAL_MS = 60_000;
+
+/**
+ * Re-resolves every joined socket's capabilities on a timer, and disconnects
+ * the ones that no longer have access.
+ *
+ * One timer per namespace rather than one per socket: a thousand sockets would
+ * otherwise be a thousand timers, and the work is the same either way. It costs
+ * one `authorize` per joined socket per minute, which also catches role edits
+ * and membership changes — not only revoked tokens.
+ */
+function startRevalidation<TCaps, TPresence extends { id: string }>(
+  nsp: Namespace,
+  options: LiveRoomOptions<TCaps, TPresence>,
+): void {
+  const timer = setInterval(async () => {
+    for (const rawSocket of nsp.sockets.values()) {
+      const socket = rawSocket as LiveSocket<TCaps>;
+      const roomId = socket.data.roomId;
+      if (!roomId) continue;   // connected but not in a room — nothing cached
+
+      try {
+        const resolved = await options.authorize(socket.data, roomId);
+        if (!resolved) {
+          // Access is gone: revoked, expired, or the role lost the production.
+          // Told plainly so a client can distinguish it from a network drop and
+          // stop reconnecting.
+          socket.emit('access:revoked' as never, { roomId } as never);
+          socket.disconnect(true);
+          continue;
+        }
+        // Narrowed as well as widened — a role that loses EDIT_TIMELINE stops
+        // being able to write without anyone restarting anything.
+        socket.data.caps = resolved.caps;
+      } catch {
+        // A failed check is not proof of lost access. Leaving the socket alone
+        // means a database blip cannot disconnect an entire show; the next
+        // sweep will settle it.
+      }
+    }
+  }, REVALIDATE_INTERVAL_MS);
+
+  // Never hold the process open for this.
+  timer.unref();
 }

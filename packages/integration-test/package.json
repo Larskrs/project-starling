@@ -1,0 +1,21 @@
+{
+  "name": "@starling/integration-test",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "cino-watch": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "node src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node src/cameraWatch.test.ts"
+  },
+  "dependencies": {
+    "@starling/realtime": "*",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

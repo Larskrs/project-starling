@@ -9,17 +9,20 @@ import LaneChip from './LaneChip.vue'
 // the next chip. Chips drag horizontally to move the clip.
 // (Metronome tracks use BpmLane instead — metronome overrides trackDisplay.)
 const props = defineProps({
-  track:      { type: Object,  required: true },
-  timeline:   { type: Object,  required: true },
-  pxPerFrame: { type: Number,  required: true },
-  height:     { type: Number,  default: 28 },
-  selected:   { type: Boolean, default: false },
-  muted:      { type: Boolean, default: false },
+  track:          { type: Object,  required: true },
+  timeline:       { type: Object,  required: true },
+  pxPerFrame:     { type: Number,  required: true },
+  height:         { type: Number,  default: 28 },
+  selected:       { type: Boolean, default: false },
+  muted:          { type: Boolean, default: false },
+  selectedClipIds: { type: Array,  default: () => [] },
 })
 
-defineEmits(['select', 'edit-clip', 'delete-clip', 'move-clip'])
+const emit = defineEmits(['select', 'select-clip', 'add-at', 'edit-clip', 'delete-clip', 'move-clip'])
 
-// Only chips near the viewport render (160px covers the widest chip label).
+// Only chips near the viewport render (160px covers the widest chip label). The
+// selected chip always stays mounted, so dragging it off screen doesn't
+// unmount it mid-drag.
 const range = useViewportRange(160)
 
 const chips = computed(() => {
@@ -27,11 +30,17 @@ const chips = computed(() => {
   const out = []
   for (const clip of props.track.clips) {
     const x = clipLeft(clip, props.timeline.startFrame, props.pxPerFrame)
-    if (x < left || x > right) continue
+    if ((x < left || x > right) && !props.selectedClipIds.includes(clip.id)) continue
     out.push({ clip, x, text: clip.label || '—' })
   }
   return out
 })
+
+// Double-clicking empty strip space adds a chip right there.
+function onBackgroundDblClick(e) {
+  const rect = e.currentTarget.getBoundingClientRect()
+  emit('add-at', props.timeline.startFrame + (e.clientX - rect.left) / props.pxPerFrame)
+}
 </script>
 
 <template>
@@ -44,6 +53,7 @@ const chips = computed(() => {
       class="absolute inset-0 transition-colors"
       :class="selected ? 'bg-primary/10' : ''"
       @click="$emit('select')"
+      @dblclick="onBackgroundDblClick"
     />
 
     <!-- Baseline -->
@@ -58,7 +68,10 @@ const chips = computed(() => {
       :text="text"
       :px-per-frame="pxPerFrame"
       :min-position="timeline.startFrame"
+      :max-position="timeline.endFrame - 1"
       :locked="!!track.isLocked"
+      :selected="selectedClipIds.includes(clip.id)"
+      @select="(c, mods) => $emit('select-clip', c, mods)"
       @edit="$emit('edit-clip', $event)"
       @delete="$emit('delete-clip', $event)"
       @move="$emit('move-clip', $event)"

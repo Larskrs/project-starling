@@ -14,9 +14,10 @@ const props = defineProps({
   height:     { type: Number,  default: 36 },
   selected:   { type: Boolean, default: false },
   muted:      { type: Boolean, default: false },
+  selectedClipIds: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['seek', 'edit-clip', 'delete-clip', 'move-clip'])
+const emit = defineEmits(['select', 'select-clip', 'add-at', 'edit-clip', 'delete-clip', 'move-clip'])
 
 const marksRange = useViewportRange(64)
 const chipsRange = useViewportRange(160)
@@ -99,17 +100,19 @@ const chips = computed(() => {
   const out = []
   for (const clip of props.track.clips) {
     const x = clipLeft(clip, props.timeline.startFrame, props.pxPerFrame)
-    if (x < left || x > right) continue
+    // The selected chip stays mounted so a drag can carry it off screen.
+    if ((x < left || x > right) && !props.selectedClipIds.includes(clip.id)) continue
     out.push({ clip, x, text: `♩ ${Number(clip.data?.bpm) || '—'}` })
   }
   return out
 })
 
-// Clicking empty lane space seeks the playhead to that position.
-function onBackgroundClick(e) {
-  const rect  = e.currentTarget.getBoundingClientRect()
-  const frame = props.timeline.startFrame + (e.clientX - rect.left) / props.pxPerFrame
-  emit('seek', frame)
+// Empty lane space behaves like every other lane: click selects the track,
+// double-click adds a tempo change there. (It used to seek on click, which —
+// while playing — moved the shared transport for everyone in the room.)
+function onBackgroundDblClick(e) {
+  const rect = e.currentTarget.getBoundingClientRect()
+  emit('add-at', props.timeline.startFrame + (e.clientX - rect.left) / props.pxPerFrame)
 }
 </script>
 
@@ -120,9 +123,10 @@ function onBackgroundClick(e) {
     :style="{ height: height + 'px' }"
   >
     <div
-      class="absolute inset-0 transition-colors cursor-crosshair"
+      class="absolute inset-0 transition-colors"
       :class="selected ? 'bg-primary/10' : ''"
-      @click="onBackgroundClick"
+      @click="$emit('select')"
+      @dblclick="onBackgroundDblClick"
     />
 
     <!-- Beat ticks (short, along the bottom, ruler-style) -->
@@ -159,7 +163,10 @@ function onBackgroundClick(e) {
       :text="text"
       :px-per-frame="pxPerFrame"
       :min-position="timeline.startFrame"
+      :max-position="timeline.endFrame - 1"
       :locked="!!track.isLocked"
+      :selected="selectedClipIds.includes(clip.id)"
+      @select="(c, mods) => $emit('select-clip', c, mods)"
       @edit="$emit('edit-clip', $event)"
       @delete="$emit('delete-clip', $event)"
       @move="$emit('move-clip', $event)"
