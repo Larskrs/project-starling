@@ -4,15 +4,13 @@ import { check, eq, finish, section } from './harness.ts';
 
 const FPS = 25;
 
-const client = (socketId: string, state: ClockClientStatus['state'], rtt: number | null = null): ClockClientStatus =>
-  ({ socketId, id: `token:${socketId}`, name: socketId.toUpperCase(), state, rtt });
+const client = (name: string, state: ClockClientStatus['state'], rtt: number | null = null): ClockClientStatus =>
+  ({ id: `token:${name}`, name: name.toUpperCase(), state, rtt });
 
 const status = (over: Partial<ClockSyncStatus> = {}): ClockSyncStatus => ({
   requestId:   'run-1',
   state:       'measuring',
-  requestedBy: { id: 'u1', name: 'Stage manager' },
-  startedAt:   1000,
-  finishedAt:  null,
+  requestedBy: { name: 'Stage manager' },
   deadlineMs:  4000,
   playHeld:    false,
   clients:     [client('a', 'waiting'), client('b', 'waiting')],

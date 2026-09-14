@@ -141,17 +141,23 @@ await check('nothing matching returns nothing', () => {
 
 console.log('\nvisibility, against the real docs folder');
 
+/** The folders published to signed-out readers. */
+const PUBLIC_CATEGORIES = ['Integrations', 'Examples'];
+const isPublicSlug = (slug: string) => slug.startsWith('integrations') || slug.startsWith('examples');
+
 await check('the integration guide is public and the reference is not', async () => {
   const pages = await listDocs();
-  const integrations = pages.filter(p => p.dir === 'integrations');
-  assert(integrations.length > 0, 'no integration pages found');
-  assert(integrations.every(p => p.isPublic), 'an integration page is not public');
+  for (const dir of ['integrations', 'examples']) {
+    const published = pages.filter(p => p.dir === dir);
+    assert(published.length > 0, `no ${dir} pages found`);
+    assert(published.every(p => p.isPublic), `a page in ${dir} is not public`);
+  }
   assert(pages.some(p => !p.dir && !p.isPublic), 'no private reference page found');
 });
 
 await check('a signed-out listing hides private pages', async () => {
   const groups = await docGroups(false);
-  assert(groups.every(g => g.category === 'Integrations'),
+  assert(groups.every(g => PUBLIC_CATEGORIES.includes(g.category)),
     `private categories leaked: ${groups.map(g => g.category).join(', ')}`);
 });
 
@@ -159,13 +165,13 @@ await check('a signed-out SEARCH never reaches a private page', async () => {
   // The listing and the search are separate paths, and a leak here would be
   // quieter: content, not just a title.
   const hits = await docSearch('presence', false);
-  assert(hits.every(h => h.slug.startsWith('integrations')),
+  assert(hits.every(h => isPublicSlug(h.slug)),
     `private content leaked: ${hits.map(h => h.slug).join(', ')}`);
 });
 
 await check('a signed-in search does reach them', async () => {
   const hits = await docSearch('presence', true);
-  assert(hits.some(h => !h.slug.startsWith('integrations')), 'found no internal pages');
+  assert(hits.some(h => !isPublicSlug(h.slug)), 'found no internal pages');
 });
 
 await check('searching the real guide finds the token format', async () => {

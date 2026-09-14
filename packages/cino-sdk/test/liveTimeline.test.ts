@@ -1,5 +1,6 @@
 import { Cino } from '../src/cino.ts';
 import type { LiveEvents, LiveOptions, LiveTimeline } from '../src/live/liveTimeline.ts';
+import { PROTOCOL, PROTOCOL_ERROR, TimelineEvent as E } from '../src/protocol.ts';
 import { fakeFetch, fakeSocket, json, type Recorded } from './fakes.ts';
 import { check, eq, finish, ok, rejects, section, until } from './harness.ts';
 
@@ -56,16 +57,18 @@ async function readyWorld() {
 
 async function playing(live: LiveTimeline, w: ReturnType<typeof world>, frame: number) {
   await until(() => live.clock.synced, 'clock sync');
-  w.socket.push('transport:state', { playing: true, frame, frameRate: 25, userId: 'u1', at: live.serverNow()! });
+  w.socket.push(E.transportState, [1, frame, live.serverNow()!, 25]);
 }
 
 section('connecting');
 
-await check('opens the timeline namespace with the token in the handshake', async () => {
+await check('opens the timeline namespace with the token and the protocol in the handshake', async () => {
   const w = world();
   const live = w.open();
+  const auth = w.socket.opened?.options.auth as { token: string; protocol: number };
   eq(w.socket.opened?.url, 'https://cino.no/timeline', 'url:');
-  eq((w.socket.opened?.options.auth as { token: string }).token, 'cino_svc_test', 'token:');
+  eq(auth.token, 'cino_svc_test', 'token:');
+  eq(auth.protocol, PROTOCOL, 'protocol:');
   eq(w.socket.opened?.options.path, '/socket', 'path:');
   eq((w.socket.opened?.options.transports as string[]).join(), 'polling,websocket', 'transports:');
   live.close();
@@ -81,12 +84,38 @@ await check('on connect it fetches the whole timeline, joins, and is ready', asy
   eq(info.frameRate, 25, 'frameRate:');
   eq(info.productionId, 'p1', 'productionId:');
   eq(w.server.requests[0]!.headers.get('authorization'), 'Bearer cino_svc_test', 'authorization:');
-  ok(w.socket.sent.some(s => s.event === 'timeline:join'), 'joined:');
+  ok(w.socket.sent.some(s => s.event === E.join && s.args[0] === 'tl-1'), 'joined by id:');
   eq(live.tracks.list().length, 2, 'tracks:');
   eq(live.clips.list().length, 2, 'clips:');
   eq(live.source('s1')?.shortName, 'C1', 'source:');
   eq(live.ready, true, 'ready:');
   eq(Math.round(tokens[0]?.daysLeft ?? 0), 3, 'token days left:');
+  live.close();
+});
+
+await check('the join ack brings the room — occupants, a playing anchor, a sync in progress — before ready', async () => {
+  const w = world({ joinAck: {
+    ok: true, protocol: PROTOCOL, canEdit: false, canRename: true,
+    users:  [['u1', 'Ada', null, 1_700_000_000], ['token:d1', 'Desk']],
+    anchor: [1, 250, 123_456.5, 25],
+    sync:   ['run-3', 0, 1, 'Stage manager', 4000, [['u1', 'Ada', 0], ['token:d1', 'Desk', 1, 18]]],
+  } });
+  const live = w.open();
+  const order: string[] = [];
+  const presence = collect(live, 'presence');
+  const syncs = collect(live, 'sync');
+  for (const name of ['presence', 'transport', 'sync', 'ready'] as const) live.on(name, () => { order.push(name); });
+  w.socket.connect();
+  await live.whenReady();
+  eq(order.join(), 'presence,transport,sync,ready', 'order:');
+  eq(presence[0]!.map(u => u.name).join(), 'Ada,Desk', 'occupants:');
+  eq(presence[0]![0]!.createdAt, new Date(1_700_000_000_000).toISOString(), 'createdAt:');
+  eq(presence[0]![1]!.createdAt, null, 'a device has no createdAt:');
+  eq(live.transport?.playing, true, 'playing:');
+  eq(live.transport?.frame, 250, 'anchor frame:');
+  eq(syncs[0]!.playHeld, true, 'play held:');
+  eq(syncs[0]!.clients[1]!.rtt, 18, 'client rtt:');
+  eq(live.canEdit, false, 'canEdit:');
   live.close();
 });
 
@@ -116,17 +145,58 @@ await check('a failed fetch is retried, not fatal', async () => {
   live.close();
 });
 
+await check('a reconnect while the fetch is out joins once, with the newest timeline', async () => {
+  const socket = fakeSocket();
+  const held: Array<() => void> = [];
+  let fetches = 0;
+  const fetch = (async () => {
+    const n = ++fetches;
+    if (n === 1) await new Promise<void>(resolve => held.push(resolve));
+    return json({ timeline: { ...TIMELINE, name: n === 1 ? 'stale' : 'fresh' }, tracks: TRACKS, trackTypes: [], sources: [], canEdit: true });
+  }) as typeof globalThis.fetch;
+  const live = new Cino({ url: 'https://cino.no', token: 'cino_svc_test', fetch, io: socket.io }).connect('tl-1', { stallWarnMs: 0 });
+  const ready = collect(live, 'ready');
+
+  socket.connect();
+  await until(() => held.length === 1, 'first fetch');
+  socket.drop();
+  socket.connect();
+  await live.whenReady();
+  held[0]!();
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  eq(ready.length, 1, 'ready events:');
+  eq(socket.sent.filter(s => s.event === E.join).length, 1, 'joins:');
+  eq(live.timeline?.name, 'fresh', 'timeline:');
+  live.close();
+});
+
 section('following');
 
 await check('relays update the local copy; malformed ones are ignored', async () => {
   const { live, socket } = await readyWorld();
   const changes = collect(live, 'change');
-  socket.push('clip:change', { type: 'upsert', trackId: 't1', clip: { id: 'A', trackId: 't1', position: 0, label: 'Opening' } });
-  eq(live.clips.get('A')?.label, 'Opening', 'label:');
-  eq(changes.length, 1, 'change events:');
-  socket.push('clip:change', { type: 'explode' });
-  socket.push('track:change', { type: 'remove' });
-  eq(changes.length, 1, 'malformed relays applied:');
+
+  socket.push(E.clipUpdate, { id: 'A', label: 'Opening' });
+  eq(live.clips.get('A')?.label, 'Opening', 'patched label:');
+  eq(live.clips.get('A')?.sourceId, 's1', 'fields the patch did not carry are kept:');
+
+  socket.push(E.clipAdd, { id: 'N', trackId: 't2', position: 40, label: 'New' });
+  eq(live.clips.get('N')?.position, 40, 'added:');
+  eq(live.clips.get('N')?.row.end, null, 'left-out nulls restored:');
+
+  socket.push(E.clipRemove, 'B');
+  eq(live.clips.get('B'), null, 'removed:');
+
+  socket.push(E.trackOrder, ['t2', 't1']);
+  eq(live.tracks.list()[0]?.id, 't2', 'reordered:');
+  eq(changes.length, 4, 'change events:');
+
+  socket.push(E.clipAdd, { type: 'explode' });
+  socket.push(E.trackRemove, 42);
+  socket.push(E.clipUpdate, { id: 'ghost', label: 'never fetched' });
+  eq(changes.length, 4, 'malformed or unknown relays applied:');
+  eq(live.clips.get('ghost'), null, 'a patch invented a clip:');
   live.close();
 });
 
@@ -159,11 +229,28 @@ await check('a cue set by timecode fires as playback crosses it', async () => {
 await check('answers a clock sync with a fresh measurement', async () => {
   const { live, socket } = await readyWorld();
   const reports = collect(live, 'syncReport');
-  socket.push('clock:measure', { requestId: 'run-9', deadlineMs: 4000 });
+  socket.push(E.clockMeasure, ['run-9', 4000]);
   await until(() => reports.length === 1, 'the report');
-  const sent = socket.sent.find(s => s.event === 'clock:report')?.args[0] as { requestId: string; rtt: unknown };
-  eq(sent.requestId, 'run-9', 'requestId:');
-  eq(typeof sent.rtt, 'number', 'rtt measured:');
+  const sent = socket.sent.find(s => s.event === E.clockReport)?.args[0] as [string, number | null];
+  eq(sent[0], 'run-9', 'requestId:');
+  eq(typeof sent[1], 'number', 'rtt measured:');
+  live.close();
+});
+
+await check('clock sync progress folds into the run it belongs to, and nothing else', async () => {
+  const { live, socket } = await readyWorld();
+  const syncs = collect(live, 'sync');
+  socket.push(E.clockStatus, ['run-4', 0, 0, 'Stage manager', 4000, [['a', 'A', 0], ['b', 'B', 0]]]);
+  socket.push(E.clockProgress, ['run-4', 0, 0, [[1, 1, 18]]]);
+  eq(syncs.length, 2, 'sync events:');
+  eq(syncs[1]!.clients[1]!.state, 'synced', 'b:');
+  eq(syncs[1]!.clients[1]!.rtt, 18, 'b rtt:');
+  eq(syncs[0]!.clients[1]!.state, 'waiting', 'the earlier event changed:');
+  socket.push(E.clockProgress, ['another-run', 1, 0, []]);
+  eq(syncs.length, 2, 'progress for another run:');
+  socket.push(E.clockProgress, ['run-4', 1, 0, [[0, 3]]]);
+  eq(syncs[2]!.state, 'done', 'done:');
+  eq(syncs[2]!.clients[0]!.state, 'no-report', 'a:');
   live.close();
 });
 
@@ -222,9 +309,11 @@ await check('transport commands take timecodes, and a burst of seeks is throttle
   eq(live.play('00:00:04:00'), true, 'play sent:');
   for (const frame of [20, 30, 40, '00:00:02:00']) live.seek(frame);
   await new Promise(r => setTimeout(r, 150));
-  const commands = socket.sent.filter(s => s.event === 'transport:command').map(s => s.args[0] as { action: string; frame?: number });
-  eq(`${commands[0]!.action}:${commands[0]!.frame}`, 'play:100', 'play:');
-  eq(commands.filter(c => c.action === 'seek').map(c => c.frame).join(), '20,50', 'seeks:');
+  eq(live.pause(), true, 'pause sent:');
+  const commands = socket.sent.filter(s => s.event === E.transportCommand).map(s => s.args[0] as number[]);
+  eq(JSON.stringify(commands[0]), '[1,100]', 'play:');
+  eq(commands.filter(c => c[0] === 2).map(c => c[1]).join(), '20,50', 'seeks:');
+  eq(JSON.stringify(commands[commands.length - 1]), '[0]', 'pause:');
   const ack = await live.syncClocks();
   eq('ok' in ack && ack.requestId, 'run-1', 'syncClocks ack:');
   live.close();
@@ -243,6 +332,21 @@ await check('a dead token at the handshake stops the client for good', async () 
   eq(live.closed, true, 'closed:');
   ok(w.socket.disconnects > 0, 'disconnected:');
   eq(await ready, 'rejected', 'whenReady:');
+});
+
+await check('a server on another protocol stops the client and says which side is behind', async () => {
+  const w = world();
+  const live = w.open();
+  const incompatible = collect(live, 'incompatible');
+  const failures = collect(live, 'authFailed');
+  const ready = live.whenReady().then(() => 'ready', (err: Error) => err.message);
+  w.socket.connectError(PROTOCOL_ERROR, { protocol: PROTOCOL + 1 });
+  eq(incompatible[0]?.serverProtocol, PROTOCOL + 1, 'server protocol:');
+  eq(incompatible[0]?.clientProtocol, PROTOCOL, 'client protocol:');
+  ok(incompatible[0]?.message.includes('update cino-sdk'), `message: ${incompatible[0]?.message}`);
+  eq(failures.length, 0, 'reported as an auth failure:');
+  eq(live.closed, true, 'closed:');
+  ok((await ready).includes('update cino-sdk'), 'whenReady rejects with the reason:');
 });
 
 await check('a token refused during the fetch stops it too', async () => {
@@ -266,7 +370,7 @@ await check('access revoked while connected stops it', async () => {
 await check('close leaves the room and refuses further writes', async () => {
   const { live, socket } = await readyWorld();
   live.close();
-  ok(socket.sent.some(s => s.event === 'timeline:leave'), 'left:');
+  ok(socket.sent.some(s => s.event === E.leave), 'left:');
   const err = await rejects(live.clips.update('A', { label: 'x' }), 'write after close:');
   ok(err.message.includes('closed'), 'message:');
 });

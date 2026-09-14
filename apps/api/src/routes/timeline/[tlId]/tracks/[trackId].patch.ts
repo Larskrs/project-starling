@@ -5,8 +5,7 @@ import { defineEventHandler, getRouterParam, readValidatedBody, createError, pic
 import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
 import { iconField } from '../../../../lib/icons.js';
 import { Permission } from '@starling/auth/permissions';
-import { TimelineEvent } from '@starling/realtime';
-import { emitTimelineChange } from '../../../../lib/timelineSockets.js';
+import { timelineRelay } from '../../../../lib/timelineSockets.js';
 
 const bodySchema = z.object({
   name:      z.string().min(1).max(128).optional(),
@@ -43,8 +42,7 @@ export default defineEventHandler(async (event) => {
 
   if (!updated) throw createError({ statusCode: 404, message: 'Track not found' });
 
-  emitTimelineChange(timeline.id, TimelineEvent.trackChange,
-    { type: 'upsert', track: updated }, getSocketId(event));
+  timelineRelay.trackUpdated(timeline.id, updated, Object.keys(update), getSocketId(event));
 
   return updated;
 });

@@ -1,6 +1,6 @@
 # Timeline live-sync from an iOS SwiftUI app
 
-How to connect a SwiftUI app to Starling's `/timeline` Socket.IO namespace: authenticate with the cookie session, join a timeline room, follow the **server-authoritative transport clock**, and send play/pause/seek commands. The server contract is documented in [API.md §8](API.md); this guide is the Swift side of it.
+How to connect a SwiftUI app to Starling's `/timeline` Socket.IO namespace: authenticate with the cookie session, join a timeline room, follow the **server-authoritative transport clock**, and send play/pause/seek commands. The server contract is documented in [API.md §8](API.md) and, event by event, in [integrations/protocol.md](integrations/protocol.md); this guide is the Swift side of it. It speaks **wire protocol 2**.
 
 > **Ground rules inherited from the protocol**
 > - REST is the source of truth for data. Sockets relay already-persisted clip/track changes and drive the ephemeral transport + presence. Never invent state from socket events alone — bootstrap from `GET /api/timeline/{tlId}` first.
@@ -62,10 +62,12 @@ Notes:
 
 ## 3. Connecting
 
-Path is `/socket`, namespace is `/timeline`:
+Path is `/socket`, namespace is `/timeline`. The handshake payload declares the wire protocol the app speaks:
 
 ```swift
 final class TimelineSocket {
+    static let protocolVersion = 2
+
     private let manager: SocketManager
     let socket: SocketIOClient
 
@@ -81,51 +83,77 @@ final class TimelineSocket {
         )
         socket = manager.socket(forNamespace: "/timeline")
     }
+
+    func connect() {
+        socket.connect(withPayload: ["protocol": Self.protocolVersion])
+    }
 }
 ```
 
 Leave `forceWebSockets` off. The client then starts on long-polling and upgrades to WebSocket when the network allows it. cino.no's reverse proxy does **not** forward WebSocket upgrades, so a websocket-only client never connects there; against a server that does forward them, the upgrade happens on its own. Every polling request carries the `Cookie` header from `extraHeaders`.
 
-## 4. The wire types
-
-Mirror the TypeScript declarations in `packages/realtime/src/index.ts` — the one wire contract the API and the web client both compile against. Socket.IO hands you `[Any]` arrays; decode via `JSONSerialization` → `JSONDecoder` or read dictionaries directly. Codable models:
+**The protocol is checked first.** A server speaking another protocol refuses the handshake with the message `errors.protocol.unsupported`, and names its own protocol in the error's data. Nothing will change until the app or the server is updated, so stop and say so rather than reconnecting:
 
 ```swift
-/// The room's authoritative transport anchor. `frame` is the position at
-/// server time `at` (epoch ms); while playing, the position at server time t
-/// is frame + (t − at)/1000 × frameRate.
-struct TransportState: Codable {
+socket.on(clientEvent: .error) { [weak self] data, _ in
+    guard "\(data)".contains("errors.protocol.unsupported") else { return }
+    self?.socket.disconnect()
+    self?.state = .needsUpdate      // "Cino was updated — update the app"
+}
+```
+
+## 4. The wire types
+
+Protocol 2 keeps messages short: event names are one or two letters, and fixed shapes arrive as arrays rather than dictionaries. Socket.IO hands you `[Any]`; read the payload at `data.first` by position. `packages/realtime/src/index.ts` is the reference for every shape.
+
+```swift
+/// The room's authoritative transport anchor, from `[playing, frame, at, frameRate]`.
+/// `frame` is the position at server time `at`; while playing, the position at
+/// server time t is frame + (t − at)/1000 × frameRate.
+struct TransportState {
     let playing: Bool
     let frame: Double
-    let frameRate: Double
-    let userId: String
     let at: Double
+    let frameRate: Double
+
+    init?(wire: Any?) {
+        guard let a = wire as? [Any], a.count >= 4,
+              let playing = a[0] as? Int, let frame = a[1] as? Double,
+              let at = a[2] as? Double, let frameRate = a[3] as? Double else { return nil }
+        self.playing = playing == 1
+        self.frame = frame
+        self.at = at
+        self.frameRate = frameRate
+    }
 }
 
-struct PresenceUser: Codable, Identifiable {
+/// One occupant, from `[id, name, avatarImageId?, createdAtEpochSeconds?]`.
+struct PresenceUser: Identifiable {
     let id: String
     let name: String
     let avatarImageId: String?
-    let createdAt: String     // ISO-8601
-}
+    let createdAt: Date?
 
-enum TransportAction: String { case play, pause, seek }
+    init?(wire: Any) {
+        guard let a = wire as? [Any], a.count >= 2,
+              let id = a[0] as? String, let name = a[1] as? String else { return nil }
+        self.id = id
+        self.name = name
+        avatarImageId = a.count > 2 ? a[2] as? String : nil
+        createdAt = a.count > 3 ? (a[3] as? Double).map { Date(timeIntervalSince1970: $0) } : nil
+    }
+
+    static func list(_ wire: Any?) -> [PresenceUser] {
+        (wire as? [Any] ?? []).compactMap(PresenceUser.init(wire:))
+    }
+}
 ```
 
-Clip/track change relays are passed through verbatim (the `clip`/`track` payloads are full REST rows) — decode them with the same models you use for `GET /api/timeline/{tlId}`.
-
-Helper to decode a socket payload:
-
-```swift
-func decode<T: Decodable>(_ type: T.Type, from any: Any) -> T? {
-    guard let data = try? JSONSerialization.data(withJSONObject: any) else { return nil }
-    return try? JSONDecoder().decode(T.self, from: data)
-}
-```
+Clip and track rows are dictionaries with the same field names as the REST bootstrap, decoded with the models you use for `GET /api/timeline/{tlId}` — but a created row leaves out its null columns, and a changed row carries only what changed (§9).
 
 ## 5. Joining a room
 
-One socket follows one timeline at a time; join with an ack and treat a non-`ok` ack as access denied. Rejoin on every (re)connect — the server clears rooms on restart:
+One socket follows one timeline at a time. Join with an ack, and treat a non-`ok` ack as access denied. Rejoin on every (re)connect — the server clears rooms on restart. The ack carries the room: who is in it, the anchor while it plays, and a clock sync while one runs.
 
 ```swift
 socket.on(clientEvent: .connect) { [weak self] _, _ in
@@ -134,25 +162,29 @@ socket.on(clientEvent: .connect) { [weak self] _, _ in
 }
 
 func join() {
-    socket.emitWithAck("timeline:join", ["timelineId": timelineId])
+    socket.emitWithAck("j", timelineId)
         .timingOut(after: 5) { [weak self] response in
-            guard let first = response.first as? [String: Any], first["ok"] as? Bool == true else {
+            guard let self,
+                  let ack = response.first as? [String: Any], ack["ok"] as? Bool == true else {
                 self?.state = .accessDenied
                 return
             }
-            // If the timeline is actively playing, a `transport:state` arrives
-            // right after this ack — handled by the normal listener (§7).
+            self.presence = PresenceUser.list(ack["users"])
+            if let anchor = TransportState(wire: ack["anchor"]) {
+                Task { @MainActor in self.transport.apply(anchor, sync: self) }   // §7
+            }
+            if let run = ack["sync"] as? [Any] { self.clockSync = run }           // §6.1
         }
 }
 ```
 
-## 6. Clock sync (`time:ping`)
+## 6. Clock sync (`p`)
 
-Everything about tight sync rests on knowing what time it is **on the server**. `time:ping` acks the server's clock in milliseconds. That clock is monotonic: its readings look like epoch ms, but they are not wall-clock time, so never compare them with `Date()`.
+Everything about tight sync rests on knowing what time it is **on the server**. `p` acks the server's clock in milliseconds. That clock is monotonic: its readings look like epoch ms, but they are not wall-clock time, so never compare them with `Date()`.
 
 The device side must be monotonic too. `Date()` is the wall clock, and iOS corrects it against network time whenever it likes. Each correction moves your side of the offset without moving the server's, and the playhead moves with it. `CACurrentMediaTime()` only counts forward. It does stop while the device sleeps, which is why the app re-measures on returning to the foreground.
 
-The algorithm and constants are the same as the web client's and as [integrations/timing.md](integrations/timing.md), which explains each one:
+The algorithm and constants are the same as the web client's and as [integrations/protocol.md](integrations/protocol.md#server-time), which explains each one:
 
 - A sample's offset is `serverNow + rtt/2 − t2`, and its error is at most `rtt/2`. Keep the **lowest-RTT** sample from the last 2 minutes (at most 24), never an average.
 - A new sample that disagrees with an older one by more than `(rttA + rttB)/2 + 10ms` means a clock jumped. Drop the older samples.
@@ -224,7 +256,7 @@ private var bursting = false
 
 private func ping(then next: (() -> Void)? = nil) {
     let t0 = ServerClock.localNow()
-    socket.emitWithAck("time:ping").timingOut(after: 2) { [weak self] response in
+    socket.emitWithAck("p").timingOut(after: 2) { [weak self] response in
         guard let self else { return }
         // A timed-out ack arrives as ["NO ACK"] and is simply not a sample.
         if let serverNow = response.first as? Double {
@@ -279,30 +311,30 @@ func startClockSync() {
 }
 ```
 
-### 6.1 Syncing on request (`clock:measure`)
+### 6.1 Syncing on request (`m`)
 
-Before a show, an operator presses **Sync clocks** in the editor. Every client in the room is asked to re-measure and report, and the server **holds any Play** until each one has answered or 4 seconds have passed. Answer with a fresh burst and the round trip your estimate rests on:
+Before a show, an operator presses **Sync clocks** in the editor. Every client in the room is asked to re-measure and report, and the server **holds any Play** until each one has answered or 4 seconds have passed. The request is `[requestId, deadlineMs]`; answer with a fresh burst and the round trip your estimate rests on, as `[requestId, rtt]`:
 
 ```swift
-socket.on("clock:measure") { [weak self] data, _ in
+socket.on("m") { [weak self] data, _ in
     guard let self,
-          let request = data.first as? [String: Any],
-          let requestId = request["requestId"] as? String else { return }
+          let request = data.first as? [Any],
+          let requestId = request.first as? String else { return }
     self.burst { [weak self] in
         guard let self else { return }
         // nil → NSNull: tells the operator this device has no server time.
         let rtt: Any = self.clock.bestRtt ?? NSNull()
-        self.socket.emit("clock:report", ["requestId": requestId, "rtt": rtt])
+        self.socket.emit("e", [requestId, rtt])
     }
 }
 ```
 
-The app shows up in the editor's sync panel as `±` half that round trip. Anything looser than one frame is flagged, and an app that never answers is listed as *did not answer*. A held Play reaches you as an ordinary `transport:state` once the run ends, so §7 needs no changes.
+The app shows up in the editor's sync panel as `±` half that round trip. Anything looser than one frame is flagged, and an app that never answers is listed as *did not answer*. A held Play reaches you as an ordinary `a` once the run ends, so §7 needs no changes.
 
 Two more parts of the protocol are optional:
 
-- **`clock:status`** carries the run's progress (`{ requestId, state, requestedBy, playHeld, clients: [{ socketId, id, name, state, rtt }], … }`), sent on every change. Listen for it if the app shows who is synced or that a Play is waiting. The full shape is in [integrations/timing.md](integrations/timing.md#the-events).
-- **`clock:resync`** starts a run from the app itself, for example from a "Get ready" button: `socket.emitWithAck("clock:resync", [:])` acks `{ ok: true, requestId }`. It needs the same access as a transport command, and sending it while a run is going joins that run.
+- **`s` and `sp`** carry the run's progress: `s` the whole run as it starts, `sp` only what changed since, gathered for up to a quarter of a second. Listen for them if the app shows who is synced or that a Play is waiting. The shapes, and how to fold `sp` into `s`, are in [integrations/protocol.md](integrations/protocol.md#the-events).
+- **`r`** starts a run from the app itself, for example from a "Get ready" button: `socket.emitWithAck("r")` acks `{ ok: true, requestId }`. It needs the same access as a transport command, and sending it while a run is going joins that run.
 
 ## 7. Following the transport — the core loop
 
@@ -318,8 +350,8 @@ final class TransportModel: ObservableObject {
     /// The anchor as the server sent it; `at` is server time and stays that way.
     private var anchor: TransportState?
 
-    /// transport:state listener — every accepted command (yours included)
-    /// echoes one of these; joiners get one if the timeline is playing.
+    /// Every accepted command (yours included) sends one of these; a join's ack
+    /// carries one if the timeline is playing.
     func apply(_ state: TransportState, sync: TimelineSocket) {
         if state.playing {
             anchor  = state
@@ -354,9 +386,8 @@ final class TransportModel: ObservableObject {
 Wire the listener:
 
 ```swift
-socket.on("transport:state") { [weak self] data, _ in
-    guard let self, let payload = data.first,
-          let state = decode(TransportState.self, from: payload) else { return }
+socket.on("a") { [weak self] data, _ in
+    guard let self, let state = TransportState(wire: data.first) else { return }
     Task { @MainActor in self.transport.apply(state, sync: self) }
 }
 ```
@@ -381,7 +412,7 @@ Because the position is *derived* (`anchor + elapsed × fps`) rather than integr
 
 ## 8. Sending commands
 
-Three commands, mirroring the client contract:
+Three commands, each an array on `x`: `[1, frame]` play, `[2, frame]` seek, `[0]` pause.
 
 ```swift
 extension TimelineSocket {
@@ -397,17 +428,17 @@ extension TimelineSocket {
     func send(_ command: Command) {
         switch command {
         case .play(let frame):
-            socket.emit("transport:command", ["action": "play", "frame": frame])
+            socket.emit("x", [1, frame])
         case .pause:
-            socket.emit("transport:command", ["action": "pause"])   // server computes the frame
+            socket.emit("x", [0])          // server computes the frame
         case .seek(let frame):
             throttleSeek(frame)
         }
     }
 
     /// Leading + trailing throttle; the trailing send carries the LATEST frame
-    /// of a scrub burst. The server additionally drops seeks < 80ms apart.
-    private func throttleSeek(_ frame: Double) { /* mirror useTimelineSync.js */ }
+    /// of a scrub burst, as `socket.emit("x", [2, frame])`.
+    private func throttleSeek(_ frame: Double) { /* mirror useTimelineSync.ts */ }
 }
 ```
 
@@ -416,25 +447,39 @@ Rules to respect (the server enforces them, but honoring them client-side avoids
 - **`play` requires a frame** — your local (private) position becomes the shared one.
 - **`seek` only while the shared transport is playing.** Stopped-state seeks are local UI only.
 - **`pause` carries no frame** — the server computes the authoritative stop position from its own clock and echoes it back.
-- Act **optimistically**: start local playback/seek immediately, then let the echoed `transport:state` take over as the time base. The correction when the echo lands is a couple of frames at most.
+- **The room takes one seek per 80ms**, from everyone together. A seek sent sooner waits its turn and a newer one replaces it, so a scrub's last frame always lands; throttling still saves messages.
+- Act **optimistically**: start local playback/seek immediately, then let the echoed `a` take over as the time base. The correction when the echo lands is a couple of frames at most.
 
 ## 9. Presence, clip and track relays
 
 ```swift
-socket.on("timeline:presence") { data, _ in
-    let users: [PresenceUser] = decode([PresenceUser].self, from: data.first ?? []) ?? []
-    // publish to the UI — includes yourself; deduped per user across devices
+socket.on("u") { [weak self] data, _ in
+    // A complete list, about a quarter of a second after a change settles. Includes
+    // yourself; deduped per user across devices. Your first list is in the join ack.
+    self?.presence = PresenceUser.list(data.first)
 }
 
-socket.on("clip:change") { data, _ in
-    // { type: "upsert"|"remove", trackId, clip?, clipId? }
-    // Apply to your local model the same way the web client does:
-    // upsert = merge by id + resort by position; remove = filter out.
+socket.on("ca") { data, _ in
+    // A clip was created: a row dictionary WITHOUT its null columns (fileId,
+    // mediaStart, end, sourceId, hue, data) and without createdAt/updatedAt.
+    // Treat a missing column as null. Insert, then resort the track by position.
 }
 
-socket.on("track:change") { data, _ in
-    // { type: "upsert"|"remove"|"reorder", track?, trackId?, order? }
-    // "reorder": order[i] is the track id whose sortOrder becomes i.
+socket.on("cu") { data, _ in
+    // A clip was changed: ["id": …] plus ONLY the fields that changed. An NSNull
+    // value is a change (the field was cleared). Merge into the clip you hold;
+    // ignore it for a clip you don't have.
+}
+
+socket.on("cd") { data, _ in
+    // A clip was removed: data.first is its id.
+}
+
+socket.on("ta") { data, _ in /* a track was created: a row without null icon/sourceId */ }
+socket.on("tu") { data, _ in /* a track was changed: ["id": …] plus the changed fields */ }
+socket.on("td") { data, _ in /* a track and its clips were removed: data.first is its id */ }
+socket.on("to") { data, _ in
+    // The full track order: order[i] is the track id whose sortOrder becomes i.
 }
 ```
 
@@ -444,29 +489,32 @@ If the app also *edits*: persist through REST (`POST/PATCH/DELETE /api/timeline/
 req.setValue(socket.sid, forHTTPHeaderField: "x-socket-id")
 ```
 
-Without the header your own change comes back as a `clip:change`, which is harmless (every payload is an idempotent upsert or delete) but will fight optimistic UI. Emitting `clip:change`/`track:change` from the client is still accepted for older clients, gated on `EDIT_TIMELINE` (or `RENAME_CLIPS` for label-only upserts) with a 32 KB cap — but doing it as well as the REST write makes every peer apply the change twice.
+Without the header your own change comes back as a `ca`, `cu` or `cd`, which is harmless (every change is idempotent) but will fight optimistic UI. The server accepts no relays from clients.
 
 ## 10. Lifecycle checklist
 
 | Moment | Do |
 | --- | --- |
-| App start | REST login (or reuse stored cookie) → `GET /api/timeline/{tlId}` bootstrap → connect socket |
+| App start | REST login (or reuse stored cookie) → `GET /api/timeline/{tlId}` bootstrap → `connect()` with the protocol payload |
 | Socket created | `startClockSync()` once — the 15s ping and the foreground observer (§6) |
-| `.connect` | `timeline:join` (with ack) + `burst()` — both on *every* reconnect |
+| `.connect` | `j` (with ack) + `burst()` — both on *every* reconnect |
+| `.error` with `errors.protocol.unsupported` | Disconnect and ask for an update; do not retry (§3) |
 | Enter background | Nothing required; socket may drop, and `CACurrentMediaTime()` stops while the device sleeps |
-| Return to foreground | `burst()` fires from the foreground observer, which catches the time the clock stood still; the client auto-reconnects → rejoin, and the join's `transport:state` snaps you to the live position |
+| Return to foreground | `burst()` fires from the foreground observer, which catches the time the clock stood still; the client auto-reconnects → rejoin, and the join's ack snaps you to the live position |
 | Timeline end reached locally | send `pause` (idempotent — first client wins, the rest are dropped) |
-| Leaving the editor screen | `socket.emit("timeline:leave")` then `socket.disconnect()` |
+| Leaving the editor screen | `socket.emit("l")` then `socket.disconnect()` |
 
 ## 11. Pitfalls
 
 - **Work out the live clip yourself.** The server does not announce clip changes: an event sent as a boundary passed would arrive late by the network. With the clips from the bootstrap and relays and the §7 playhead, a clip is live from its `position`, for `end − mediaStart` frames when it has an `end`, otherwise until the next clip on its track.
 
+- **Declare the protocol.** A handshake without `["protocol": 2]` is treated as an outdated client and refused.
+- **A missing column is null, not unchanged — in a created row.** In a changed row (`cu`, `tu`) a missing field *is* unchanged. Mixing the two up either wipes fields or keeps stale ones.
 - **Don't cache the cookie string** — read `HTTPCookieStorage` before each connect (sliding renewal rotates the expiry, and logout invalidates it server-side immediately).
-- **Numbers are `Double`** on the wire (JSON). Frames are fractional by design — only round for display.
+- **Numbers are `Double`** on the wire (JSON). Frames are fractional by design — only round for display. Flags inside arrays (`playing`, `done`, `playHeld`) are `0`/`1`, not booleans.
 - **Permission bitfields are strings** in REST payloads (`role.permissions`) — they're bigints; parse with `UInt64(string)` if you need them, never as JSON numbers.
 - **No playhead before the first ping answers.** `clock.now()` is nil until then, and `tick` holds still rather than guessing. That is usually well under a second after connecting; if it never answers, show it rather than falling back to `Date()`.
 - **Never store `at` converted to local time.** Keep the anchor as sent and read it through `clock.now()` every frame (§7).
-- **Never time anything with `Date()`.** It is the wall clock and iOS steps it. Use `CACurrentMediaTime()`, and only compare server stamps (`at`, `time:ping`) with `clock.now()`.
+- **Never time anything with `Date()`.** It is the wall clock and iOS steps it. Use `CACurrentMediaTime()`, and only compare server stamps (`at`, `p`) with `clock.now()`.
 - **Don't force WebSockets.** Behind a proxy that does not forward the upgrade (cino.no), long-polling is the only transport that connects. Every polling request carries the cookie from `extraHeaders`.
 - Server restarts clear all rooms and transports. The reconnect → rejoin flow recovers everything; design the UI so a brief "reconnecting" state is unremarkable.

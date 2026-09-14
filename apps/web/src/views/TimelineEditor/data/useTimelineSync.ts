@@ -1,11 +1,14 @@
 import { ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 import {
-  TIMELINE_NAMESPACE, TimelineEvent,
-  type ClipChange, type TrackChange, type TransportAction,
-  type ClockMeasureRequest, type ClockSyncStatus, type ClockResyncAck,
+  CLIP_EVENTS, PROTOCOL, TIMELINE_NAMESPACE, TRACK_EVENTS, TimelineEvent,
+  applyProgress, decodeAnchor, decodeMeasure, decodePresence, decodeStatus, encodeCommand, encodeReport,
+  isProtocolError, serverProtocolOf,
+  type ClipChange, type TrackChange, type TransportAction, type JoinAck, type PresenceUser,
+  type ClockSyncStatus, type ClockResyncAck,
 } from '@starling/realtime'
-import { createTransportClock, monotonicNow } from '../audio/transportClock'
+import { answerMeasure, startClockSync, type ClockSync } from 'cino-sdk'
+import { createTransportClock } from '../audio/transportClock'
 import { setLiveSocketId } from '../../../composables/useLiveSocketId'
 import type { PlayheadAnchor } from '../../../types/timeline'
 
@@ -13,8 +16,8 @@ import type { PlayheadAnchor } from '../../../types/timeline'
 export type { ClipChange, TrackChange, TransportAction, ClockSyncStatus, ClockResyncAck }
 
 /**
- * The room's transport anchor. Mirrors the API's TransportState
- * (apps/api/src/lib/timelineSockets.ts).
+ * The room's transport anchor, as decoded from the wire (TransportState in
+ * @starling/realtime).
  *
  * `at` stays a SERVER clock reading. Read the position through `serverNow()`
  * each time — `frame + (serverNow() − at)/1000 × frameRate` — rather than
@@ -23,17 +26,10 @@ export type { ClipChange, TrackChange, TransportAction, ClockSyncStatus, ClockRe
 export interface TransportState extends PlayheadAnchor {
   /** fps the server advances the clock with, resolved from the DB. */
   frameRate?: number
-  /** Who issued the last command. */
-  userId?: string
 }
 
-/** One person in the room, as the API's presence payload describes them. */
-export interface Peer {
-  id: string
-  name: string
-  avatarImageId?: string | null
-  createdAt?: string
-}
+/** One person or device in the room, as the presence list describes them. */
+export type Peer = PresenceUser
 
 export interface TimelineSyncOptions {
   onClipChange?: (change: ClipChange) => void
@@ -50,8 +46,8 @@ export interface TimelineSyncOptions {
 /**
  * Live-sync channel for the timeline editor (socket.io namespace `/timeline`).
  *
- * - Relays clip/track changes the local user persisted over REST to everyone
- *   else in the same timeline room, and applies theirs via the callbacks.
+ * - Applies clip/track changes other people persisted, via the callbacks. Our
+ *   own writes are relayed by the REST routes themselves; nothing is sent here.
  * - Transport: the SERVER owns the clock. Clients send commands only
  *   (`sendTransport('play'|'pause'|'seek', frame?)`) and receive the room's
  *   authoritative anchor via `onTransport`.
@@ -59,10 +55,11 @@ export interface TimelineSyncOptions {
  *   (`requestResync`, `clockStatus`).
  * - Tracks who else is in the editor (`peers`).
  *
- * Callbacks:
- *   onClipChange({ type: 'upsert'|'remove', trackId, clip?, clipId? })
- *   onTrackChange({ type: 'upsert'|'remove'|'reorder', track?, trackId?, order? })
- *   onTransport({ playing, frame, frameRate, userId, at })
+ * Everything on the wire is encoded by @starling/realtime and decoded here, so
+ * the callbacks receive readable shapes:
+ *   onClipChange({ type: 'upsert', clip } | { type: 'patch', clip: { id, ...changed } } | { type: 'remove', clipId })
+ *   onTrackChange({ type: 'upsert'|'patch', track } | { type: 'remove', trackId } | { type: 'reorder', order })
+ *   onTransport({ playing, frame, frameRate, at })
  *     `frame` is the anchor position at server time `at`;
  *     `frame + (serverNow() − at)/1000 × frameRate` is where the transport is
  *     right now, with the command's network delay cancelled out.
@@ -71,11 +68,16 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onRe
   const connected = ref(false)
   /** Was connected, lost it, and is trying to get back — not the initial connect. */
   const reconnecting = ref(false)
+  /**
+   * The server speaks a different wire protocol than this page: it was deployed
+   * while the page stayed open. Nothing reconnects until the page is reloaded.
+   */
+  const outdated = ref(false)
   const peers     = ref<Peer[]>([])   // everyone in the room, including self
   /**
-   * The room's latest clock resync, as `clock:status` reports it; null until one
-   * has run while we were here. While its state is `measuring` the server holds
-   * any Play, which usePlayback respects so it does not start ahead of the room.
+   * The room's latest clock resync; null until one has run while we were here.
+   * While its state is `measuring` the server holds any Play, which usePlayback
+   * respects so it does not start ahead of the room.
    */
   const clockStatus = ref<ClockSyncStatus | null>(null)
 
@@ -84,86 +86,72 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onRe
   let everConnected = false
 
   // ── Clock sync ──────────────────────────────────────────────────────────────
-  // NTP-style pings measure how the server's clock relates to ours. When:
+  // NTP-style pings measure how the server's clock relates to ours. cino-sdk's
+  // startClockSync schedules them, as it does for every device in the room:
   //  - a burst on every connect — nothing is known, or the path changed;
   //  - a burst once the transport upgrades to a websocket, because samples
   //    taken over long-polling are lopsided and make poor estimates;
-  //  - a burst when the tab becomes visible or the network returns — a machine
-  //    that slept may have had its monotonic clock stand still;
-  //  - a burst when anyone in the room presses "Sync clocks", answered with a
-  //    report of how good the estimate now is;
-  //  - one ping every CLOCK_RESYNC_MS, so an all-night session keeps tracking.
-  // transportClock.ts keeps the best recent sample, throws out samples a clock
-  // jump invalidated, and glides between estimates. It also gates anchors that
-  // arrive before the first sample — see there for why that matters to anyone
-  // joining mid-playback.
-  const CLOCK_BURST     = 5
-  const CLOCK_GAP_MS    = 120
-  const CLOCK_RESYNC_MS = 15_000
-
+  //  - a burst when the machine slept and the monotonic clock stood still;
+  //  - one ping every 15 seconds, so an all-night session keeps tracking.
+  // The editor adds a burst when the tab becomes visible or the network returns,
+  // and one when anyone in the room presses "Sync clocks", answered with a
+  // report of how good the estimate now is.
+  // transportClock.ts holds the estimate and gates anchors that arrive before
+  // the first sample — see there for why that matters to anyone joining
+  // mid-playback.
   const clock = createTransportClock({
     deliver: (state: PlayheadAnchor) => onTransport?.(state as TransportState),
-    now: monotonicNow,
   })
+  let clockSync: ClockSync | null = null
 
-  function ping(done?: () => void): void {
-    const active = socket
-    if (!active?.connected) { done?.(); return }
-    const t0 = monotonicNow()
-    active.timeout(2000).emit(TimelineEvent.timePing, (err: Error | null, serverNow: number) => {
-      if (!err) clock.addSample({ t0, t2: monotonicNow(), serverNow })
-      done?.()
-    })
-  }
+  const onVisibility = () => { if (document.visibilityState === 'visible') void clockSync?.measure() }
+  const onOnline     = () => { void clockSync?.measure() }
 
-  let bursting = false
-  // Someone waits on a measurement that began after they asked. A burst already
-  // under way started before the request, so a fresh one follows it.
-  let rerun = false
-  let burstWaiters: Array<() => void> = []
-
-  function burst(onDone?: () => void): void {
-    if (onDone) {
-      burstWaiters.push(onDone)
-      if (bursting) rerun = true
-    }
-    if (bursting) return
-    bursting = true
-    let answered = 0
-    const next = () => ping(() => {
-      if (++answered < CLOCK_BURST && socket?.connected) { setTimeout(next, CLOCK_GAP_MS); return }
-      bursting = false
-      clock.settle()
-      if (rerun && socket?.connected) { rerun = false; burst(); return }
-      rerun = false
-      const waiters = burstWaiters
-      burstWaiters = []
-      for (const done of waiters) done()
-    })
-    next()
-  }
-
-  let resyncTimer: ReturnType<typeof setInterval> | null = null
-  const onVisibility = () => { if (document.visibilityState === 'visible') burst() }
-  const onOnline     = () => burst()
-
-  function startClockWatch(): void {
-    resyncTimer = setInterval(() => { if (!bursting) ping() }, CLOCK_RESYNC_MS)
+  /** Call before registering any other connect handler, so the first ping is out before the join. */
+  function startClockWatch(active: Socket): void {
+    clockSync = startClockSync(active, clock)
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
     if (typeof window !== 'undefined') window.addEventListener('online', onOnline)
   }
 
   function stopClockWatch(): void {
-    if (resyncTimer) { clearInterval(resyncTimer); resyncTimer = null }
+    clockSync?.stop()
+    clockSync = null
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
     if (typeof window !== 'undefined') window.removeEventListener('online', onOnline)
+  }
+
+  /** Joins the current timeline. The ack carries the room: who is here, a playing anchor, a sync in progress. */
+  function emitJoin(active: Socket): void {
+    const id = timelineId
+    if (!id) return
+    active.emit(TimelineEvent.join, id, (ack: JoinAck | undefined) => {
+      if (socket !== active || timelineId !== id) return
+      if (!ack || 'error' in ack) {
+        console.error('[timeline socket] join refused:', ack?.error ?? 'no answer')
+        return
+      }
+      peers.value = decodePresence(ack.users)
+      // Joining a playing room: the anchor waits in the clock until a ping has
+      // landed. The clock sync's own connect handler ran before ours, so its
+      // burst is already in flight.
+      const anchor = decodeAnchor(ack.anchor)
+      if (anchor && onTransport) clock.accept(anchor)
+      clockStatus.value = decodeStatus(ack.sync)
+    })
   }
 
   function join(id: string): void {
     timelineId = id
     if (!socket) {
-      socket = io(TIMELINE_NAMESPACE, { path: '/socket', withCredentials: true })
-      startClockWatch()
+      socket = io(TIMELINE_NAMESPACE, {
+        path: '/socket',
+        withCredentials: true,
+        // Checked by the server before anything else: a page left open across a
+        // deploy is told it is outdated instead of misreading every event.
+        auth: { protocol: PROTOCOL },
+      })
+      startClockWatch(socket)
 
       const active = socket
       active.on('connect', () => {
@@ -174,13 +162,10 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onRe
         // Every REST mutation now carries this id, so the server can relay the
         // write to the room WITHOUT echoing it back to us.
         setLiveSocketId(active.id ?? null)
-        // Clock first: joining a playing room is answered with an anchor, and
-        // the first ping should already be in flight when it arrives.
-        burst()
-        // Each connection gets a fresh engine, which starts on long-polling.
-        const engine = active.io.engine
-        if (engine && engine.transport?.name !== 'websocket') engine.once('upgrade', () => burst())
-        if (timelineId) active.emit(TimelineEvent.join, { timelineId })
+        // When the connect burst ends, a held anchor is released even if no ping
+        // answered.
+        void clockSync?.idle().then(() => clock.settle())
+        emitJoin(active)
       })
       active.on('disconnect', (reason: string) => {
         connected.value = false
@@ -195,28 +180,58 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onRe
         clock.reset()
       })
 
-      active.on(TimelineEvent.presence, (users: Peer[]) => { peers.value = users })
-      if (onClipChange)  active.on(TimelineEvent.clipChange, onClipChange)
-      if (onTrackChange) active.on(TimelineEvent.trackChange, onTrackChange)
-      if (onTransport) active.on(TimelineEvent.transportState, (state: PlayheadAnchor) => clock.accept(state))
+      active.on(TimelineEvent.presence, (raw: unknown) => { peers.value = decodePresence(raw) })
+
+      if (onClipChange) {
+        for (const [event, decode] of CLIP_EVENTS) {
+          active.on(event, (raw: unknown) => { const change = decode(raw); if (change) onClipChange(change) })
+        }
+      }
+      if (onTrackChange) {
+        for (const [event, decode] of TRACK_EVENTS) {
+          active.on(event, (raw: unknown) => { const change = decode(raw); if (change) onTrackChange(change) })
+        }
+      }
+      if (onTransport) {
+        active.on(TimelineEvent.transportState, (raw: unknown) => {
+          const state = decodeAnchor(raw)
+          if (state) clock.accept(state)
+        })
+      }
 
       // "Sync clocks", pressed by anyone in the room. Measure afresh, then say
       // how good the estimate now is; the server holds any Play until every
       // client has.
-      active.on(TimelineEvent.clockMeasure, ({ requestId }: ClockMeasureRequest) => {
-        burst(() => {
-          if (socket === active && active.connected) {
-            active.emit(TimelineEvent.clockReport, { requestId, rtt: clock.rtt })
-          }
-        })
+      active.on(TimelineEvent.clockMeasure, async (raw: unknown) => {
+        const sync = clockSync
+        const request = decodeMeasure(raw)
+        if (!sync || !request) return
+        const report = await answerMeasure(request, { measure: () => sync.measure(), get rtt() { return clock.rtt } })
+        if (socket === active && active.connected) active.emit(TimelineEvent.clockReport, encodeReport(report))
       })
-      active.on(TimelineEvent.clockStatus, (status: ClockSyncStatus) => { clockStatus.value = status })
+      active.on(TimelineEvent.clockStatus, (raw: unknown) => {
+        const status = decodeStatus(raw)
+        if (status) clockStatus.value = status
+      })
+      // Only what changed since the run was sent whole; a message for a run we
+      // never saw leaves the status as it is.
+      active.on(TimelineEvent.clockProgress, (raw: unknown) => {
+        clockStatus.value = applyProgress(clockStatus.value, raw)
+      })
 
       active.on('connect_error', (err: Error) => {
+        if (isProtocolError(err)) {
+          // A refused handshake is not retried by socket.io, and retrying could
+          // not help: only a reload brings this page to the server's protocol.
+          outdated.value     = true
+          reconnecting.value = false
+          console.error(`[timeline socket] this page speaks wire protocol ${PROTOCOL}, the server ${serverProtocolOf(err) ?? 'another'}; reload`)
+          return
+        }
         console.error('[timeline socket]', err.message)
       })
     } else if (socket.connected) {
-      socket.emit(TimelineEvent.join, { timelineId })
+      emitJoin(socket)
     }
   }
 
@@ -231,18 +246,9 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onRe
     everConnected   = false
     connected.value = false
     reconnecting.value = false
+    outdated.value  = false
     peers.value     = []
     clockStatus.value = null
-    burstWaiters    = []
-    rerun           = false
-  }
-
-  function sendClipChange(change: ClipChange): void {
-    if (socket?.connected) socket.emit(TimelineEvent.clipChange, change)
-  }
-
-  function sendTrackChange(change: TrackChange): void {
-    if (socket?.connected) socket.emit(TimelineEvent.trackChange, change)
   }
 
   // Transport commands. play/pause send immediately (and drop any queued
@@ -260,7 +266,7 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onRe
 
     if (action !== 'seek') {
       if (_pendingSeek) { clearTimeout(_pendingSeek); _pendingSeek = null }
-      active.emit(TimelineEvent.transportCommand, frame != null ? { action, frame } : { action })
+      active.emit(TimelineEvent.transportCommand, encodeCommand({ action, frame: frame ?? undefined }))
       return
     }
 
@@ -269,14 +275,16 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onRe
     if (now - _lastSeekSent >= SEEK_THROTTLE_MS) {
       if (_pendingSeek) { clearTimeout(_pendingSeek); _pendingSeek = null }
       _lastSeekSent = now
-      active.emit(TimelineEvent.transportCommand, { action: 'seek', frame })
+      active.emit(TimelineEvent.transportCommand, encodeCommand({ action: 'seek', frame: frame ?? undefined }))
       return
     }
     if (_pendingSeek) return   // trailing send already queued; frame updated above
     _pendingSeek = setTimeout(() => {
       _pendingSeek  = null
       _lastSeekSent = Date.now()
-      if (socket?.connected) socket.emit(TimelineEvent.transportCommand, { action: 'seek', frame: _pendingFrame })
+      if (socket?.connected) {
+        socket.emit(TimelineEvent.transportCommand, encodeCommand({ action: 'seek', frame: _pendingFrame ?? undefined }))
+      }
     }, SEEK_THROTTLE_MS - (now - _lastSeekSent))
   }
 
@@ -291,14 +299,14 @@ export function useTimelineSync({ onClipChange, onTrackChange, onTransport, onRe
     const active = socket
     if (!active?.connected) return Promise.resolve({ error: 'Not connected' })
     return new Promise((resolve) => {
-      active.timeout(5000).emit(TimelineEvent.clockResync, {}, (err: Error | null, ack: ClockResyncAck) => {
+      active.timeout(5000).emit(TimelineEvent.clockResync, (err: Error | null, ack: ClockResyncAck) => {
         resolve(err ? { error: err.message } : ack)
       })
     })
   }
 
   return {
-    connected, reconnecting, peers, clockStatus,
-    join, leave, sendClipChange, sendTrackChange, sendTransport, serverNow, requestResync,
+    connected, reconnecting, outdated, peers, clockStatus,
+    join, leave, sendTransport, serverNow, requestResync,
   }
 }

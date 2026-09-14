@@ -469,6 +469,8 @@
     "viewOnlyHint": "Du kan se og spille av denne tidslinjen, men du har ikke tillatelse til å redigere den",
     "reconnecting": "Kobler til igjen…",
     "reconnectingHint": "Direktetilkoblingen falt ut. Endringene dine lagres fortsatt, men endringer fra andre vises ikke før den er tilbake — tidslinjen oppdateres når den kobler til igjen.",
+    "outdated": "Last inn på nytt",
+    "outdatedHint": "Cino ble oppdatert mens siden var åpen, og direktetilkoblingen trenger den nye versjonen. Last inn siden på nytt for å se endringer fra andre igjen.",
     "notFound": "Denne tidslinjen finnes ikke, eller den er slettet",
     "noAccess": "Du har ikke tilgang til denne tidslinjen",
     "retry": "Prøv igjen",

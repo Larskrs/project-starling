@@ -156,7 +156,7 @@ function stateClass(client) {
         </p>
 
         <ul v-if="clients.length" class="mt-2 max-h-64 overflow-y-auto divide-y divide-border">
-          <li v-for="client in clients" :key="client.socketId" class="flex items-center gap-2 py-1.5 text-xs">
+          <li v-for="(client, index) in clients" :key="index" class="flex items-center gap-2 py-1.5 text-xs">
             <Icon
               :icon="isDevicePresence(client.id) ? 'mdi:router-wireless' : 'mdi:account-outline'"
               class="size-4 shrink-0 text-muted-foreground"

@@ -469,6 +469,8 @@
     "viewOnlyHint": "You can watch and play this timeline, but you do not have permission to edit it",
     "reconnecting": "Reconnecting…",
     "reconnectingHint": "The live connection dropped. Your edits still save, but changes from others will not show until it is back — the timeline refreshes when it reconnects.",
+    "outdated": "Reload to reconnect",
+    "outdatedHint": "Cino was updated while this page was open, and the live connection needs the new version. Reload the page to see changes from others again.",
     "notFound": "This timeline does not exist, or it was deleted",
     "noAccess": "You do not have access to this timeline",
     "retry": "Retry",

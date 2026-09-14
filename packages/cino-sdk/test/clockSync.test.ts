@@ -54,6 +54,22 @@ await check('when no ping is answered, measure still resolves and the clock stay
   }
 });
 
+await check('idle waits out a running burst without starting another', async () => {
+  const fake = connected();
+  const clock = createServerClock();
+  const sync = startClockSync(fake.socket, clock);
+  try {
+    await sync.idle();
+    eq(fake.pingTimes.length, 0, 'nothing running, nothing started:');
+    fake.fire('connect');
+    await sync.idle();
+    eq(fake.pingTimes.length, CLOCK_BURST, 'pings:');
+    eq(clock.synced, true, 'synced by the time it resolves:');
+  } finally {
+    sync.stop();
+  }
+});
+
 await check('a socket that is not connected is not pinged, and measure does not hang', async () => {
   const fake = fakeSocket();
   const clock = createServerClock();

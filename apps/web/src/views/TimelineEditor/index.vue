@@ -259,11 +259,31 @@ function findClip(clipId: string): { track: EditorTrack; clip: EditorClip } | nu
 // ── Live sync ─────────────────────────────────────────────────────────────────
 const sync = useTimelineSync({
   onClipChange(change) {
-    if (change.type === 'upsert') upsertClipLocal(change.trackId, change.clip as unknown as EditorClip)
-    if (change.type === 'remove') removeClipLocal(change.trackId, change.clipId)
+    if (change.type === 'remove') {
+      const found = findClip(change.clipId)
+      if (found) removeClipLocal(found.track.id, change.clipId)
+      return
+    }
+    const found = findClip(change.clip.id)
+    // A patch is only the fields that changed: for a clip this editor never had
+    // there is nothing to apply it to.
+    if (change.type === 'patch' && !found) return
+    let clip = change.clip as unknown as EditorClip
+    const trackId = (change.clip.trackId as string | undefined) ?? found!.track.id
+    if (found && found.track.id !== trackId) {
+      // Moved: the new track holds nothing to merge into, so carry the clip
+      // across, and let upsertClipLocal work its file type out again.
+      removeClipLocal(found.track.id, found.clip.id)
+      clip = { ...found.clip, fileType: undefined, ...clip } as EditorClip
+    }
+    upsertClipLocal(trackId, clip)
   },
   onTrackChange(change) {
     if (change.type === 'upsert') upsertTrackLocal(change.track as unknown as EditorTrack)
+    // Likewise a track patch needs a track to change.
+    if (change.type === 'patch' && trackList.value.some(t => t.id === change.track.id)) {
+      upsertTrackLocal(change.track as unknown as EditorTrack)
+    }
     if (change.type === 'remove') removeTrackLocal(change.trackId)
     if (change.type === 'reorder') applyTrackOrder(change.order)
   },
@@ -1317,6 +1337,7 @@ provide('editor-group',      { drag: groupDrag, membersFor: groupMembersFor, del
         :peers="sync.peers.value"
         :sync-connected="sync.connected.value"
         :reconnecting="sync.reconnecting.value"
+        :outdated="sync.outdated.value"
         :can-undo="canUndo"
         :can-redo="canRedo"
         :readonly="readonly"

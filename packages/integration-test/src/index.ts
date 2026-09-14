@@ -81,14 +81,7 @@ timeline.on('token', ({ daysLeft }) => {
 // ── The actual job ────────────────────────────────────────────────────────────
 
 timeline.on('clip', (event: ClipEvent) => {
-  const cut = watch.observe({
-    trackId:  event.track.id,
-    clipId:   event.clip?.id ?? null,
-    label:    event.clip?.label ?? null,
-    sourceId: event.clip?.sourceId ?? null,
-    frame:    event.frame,
-    at:       event.at,
-  });
+  const cut = watch.observe(event);
   if (!cut) return;   // same camera, or a gap — not a cut
 
   const from = cut.from ? `${dim(cut.from)} ${dim('→')} ` : '';
@@ -145,6 +138,12 @@ timeline.on('authFailed', ({ message }) => {
   // The SDK has already stopped: a dead credential does not fix itself.
   log(red('stopped:'), message);
   log(dim('not retrying — issue a new token in production settings → Integrations'));
+  process.exitCode = 1;
+});
+
+timeline.on('incompatible', ({ message }) => {
+  // Retrying cannot help until cino-sdk or the server is updated.
+  log(red('stopped:'), message);
   process.exitCode = 1;
 });
 

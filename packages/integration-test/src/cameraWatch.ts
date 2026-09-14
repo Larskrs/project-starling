@@ -4,15 +4,13 @@
  * Pure, so the interesting behaviour can be tested without a server or a socket.
  * Everything stateful about the client lives in index.ts.
  */
+import type { ClipEvent } from 'cino-sdk';
 
-/** What the clip scheduler announces when a track's live clip changes — the fields this watcher needs. */
+/** The fields of the SDK's `clip` event this watcher needs. */
 export interface ActiveClip {
-  trackId: string;
-  clipId: string | null;
-  label: string | null;
-  sourceId: string | null;
+  track: Pick<ClipEvent['track'], 'id'>;
+  clip: Pick<NonNullable<ClipEvent['clip']>, 'label' | 'sourceId'> | null;
   frame: number;
-  at: number;
 }
 
 export interface CameraCut {
@@ -46,8 +44,8 @@ export function createCameraWatch(options: CameraWatchOptions): CameraWatch {
   const current = new Map<string, string>();
 
   return {
-    observe(event: ActiveClip): CameraCut | null {
-      const { sourceId } = event;
+    observe({ track, clip, frame }: ActiveClip): CameraCut | null {
+      const sourceId = clip?.sourceId;
 
       // A clip with no source is not a camera, and neither is a gap between
       // clips. Both are IGNORED rather than remembered: treating a gap as a
@@ -55,18 +53,18 @@ export function createCameraWatch(options: CameraWatchOptions): CameraWatch {
       // after a gap is not a cut to a different camera.
       if (!sourceId) return null;
 
-      const previous = current.get(event.trackId) ?? null;
+      const previous = current.get(track.id) ?? null;
       if (previous === sourceId) return null;   // a new clip on the same camera
 
-      current.set(event.trackId, sourceId);
+      current.set(track.id, sourceId);
 
       return {
-        trackId:   event.trackId,
-        trackName: options.trackName(event.trackId),
+        trackId:   track.id,
+        trackName: options.trackName(track.id),
         from:      previous ? options.cameraName(previous) : null,
         to:        options.cameraName(sourceId) ?? sourceId,
-        label:     event.label,
-        frame:     event.frame,
+        label:     clip.label,
+        frame,
       };
     },
 
@@ -74,24 +72,4 @@ export function createCameraWatch(options: CameraWatchOptions): CameraWatch {
       current.clear();
     },
   };
-}
-
-/**
- * Frame number → `HH:MM:SS:FF`.
- *
- * Rounds the frame first: a playing timeline's position is derived from a clock,
- * so it arrives fractional, and truncating would show the frame before the one
- * that actually triggered the cut.
- */
-export function formatTimecode(frame: number, frameRate: number): string {
-  const fps = Math.max(1, Math.round(frameRate));
-  const total = Math.max(0, Math.round(frame));
-
-  const frames  = total % fps;
-  const seconds = Math.floor(total / fps) % 60;
-  const minutes = Math.floor(total / (fps * 60)) % 60;
-  const hours   = Math.floor(total / (fps * 3600));
-
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}:${pad(frames)}`;
 }

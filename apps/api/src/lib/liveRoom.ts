@@ -1,5 +1,6 @@
 import type { Namespace, Server as SocketIOServer, Socket } from 'socket.io';
-import { socketAuth, type SocketData, type SocketUser } from './sockets.js';
+import { PROTOCOL_ERROR, type ProtocolErrorData } from '@starling/realtime';
+import { socketAuth, type SocketData } from './sockets.js';
 
 /**
  * The machinery every live namespace needs, extracted once.
@@ -19,6 +20,8 @@ import { socketAuth, type SocketData, type SocketUser } from './sockets.js';
 export interface LiveRoomSocketData<TCaps> extends SocketData {
   roomId?: string;
   caps?: TCaps;
+  /** The room's presence version this socket has already been sent. */
+  presenceVersion?: number;
 }
 
 export type LiveSocket<TCaps> = Socket<
@@ -40,14 +43,19 @@ export interface LiveRoomOptions<TCaps, TPresence extends { id: string }> {
   namespace: string;
   /** Room key prefix, e.g. 'tl' → room 'tl:<id>'. */
   roomPrefix: string;
-  /** Event a client sends to enter a room. */
+  /** Event a client sends, with the room id as its payload, to enter a room. */
   joinEvent: string;
   /** Event a client sends to leave without disconnecting. */
   leaveEvent: string;
   /** Event the server broadcasts the occupant list on. */
   presenceEvent: string;
-  /** Field on the join payload naming the room, e.g. 'timelineId'. */
-  roomIdField: string;
+  /**
+   * The wire protocol the namespace speaks. A handshake declaring any other is
+   * refused before authentication; see PROTOCOL in @starling/realtime.
+   */
+  protocol: number;
+  /** The occupant list as it travels, in join acks and presence broadcasts. */
+  encodePresence(list: TPresence[]): unknown;
 
   /**
    * Resolve access and capabilities. Returning null denies the join — the same
@@ -61,8 +69,12 @@ export interface LiveRoomOptions<TCaps, TPresence extends { id: string }> {
    */
   authorize(data: SocketData, roomId: string): Promise<JoinResult<TCaps, TPresence> | null>;
 
-  /** Ran after a successful join, for activity logging or catch-up state. */
-  onJoined?(socket: LiveSocket<TCaps>, roomId: string, caps: TCaps): void;
+  /**
+   * Ran after a successful join. Whatever it returns is added to the join's ack:
+   * the joiner's capabilities and the room's live state, which would otherwise
+   * each be a message of their own.
+   */
+  onJoined?(socket: LiveSocket<TCaps>, roomId: string, caps: TCaps): Record<string, unknown> | void;
   /** Ran as a socket leaves, before presence is recomputed. */
   onLeaving?(socket: LiveSocket<TCaps>, roomId: string): void;
   /** Ran when a room empties, for tearing down per-room state. */
@@ -81,20 +93,50 @@ export interface LiveRoomContext<TCaps, TPresence extends { id: string }> {
   emitExcept(roomId: string, exceptSocketId: string | null, event: string, payload: unknown): void;
 }
 
+/**
+ * How long a presence change waits for company before the room hears it.
+ *
+ * Every join and leave used to send the whole occupant list to the whole room
+ * straight away, so a room of n filling up cost n² lists — and rooms fill up all
+ * at once exactly when it matters: a show starting, or every device reconnecting
+ * after the API restarts. A quarter of a second folds such a burst into one list
+ * per socket. The joiner does not wait for it; its list comes in the join ack.
+ */
+export const PRESENCE_SETTLE_MS = 250;
+
+interface Room<TPresence> {
+  /** userId → presence and that user's sockets here. */
+  members: Map<string, { presence: TPresence; sockets: Set<string> }>;
+  /** Moves on every change to who is present. */
+  version: number;
+  flush: ReturnType<typeof setTimeout> | null;
+}
+
 export function createLiveRoom<TCaps, TPresence extends { id: string }>(
   io: SocketIOServer,
   options: LiveRoomOptions<TCaps, TPresence>,
 ): LiveRoomContext<TCaps, TPresence> {
   const nsp = io.of(options.namespace);
+
+  // The protocol is checked before the credential. An outdated client learns why
+  // it cannot connect in one round trip instead of misreading every event, and
+  // costs no token lookup — which matters most when a room full of old devices
+  // reconnects at once.
+  nsp.use((socket, next) => {
+    const declared = (socket.handshake.auth as { protocol?: unknown } | undefined)?.protocol;
+    if (declared === options.protocol) return next();
+    const err = new Error(PROTOCOL_ERROR) as Error & { data: ProtocolErrorData };
+    err.data = { protocol: options.protocol };
+    next(err);
+  });
   nsp.use(socketAuth);
 
-  // roomId → userId → { presence, socketIds }
-  const rooms = new Map<string, Map<string, { presence: TPresence; sockets: Set<string> }>>();
+  const rooms = new Map<string, Room<TPresence>>();
 
   const roomName = (roomId: string): string => `${options.roomPrefix}:${roomId}`;
 
   const occupants = (roomId: string): TPresence[] =>
-    [...(rooms.get(roomId)?.values() ?? [])].map(e => e.presence);
+    [...(rooms.get(roomId)?.members.values() ?? [])].map(e => e.presence);
 
   function emit(roomId: string, event: string, payload: unknown): void {
     nsp.to(roomName(roomId)).emit(event as never, payload as never);
@@ -113,15 +155,35 @@ export function createLiveRoom<TCaps, TPresence extends { id: string }>(
     target.emit(event as never, payload as never);
   }
 
+  /** Sends the settled list to every socket in the room that does not have it yet. */
+  function flushPresence(roomId: string): void {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    room.flush = null;
+
+    const behind: string[] = [];
+    for (const socketId of nsp.adapter.rooms.get(roomName(roomId)) ?? []) {
+      const member = nsp.sockets.get(socketId) as LiveSocket<TCaps> | undefined;
+      if (!member || member.data.presenceVersion === room.version) continue;
+      member.data.presenceVersion = room.version;
+      behind.push(socketId);
+    }
+    if (behind.length === 0) return;
+    nsp.to(behind).emit(options.presenceEvent as never, options.encodePresence(occupants(roomId)) as never);
+  }
+
+  function presenceChanged(roomId: string, room: Room<TPresence>): void {
+    room.version++;
+    if (room.flush) return;
+    room.flush = setTimeout(() => flushPresence(roomId), PRESENCE_SETTLE_MS);
+    room.flush.unref?.();
+  }
+
   const ctx: LiveRoomContext<TCaps, TPresence> = { nsp, roomName, occupants, emit, emitExcept };
 
   nsp.on('connection', (rawSocket) => {
     const socket = rawSocket as LiveSocket<TCaps>;
     const { user } = socket.data;
-
-    function broadcastPresence(roomId: string): void {
-      nsp.to(roomName(roomId)).emit(options.presenceEvent as never, occupants(roomId) as never);
-    }
 
     function leave(): void {
       const roomId = socket.data.roomId;
@@ -131,28 +193,33 @@ export function createLiveRoom<TCaps, TPresence extends { id: string }>(
 
       socket.data.roomId = undefined;
       socket.data.caps = undefined;
+      socket.data.presenceVersion = undefined;
       void socket.leave(roomName(roomId));
 
       const room = rooms.get(roomId);
-      const entry = room?.get(user.id);
+      const entry = room?.members.get(user.id);
       if (!room || !entry) return;
 
       // Presence is per USER across their tabs: they are present until the LAST
-      // of their sockets goes. Without this, closing one tab would announce
-      // someone had left while they are still sitting in another.
+      // of their sockets goes. Closing one of two tabs changes nobody's list, so
+      // it is not announced.
       entry.sockets.delete(socket.id);
-      if (entry.sockets.size === 0) room.delete(user.id);
-      if (room.size === 0) {
+      if (entry.sockets.size > 0) return;
+
+      room.members.delete(user.id);
+      if (room.members.size === 0) {
+        if (room.flush) clearTimeout(room.flush);
         rooms.delete(roomId);
         options.onRoomEmpty?.(roomId);
+        return;
       }
-      broadcastPresence(roomId);
+      presenceChanged(roomId, room);
     }
 
-    socket.on(options.joinEvent, async (payload: Record<string, unknown> = {}, ack?: (r: unknown) => void) => {
-      const roomId = payload?.[options.roomIdField];
+    socket.on(options.joinEvent, async (roomId: unknown, ack?: unknown) => {
+      const reply = typeof ack === 'function' ? ack as (result: unknown) => void : undefined;
       if (typeof roomId !== 'string' || !roomId) {
-        ack?.({ error: 'Invalid room id' });
+        reply?.({ error: 'Invalid room id' });
         return;
       }
 
@@ -160,13 +227,13 @@ export function createLiveRoom<TCaps, TPresence extends { id: string }>(
       try {
         resolved = await options.authorize(socket.data, roomId);
       } catch {
-        ack?.({ error: 'Access check failed' });
+        reply?.({ error: 'Access check failed' });
         return;
       }
       // One answer for "denied" and "does not exist", so room ids are not
       // enumerable by anyone who can connect.
       if (!resolved) {
-        ack?.({ error: 'Access denied' });
+        reply?.({ error: 'Access denied' });
         return;
       }
 
@@ -176,24 +243,30 @@ export function createLiveRoom<TCaps, TPresence extends { id: string }>(
       socket.data.caps = resolved.caps;
       await socket.join(roomName(roomId));
 
-      const room = rooms.get(roomId) ?? new Map();
-      rooms.set(roomId, room);
-      const entry = room.get(user.id) ?? { presence: resolved.presence, sockets: new Set<string>() };
-      entry.presence = resolved.presence;
-      room.set(user.id, entry);
-      entry.sockets.add(socket.id);
+      let room = rooms.get(roomId);
+      if (!room) {
+        room = { members: new Map(), version: 0, flush: null };
+        rooms.set(roomId, room);
+      }
+      const entry = room.members.get(user.id);
+      if (entry) {
+        entry.presence = resolved.presence;
+        entry.sockets.add(socket.id);
+      } else {
+        room.members.set(user.id, { presence: resolved.presence, sockets: new Set([socket.id]) });
+        presenceChanged(roomId, room);
+      }
 
-      // Everyone already in the room hears about the joiner from the broadcast;
-      // the joiner gets the list directly, before its ack, so an ack-ordered
-      // client never paints an empty list. It is excluded from the broadcast —
-      // which would otherwise reach it too, sending it the same list twice on
-      // every join.
-      const list = occupants(roomId);
-      nsp.to(roomName(roomId)).except(socket.id).emit(options.presenceEvent as never, list as never);
-      socket.emit(options.presenceEvent as never, list as never);
-
-      options.onJoined?.(socket, roomId, resolved.caps);
-      ack?.({ ok: true, ...(resolved.caps as object) });
+      // The joiner's list rides its ack, so the settled broadcast skips it unless
+      // somebody else arrives or leaves in the meantime.
+      socket.data.presenceVersion = room.version;
+      const extra = options.onJoined?.(socket, roomId, resolved.caps) ?? {};
+      reply?.({
+        ok:       true,
+        protocol: options.protocol,
+        users:    options.encodePresence(occupants(roomId)),
+        ...extra,
+      });
     });
 
     socket.on(options.leaveEvent, leave);

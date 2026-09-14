@@ -86,6 +86,47 @@ await check('a network failure is status 0; an abort is rethrown as is', async (
   eq(abort.name, 'AbortError', 'name:');
 });
 
+await check('a success that is not JSON is a CinoApiError, not a SyntaxError', async () => {
+  const { http: client } = http(() => new Response('<html>captive portal</html>', { status: 200 }));
+  const err = await rejects(client.json('GET', '/timelines'), 'html:') as CinoApiError;
+  ok(err instanceof CinoApiError, 'type:');
+  eq(err.status, 200, 'status:');
+});
+
+/** A server that never answers, until the request is aborted. */
+const hanging = ((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+  init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+})) as typeof globalThis.fetch;
+
+const withFetch = (fetch: typeof globalThis.fetch, timeoutMs: number) =>
+  new Http({ baseUrl: 'https://cino.no', token: 'cino_svc_test', fetch, timeoutMs });
+
+await check('a response that never starts times out as status 0', async () => {
+  const err = await rejects(withFetch(hanging, 20).json('GET', '/timelines'), 'timeout:') as CinoApiError;
+  ok(err instanceof CinoApiError, 'type:');
+  eq(err.status, 0, 'status:');
+  ok(err.message.includes('timed out after 20ms'), 'message:');
+});
+
+await check('the caller\'s signal still aborts, and the timeout never cuts off a body being read', async () => {
+  const controller = new AbortController();
+  const pending = withFetch(hanging, 1000).json('GET', '/timelines', { signal: controller.signal });
+  controller.abort();
+  eq((await rejects(pending, 'abort:')).name, 'AbortError', 'caller abort:');
+
+  const slowBody = (async (_input: RequestInfo | URL, init?: RequestInit) => new Response(new ReadableStream({
+    start(stream) {
+      setTimeout(() => {
+        if (init?.signal?.aborted) { stream.error(new DOMException('aborted', 'AbortError')); return; }
+        stream.enqueue(new TextEncoder().encode('{"ok":true}'));
+        stream.close();
+      }, 50);
+    },
+  }))) as typeof globalThis.fetch;
+  const body = await withFetch(slowBody, 20).json<{ ok: boolean }>('GET', '/timelines');
+  eq(body.ok, true, 'body read after the timeout:');
+});
+
 section('token');
 
 await check('the token expiry is read from responses and announced when it changes', async () => {

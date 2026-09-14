@@ -15,6 +15,7 @@
     "@starling/auth": "*",
     "@starling/realtime": "*",
     "@starling/ui": "*",
+    "cino-sdk": "*",
     "clsx": "^2.1.1",
     "easy-speech": "^2.4.0",
     "radix-vue": "^1.9.17",

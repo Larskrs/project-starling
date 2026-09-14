@@ -10,9 +10,11 @@ import { CinoApiError } from '../core/errors.ts';
 import { encode, type Http } from '../core/http.ts';
 import { fps, fromTimecode, isDropFrame, toTimecode } from '../core/timecode.ts';
 import {
-  TIMELINE_NAMESPACE, TimelineEvent, isClipChange, isTrackChange,
-  type ClipChange, type ClockMeasureRequest, type ClockReport, type ClockResyncAck, type ClockSyncStatus,
-  type JoinAck, type PresenceUser, type TrackChange, type TransportState,
+  CLIP_EVENTS, PROTOCOL, TIMELINE_NAMESPACE, TRACK_EVENTS, TimelineEvent,
+  applyProgress, decodeAnchor, decodeMeasure, decodePresence, decodeStatus, encodeCommand, encodeReport,
+  isProtocolError, serverProtocolOf,
+  type ClipChange, type ClockReport, type ClockResyncAck, type ClockSyncStatus,
+  type JoinAck, type PresenceUser, type TrackChange, type TransportCommand, type TransportState,
 } from '../protocol.ts';
 import type { ClipInput, ClipPatch, FrameRate, Source, TimelineSnapshot, TrackInput, TrackPatch, TrackType } from '../types.ts';
 import { createClipScheduler, type ClipEvent } from './clipScheduler.ts';
@@ -68,6 +70,12 @@ export interface LiveEvents extends Record<string, unknown> {
   disconnected: { reason: string };
   /** The credential is dead or revoked. The client has stopped and will not retry. */
   authFailed: { errorKey: string | null; message: string };
+  /**
+   * The server speaks a different wire protocol. The client has stopped and will
+   * not retry: one side needs updating, and `message` says which when the server
+   * named its protocol.
+   */
+  incompatible: { clientProtocol: number; serverProtocol: number | null; message: string };
   error: { error: Error; retrying: boolean };
   stall: { ms: number };
 }
@@ -179,6 +187,13 @@ function toInfo(snapshot: TimelineSnapshot): TimelineInfo {
   });
 }
 
+function incompatibleMessage(serverProtocol: number | null): string {
+  if (serverProtocol === null) return `the server refused wire protocol ${PROTOCOL}`;
+  return serverProtocol > PROTOCOL
+    ? `the server speaks wire protocol ${serverProtocol} and this cino-sdk speaks ${PROTOCOL}: update cino-sdk`
+    : `the server speaks wire protocol ${serverProtocol} and this cino-sdk speaks ${PROTOCOL}: the server is older than this client`;
+}
+
 export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveTimelineConfig): LiveTimeline {
   if (!timelineId) throw new TypeError('cino-sdk: a timelineId is required');
   const stallMs = options.stallWarnMs ?? 250;
@@ -195,6 +210,8 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
   let trackTypes: readonly TrackType[] = EMPTY;
   let canEdit = false;
   let transport: TransportState | null = null;
+  /** The room's clock sync as last heard, so progress has something to apply to. */
+  let syncStatus: ClockSyncStatus | null = null;
   let isReady = false;
   let everReady = false;
   let closed = false;
@@ -210,7 +227,9 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
   const socket = io(`${http.baseUrl}${TIMELINE_NAMESPACE}`, {
     path:       '/socket',
     transports: options.transports ?? ['polling', 'websocket'],
-    auth:       { token: http.token },
+    // The protocol rides the handshake so a mismatch is refused, and explained,
+    // before a single event is misread.
+    auth:       { token: http.token, protocol: PROTOCOL },
   });
 
   const socketId = () => (socket.connected ? socket.id : null);
@@ -268,8 +287,21 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
     events.emit('change', { kind: 'track', change });
   }
 
-  async function loadTimeline(): Promise<void> {
-    const snapshot = await http.json<TimelineSnapshot>('GET', `/timeline/${encode(timelineId)}`);
+  function setTransport(state: TransportState): void {
+    transport = state;
+    scheduler.setTransport(state);
+    cues.transportChanged();
+    events.emit('transport', state);
+  }
+
+  function setSync(status: ClockSyncStatus): void {
+    syncStatus = status;
+    events.emit('sync', status);
+  }
+
+  const fetchSnapshot = () => http.json<TimelineSnapshot>('GET', `/timeline/${encode(timelineId)}`);
+
+  function applySnapshot(snapshot: TimelineSnapshot): void {
     model.load((snapshot.tracks ?? []) as unknown as TrackRow[]);
     info       = toInfo(snapshot);
     sources    = Object.freeze([...(snapshot.sources ?? [])]);
@@ -305,18 +337,35 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
     rejectReady(new CinoApiError(401, message, errorKey));
   }
 
+  /** Retrying cannot help: until one side is updated, every event would be misread. */
+  function incompatible(serverProtocol: number | null): void {
+    if (closed) return;
+    shutdown();
+    const message = incompatibleMessage(serverProtocol);
+    events.emit('incompatible', { clientProtocol: PROTOCOL, serverProtocol, message });
+    rejectReady(new Error(`cino-sdk: ${message}`));
+  }
+
+  // A reconnect can land while the previous connect's fetch is still out. Only the newest attempt may apply and join.
+  let connectAttempt = 0;
+
   async function onConnect(): Promise<void> {
     if (closed) return;
+    const attempt = ++connectAttempt;
+    const stale = () => closed || attempt !== connectAttempt;
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     // What was live described a room we stopped watching; the join brings a fresh anchor.
     scheduler.reset();
     transport = null;
+    syncStatus = null;
     cues.transportChanged();
 
     try {
-      await loadTimeline();
+      const snapshot = await fetchSnapshot();
+      if (stale()) return;
+      applySnapshot(snapshot);
     } catch (err) {
-      if (closed) return;
+      if (stale()) return;
       if (err instanceof CinoApiError && err.isFatal) { stop(err.errorKey, err.message); return; }
       events.emit('error', { error: err as Error, retrying: true });
       const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** retries++);
@@ -327,15 +376,24 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
       return;
     }
     retries = 0;
-    if (closed || !socket.connected) return;
+    if (!socket.connected) return;
 
-    socket.emit(TimelineEvent.join, { timelineId }, (ack: JoinAck | undefined) => {
-      if (closed) return;
+    socket.emit(TimelineEvent.join, timelineId, (ack: JoinAck | undefined) => {
+      if (stale()) return;
       if (!ack || 'error' in ack) {
         stop(null, `the server refused to join this timeline: ${ack?.error ?? 'no answer'}`);
         return;
       }
       canEdit = ack.canEdit;
+      // The room arrives with the ack — who is here, a playing anchor, a sync in
+      // progress — and is applied before `ready`, so a listener never sees ready
+      // with the room still unknown.
+      events.emit('presence', decodePresence(ack.users));
+      const anchor = decodeAnchor(ack.anchor);
+      if (anchor) setTransport(anchor);
+      const sync = decodeStatus(ack.sync);
+      if (sync) setSync(sync);
+
       const reconnected = everReady;
       everReady = true;
       isReady   = true;
@@ -348,12 +406,14 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
 
   socket.on('disconnect', (reason: string) => {
     isReady = false;
+    syncStatus = null;
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     if (!closed) events.emit('disconnected', { reason });
   });
 
   socket.on('connect_error', (err: Error) => {
     if (closed) return;
+    if (isProtocolError(err)) { incompatible(serverProtocolOf(err)); return; }
     if (err.message.startsWith('errors.auth.')) { stop(err.message, err.message); return; }
     events.emit('error', { error: err, retrying: true });
   });
@@ -362,30 +422,41 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
     stop(typeof payload?.reason === 'string' ? payload.reason : null, 'access to this timeline was revoked');
   });
 
-  socket.on(TimelineEvent.presence, (users: PresenceUser[]) => events.emit('presence', users));
+  socket.on(TimelineEvent.presence, (raw: unknown) => events.emit('presence', decodePresence(raw)));
 
-  socket.on(TimelineEvent.transportState, (state: TransportState) => {
-    transport = state;
-    scheduler.setTransport(state);
-    cues.transportChanged();
-    events.emit('transport', state);
+  socket.on(TimelineEvent.transportState, (raw: unknown) => {
+    const state = decodeAnchor(raw);
+    if (state) setTransport(state);
   });
 
-  socket.on(TimelineEvent.clipChange, (change: unknown) => { if (isClipChange(change)) applyClip(change); });
-  socket.on(TimelineEvent.trackChange, (change: unknown) => { if (isTrackChange(change)) applyTrack(change); });
+  for (const [event, decode] of CLIP_EVENTS) {
+    socket.on(event, (raw: unknown) => { const change = decode(raw); if (change) applyClip(change); });
+  }
+  for (const [event, decode] of TRACK_EVENTS) {
+    socket.on(event, (raw: unknown) => { const change = decode(raw); if (change) applyTrack(change); });
+  }
 
-  socket.on(TimelineEvent.clockMeasure, async (request: ClockMeasureRequest) => {
-    if (closed || typeof request?.requestId !== 'string') return;
+  socket.on(TimelineEvent.clockMeasure, async (raw: unknown) => {
+    const request = decodeMeasure(raw);
+    if (closed || !request) return;
     const report = await answerMeasure(request, {
       measure: () => clockSync.measure(),
       get rtt() { return clock.rtt; },
     });
     if (closed || !socket.connected) return;
-    socket.emit(TimelineEvent.clockReport, report);
+    socket.emit(TimelineEvent.clockReport, encodeReport(report));
     events.emit('syncReport', report);
   });
 
-  socket.on(TimelineEvent.clockStatus, (status: ClockSyncStatus) => events.emit('sync', status));
+  socket.on(TimelineEvent.clockStatus, (raw: unknown) => {
+    const status = decodeStatus(raw);
+    if (status) setSync(status);
+  });
+
+  socket.on(TimelineEvent.clockProgress, (raw: unknown) => {
+    const next = applyProgress(syncStatus, raw);
+    if (next && next !== syncStatus) setSync(next);
+  });
 
   // ── Transport commands ──────────────────────────────────────────────────────
 
@@ -398,9 +469,9 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
     pendingSeek = null;
   }
 
-  function command(payload: { action: 'play' | 'pause' | 'seek'; frame?: number }): boolean {
+  function command(payload: TransportCommand): boolean {
     if (closed || !socket.connected) return false;
-    socket.emit(TimelineEvent.transportCommand, payload);
+    socket.emit(TimelineEvent.transportCommand, encodeCommand(payload));
     return true;
   }
 
@@ -468,22 +539,21 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
     async create(input) {
       requireOpen();
       const row = await restClips.create({ ...input, position: Math.round(toFrame(input.position)) });
-      applyClip({ type: 'upsert', trackId: row.trackId ?? input.trackId, clip: row });
+      applyClip({ type: 'upsert', clip: { ...row, trackId: row.trackId ?? input.trackId } });
       return model.clip(row.id);
     },
     async update(clipId, patch) {
       requireOpen();
       const row = await restClips.update(clipId, patch);
-      applyClip({ type: 'upsert', trackId: row.trackId, clip: row });
+      applyClip({ type: 'upsert', clip: row });
       return model.clip(row.id);
     },
     rename: (clipId, label) => clips.update(clipId, { label }),
     move:   (clipId, to) => clips.update(clipId, { position: Math.round(toFrame(to)) }),
     async remove(clipId) {
       requireOpen();
-      const trackId = model.clip(clipId)?.trackId ?? '';
       await restClips.remove(clipId);
-      applyClip({ type: 'remove', trackId, clipId });
+      applyClip({ type: 'remove', clipId });
     },
   };
 
@@ -569,7 +639,7 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
     syncClocks() {
       if (closed || !socket.connected) return Promise.resolve({ error: 'Not connected' });
       return new Promise((resolve) => {
-        socket.timeout(5000).emit(TimelineEvent.clockResync, {}, (err: Error | null, ack: ClockResyncAck) => {
+        socket.timeout(5000).emit(TimelineEvent.clockResync, (err: Error | null, ack: ClockResyncAck) => {
           resolve(err ? { error: err.message } : ack);
         });
       });
@@ -577,7 +647,8 @@ export function createLiveTimeline({ http, io, timelineId, options = {} }: LiveT
 
     async refresh() {
       requireOpen();
-      await loadTimeline();
+      const snapshot = await fetchSnapshot();
+      if (!closed) applySnapshot(snapshot);
     },
 
     whenReady: () => firstReady,

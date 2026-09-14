@@ -43,29 +43,69 @@ down. This is the only approach that is safe to run during a show.
 
 Rehearse it once, on a quiet morning, before you need it.
 
+### Swapping the token on a running device
+
+A `Cino` keeps one token for its whole life, so moving to a new token means a
+new `Cino` and a new connection. The simplest safe way is to write the new token
+to the device's configuration and restart the service at a quiet moment inside
+the overlap. The overlap is what lets you choose that moment.
+
+A device that cannot restart can open the new connection first and close the old
+one once the new one is ready. Keep the listeners in one function so both
+connections get them:
+
+```ts
+import { Cino, type LiveTimeline } from 'cino-sdk';
+
+function follow(token: string): LiveTimeline {
+  const live = new Cino({ url: 'https://cino.no', token }).connect(timelineId);
+  live.onTrack('Cameras', ({ clip }) => switcher.cut(clip?.sourceId));
+  // …every other listener the device needs
+  return live;
+}
+
+let live = follow(currentToken);
+
+async function rotate(nextToken: string): Promise<void> {
+  const next = follow(nextToken);
+  await next.whenReady();
+  live.close();
+  live = next;
+}
+```
+
+For the moment both are open, both announce clips, so rotate while the timeline
+is stopped.
+
 ---
 
 ## Knowing the deadline
 
-Every authenticated response carries the token's expiry, so a device can warn
-before it is locked out rather than after:
+Every authenticated response carries the token's expiry, and the SDK reads it. A
+live connection announces it after every fetch of the timeline, which is on
+every connect and reconnect:
 
-```
-X-Cino-Token-Expires: 2026-10-12T09:14:00.000Z
-```
-
-Read it and act on it. A device that alarms at seven days left, on its own
-panel, turns a dead show into a Tuesday morning task.
-
-```js
-const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-
-const expires = res.headers.get('X-Cino-Token-Expires');
-if (expires) {
-  const daysLeft = (Date.parse(expires) - Date.now()) / 86_400_000;
+```ts
+live.on('token', ({ expiresAt, daysLeft }) => {
   if (daysLeft < 7) raiseLocalAlarm(`Cino token expires in ${Math.floor(daysLeft)} days`);
-}
+});
 ```
+
+A device that stays connected for weeks fetches rarely, so check the date on a
+timer as well. `cino.tokenExpiresAt` holds the expiry from the last response,
+and `cino.onTokenExpiry` tells a REST-only device when it first learns it:
+
+```ts
+setInterval(() => {
+  const expiresAt = cino.tokenExpiresAt;
+  if (expiresAt && expiresAt.getTime() - Date.now() < 7 * 86_400_000) {
+    raiseLocalAlarm('Cino token expires within a week');
+  }
+}, 60 * 60 * 1000);
+```
+
+A device that alarms at seven days left, on its own panel, turns a dead show
+into a Tuesday morning task.
 
 This is one of the few places the wall clock is the right clock: the expiry is a
 calendar date, and being a few seconds out does not matter. Playback timing is
@@ -78,10 +118,16 @@ the opposite case; see [clocks and timing](./timing.md).
 REST calls start answering `401` with `errors.auth.tokenExpired`. A socket that
 is already connected is checked by a sweep that runs every 60 seconds. When the
 sweep finds the token has expired, it sends `access:revoked` and closes the
-socket. A reconnect then fails its handshake with `errors.auth.tokenExpired`.
+socket.
 
-Treat it exactly like revocation: stop reconnecting, and say so on the panel. A
-device that silently retries forever is a device nobody notices is broken.
+The SDK treats that exactly like revocation: the connection stops for good and
+emits `authFailed`. A device that silently retries forever is a device nobody
+notices is broken, so show it on the panel.
+
+An update can stop a connection the same way. When the server moves to a wire
+protocol this cino-sdk does not speak, the handshake is refused and the SDK
+emits `incompatible` and stops; its `message` says whether cino-sdk or the
+server needs updating. Show that on the panel too.
 
 ---
 
@@ -116,4 +162,4 @@ one device for a few minutes, and a leaked one costs you the production.
 Every issue and revoke is recorded in the production's audit log with the person
 who did it. See [limits and logging](./limits.md#what-gets-logged).
 
-Next: [reading a timeline](./reading.md).
+Next: [following a timeline](./reading.md).

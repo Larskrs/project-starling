@@ -13,7 +13,7 @@
  */
 
 const mod = await import(process.argv[2] ?? './cameraWatch.ts');
-const { createCameraWatch, formatTimecode } = mod as {
+const { createCameraWatch } = mod as {
   createCameraWatch: (o: {
     trackName(id: string): string;
     cameraName(id: string): string | null;
@@ -21,7 +21,6 @@ const { createCameraWatch, formatTimecode } = mod as {
     observe(e: Record<string, unknown>): { from: string | null; to: string; trackName: string } | null;
     reset(): void;
   };
-  formatTimecode: (frame: number, fps: number) => string;
 };
 
 let failed = 0;
@@ -42,8 +41,9 @@ const newWatch = () => createCameraWatch({
   cameraName: id => CAMERAS[id] ?? null,
 });
 
+/** A `clip` event as the SDK emits it; a null source is a gap between clips. */
 const active = (trackId: string, sourceId: string | null, clipId = 'c1', label: string | null = null) =>
-  ({ trackId, clipId, sourceId, label, frame: 100, at: Date.now() });
+  ({ track: { id: trackId }, clip: sourceId === null ? null : { id: clipId, sourceId, label }, frame: 100, at: Date.now() });
 
 console.log('\ncuts');
 
@@ -117,27 +117,6 @@ check('reset makes the next camera report again', () => {
   const cut = w.observe(active('t1', 's1'));
   assert(cut, 'nothing reported after reset');
   eq(cut!.from, null, 'from:');
-});
-
-console.log('\ntimecode');
-
-check('frames format as HH:MM:SS:FF', () => {
-  eq(formatTimecode(0, 25), '00:00:00:00');
-  eq(formatTimecode(24, 25), '00:00:00:24');
-  eq(formatTimecode(25, 25), '00:00:01:00');
-  eq(formatTimecode(25 * 60, 25), '00:01:00:00');
-  eq(formatTimecode(25 * 3600, 25), '01:00:00:00');
-});
-
-check('a fractional frame rounds to the frame that triggered the cut', () => {
-  // A playing position is derived from a clock, so it arrives fractional.
-  eq(formatTimecode(24.6, 25), '00:00:01:00');
-  eq(formatTimecode(24.2, 25), '00:00:00:24');
-});
-
-check('odd frame rates and negatives do not produce nonsense', () => {
-  eq(formatTimecode(30, 29.97), '00:00:01:00');
-  eq(formatTimecode(-5, 25), '00:00:00:00');
 });
 
 console.log(failed ? `\n${failed} failed\n` : '\nall passed\n');

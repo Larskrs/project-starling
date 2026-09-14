@@ -13,6 +13,8 @@ const WAKE_SLACK_MS = 1_000;
 export interface ClockSync {
   /** A burst that starts after the call. One already running is waited out first. */
   measure(): Promise<void>;
+  /** Resolves once no burst is running, without starting one. */
+  idle(): Promise<void>;
   stop(): void;
 }
 
@@ -75,6 +77,9 @@ export function startClockSync(socket: Socket, clock: ServerClock, onSample?: (o
     async measure() {
       if (current) await current;
       await burst();
+    },
+    async idle() {
+      while (current) await current;
     },
     stop() {
       socket.off('connect', onConnect);

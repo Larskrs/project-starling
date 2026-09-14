@@ -16,6 +16,8 @@ const props = defineProps({
   syncConnected: { type: Boolean, default: false },
   /** Lost the live connection after having it — edits by others aren't arriving. */
   reconnecting:  { type: Boolean, default: false },
+  /** The server was updated to a wire protocol this page does not speak; only a reload reconnects. */
+  outdated:      { type: Boolean, default: false },
   /** Joined a playing room before the browser would let us make sound. */
   audioBlocked:  { type: Boolean, default: false },
   canUndo:       { type: Boolean, default: false },
@@ -51,6 +53,11 @@ const overflowCount  = computed(() => Math.max(0, people.value.length - MAX_AVAT
 
 function initials(name) {
   return name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+}
+
+/** A page left open across a protocol change can only reconnect as a fresh page. */
+function reload() {
+  window.location.reload()
 }
 
 const iconButton = 'size-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:pointer-events-none'
@@ -89,8 +96,19 @@ const iconButton = 'size-7 flex items-center justify-center rounded-md text-mute
     <!-- Presence + live sync. A dropped connection gets words, not just a grey
          dot: edits still save, but nobody else's changes are arriving. -->
     <div class="flex items-center gap-2 shrink-0 mr-1">
+      <button
+        v-if="outdated"
+        type="button"
+        class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium
+               bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/25 transition-colors"
+        :title="$t('editor.outdatedHint')"
+        @click="reload"
+      >
+        <Icon icon="mdi:refresh" class="size-4" />
+        {{ $t('editor.outdated') }}
+      </button>
       <span
-        v-if="reconnecting"
+        v-else-if="reconnecting"
         class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium
                bg-amber-500/15 text-amber-600 dark:text-amber-400"
         :title="$t('editor.reconnectingHint')"

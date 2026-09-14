@@ -1,17 +1,15 @@
+import { fromTimecode, toTimecode } from 'cino-sdk'
 import type { Clip } from '../../../types/timeline'
 
-// Converts an absolute frame number to a HH:MM:SS:FF timecode string.
+/**
+ * An absolute frame number as `HH:MM:SS:FF`, or `HH:MM:SS;FF` at drop-frame
+ * rates. Timecode counts whole frames, so at 29.97 a second of timecode is 30
+ * frames, the same count every device following the timeline uses (cino-sdk).
+ * A frame before zero keeps its sign.
+ */
 export function framesToTC(frame: number, frameRate: string | number): string {
-  const fps  = typeof frameRate === 'number' ? frameRate : parseFloat(frameRate)
-  const abs  = Math.abs(Math.round(frame))
-  const ff   = abs % Math.round(fps)
-  const secs = Math.floor(abs / fps)
-  const ss   = secs % 60
-  const mm   = Math.floor(secs / 60) % 60
-  const hh   = Math.floor(secs / 3600)
-  const sign = frame < 0 ? '-' : ''
-  const pad  = (n: number) => String(n).padStart(2, '0')
-  return `${sign}${pad(hh)}:${pad(mm)}:${pad(ss)}:${pad(ff)}`
+  const sign = Math.round(frame) < 0 ? '-' : ''
+  return sign + toTimecode(Math.abs(frame), frameRate)
 }
 
 /**
@@ -38,7 +36,11 @@ export function tcToFrames(text: string, frameRate: string | number): number | n
     if (parts[i]! >= limits[i]!) return null
   }
   const [ff = 0, ss = 0, mm = 0, hh = 0] = parts
-  return Math.round((hh * 3600 + mm * 60 + ss) * fps) + ff
+  // Carry the overflowing leading part, then let the SDK count it: drop-frame
+  // timecode skips frame numbers, which only a full HH:MM:SS:FF can place.
+  const seconds = hh * 3600 + mm * 60 + ss
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return fromTimecode(`${Math.floor(seconds / 3600)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}:${pad(ff)}`, frameRate)
 }
 
 // Nice ruler interval in frames for a target pixel density. Sub-second ticks

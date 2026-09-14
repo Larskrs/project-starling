@@ -1,6 +1,7 @@
 import type { Socket } from 'socket.io-client';
 import type { SocketFactory } from '../src/live/liveTimeline.ts';
 import type { Timers } from '../src/live/transport.ts';
+import { PROTOCOL, TimelineEvent } from '../src/protocol.ts';
 
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -76,7 +77,11 @@ export interface FakeSocketOptions {
 }
 
 /** Enough of a socket.io client for the SDK. */
-export function fakeSocket({ joinAck = { ok: true, canEdit: true, canRename: true }, skewMs = 1000, answersPings = true }: FakeSocketOptions = {}) {
+export function fakeSocket({
+  joinAck = { ok: true, protocol: PROTOCOL, canEdit: true, canRename: true, users: [] },
+  skewMs = 1000,
+  answersPings = true,
+}: FakeSocketOptions = {}) {
   const handlers = new Map<string, Handler[]>();
   const sent: Array<{ event: string; args: unknown[] }> = [];
   const pingTimes: number[] = [];
@@ -100,7 +105,7 @@ export function fakeSocket({ joinAck = { ok: true, canEdit: true, canRename: tru
     emit(event: string, ...args: unknown[]) {
       sent.push({ event, args });
       const ack = args[args.length - 1];
-      if (event === 'timeline:join' && typeof ack === 'function') queueMicrotask(() => ack(joinAck));
+      if (event === TimelineEvent.join && typeof ack === 'function') queueMicrotask(() => ack(joinAck));
       return socket;
     },
     timeout() {
@@ -108,13 +113,13 @@ export function fakeSocket({ joinAck = { ok: true, canEdit: true, canRename: tru
         emit(event: string, ...args: unknown[]) {
           sent.push({ event, args });
           const ack = args[args.length - 1] as (err: Error | null, value?: unknown) => void;
-          if (event === 'time:ping') {
+          if (event === TimelineEvent.timePing) {
             pingTimes.push(performance.now());
             setTimeout(() => answersPings
               ? ack(null, performance.timeOrigin + performance.now() + skewMs)
               : ack(new Error('operation has timed out')), 1);
           }
-          if (event === 'clock:resync') setTimeout(() => ack(null, { ok: true, requestId: 'run-1' }), 1);
+          if (event === TimelineEvent.clockResync) setTimeout(() => ack(null, { ok: true, requestId: 'run-1' }), 1);
         },
       };
     },
@@ -145,6 +150,9 @@ export function fakeSocket({ joinAck = { ok: true, canEdit: true, canRename: tru
     connect() { socket.connected = true; fire('connect'); },
     drop(reason = 'transport close') { socket.connected = false; fire('disconnect', reason); },
     push(event: string, payload?: unknown) { fire(event, payload); },
-    connectError(message: string) { fire('connect_error', new Error(message)); },
+    /** A refused handshake; `data` is what the server attached, as socket.io passes it on. */
+    connectError(message: string, data?: unknown) {
+      fire('connect_error', Object.assign(new Error(message), data === undefined ? {} : { data }));
+    },
   };
 }

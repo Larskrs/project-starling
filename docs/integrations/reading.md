@@ -1,210 +1,217 @@
 ---
 public: true
-title: Reading a timeline
+title: Following a timeline
 order: 3
 ---
 
-# Reading a timeline
+# Following a timeline
 
 > Part of the [integration guide](./index.md).
 
-Always bootstrap over REST before trusting a single socket event. The socket
-carries changes, not state. A client that builds its model from events alone is
-wrong from the first one it misses.
+There are two ways to read a timeline. Fetch it once over REST when a device
+only needs a snapshot, such as a report or a pre-show check. Connect to it when
+the device follows the show: the SDK then keeps a local copy current and tells
+you when anything changes.
 
 ---
 
-## The bootstrap
+## A snapshot over REST
 
-```bash
-curl -s "https://cino.no/api/timeline/$TIMELINE_ID" \
-  -H "Authorization: Bearer $CINO_TOKEN"
-```
+```ts
+const { timeline, tracks, sources, trackTypes, canEdit } = await cino.timeline(timelineId).get();
 
-```jsonc
-{
-  "timeline": { "id": "...", "name": "Act 1", "frameRate": "25", "startFrame": 0 },
-  "tracks": [
-    {
-      "id": "trk_1", "name": "Lighting", "mode": "event", "sortOrder": 0,
-      "isMuted": false, "isLocked": false, "typeId": "...", "sourceId": null,
-      "clips": [
-        {
-          "id": "clp_1", "trackId": "trk_1", "label": "Cue 12",
-          "position": 1500, "mediaStart": null, "end": null,
-          "hue": 210, "fileType": null
-        }
-      ]
-    }
-  ],
-  "trackTypes": [],
-  "sources": []
+for (const track of tracks) {
+  console.log(`${track.name}: ${track.clips.length} clips`);
 }
 ```
 
-Clips arrive nested under their track, already ordered. `position` is a frame
-number, and the timeline's `frameRate` converts it to wall time. Frames are
-integers everywhere; there is no sub-frame position.
+Clips arrive nested under their track, sorted by position. `position` is a frame
+number, and `timeline.frameRate` (a string such as `'25'` or `'29.97df'`) turns
+frames into time. Frames are whole numbers everywhere; there is no sub-frame
+position.
+
+A token reaches one production, and the snapshot carries its id, so the rest of
+the production is one step away:
+
+```ts
+const production = cino.production(timeline.productionId);
+
+const act2 = await production.timelines.find('Act 2');   // by name, ignoring case
+const cameras = await production.sourceSets.list();
+```
 
 ---
 
-## Joining the room
+## Connecting
 
-```js
-import { io } from 'socket.io-client';
+```ts
+const live = cino.connect(timelineId);
 
-const BASE = 'https://cino.no';
-const TIMELINE_ID = process.env.CINO_TIMELINE_ID;
-
-let tracks = new Map();   // trackId -> track (with a .clips array)
-
-async function bootstrap() {
-  const res = await fetch(`${BASE}/api/timeline/${TIMELINE_ID}`, {
-    headers: { Authorization: `Bearer ${process.env.CINO_TOKEN}` },
-  });
-  if (!res.ok) throw new Error(`bootstrap failed: ${res.status}`);
-  const data = await res.json();
-  tracks = new Map(data.tracks.map(t => [t.id, t]));
-  return data.timeline;
-}
-
-const socket = io(`${BASE}/timeline`, {
-  path: '/socket',
-  // Polling first, upgrading to WebSocket when the network allows it. cino.no's
-  // proxy does not forward the upgrade, so websocket-only never connects there.
-  transports: ['polling', 'websocket'],
-  auth: { token: process.env.CINO_TOKEN },
+live.on('ready', ({ timeline, reconnected, canEdit }) => {
+  console.log(`${reconnected ? 'back on' : 'following'} ${timeline.name}, ${canEdit ? 'read/write' : 'read only'}`);
 });
 
-socket.on('connect', async () => {
-  // Re-bootstrap on EVERY connect, not only the first. A reconnect means the
-  // gap was unobserved, and there is no replay — refetching is the only
-  // complete repair.
-  await bootstrap();
-
-  socket.emit('timeline:join', { timelineId: TIMELINE_ID }, (ack) => {
-    if (ack.error) return console.error('join refused:', ack.error);
-    console.log('joined. canEdit =', ack.canEdit);
-  });
-});
+await live.whenReady();   // resolves on the first ready, rejects if the credential is refused
 ```
 
-The join acknowledgement tells you what this token may do, so a read-only
-device can disable its own controls rather than discovering the answer as a
-`403` in the middle of a show.
+On every connect, and again on every reconnect, the SDK:
+
+1. fetches the whole timeline over REST;
+2. joins the timeline's live room;
+3. measures the server's clock, and keeps measuring it for as long as it is
+   connected;
+4. applies every clip and track change the room relays.
+
+Fetching again on a reconnect is not a nicety. The room does not replay what it
+relayed while you were away, so refetching is the only complete repair, and a
+device that skipped it would edit or cut from a copy that is quietly wrong.
+
+`canEdit` says whether this token may write, so a read-only device can disable
+its own controls instead of discovering the answer as a `403` mid-show.
 
 ---
 
-## Clip and track events
+## The local copy
 
-Both payloads are discriminated unions. Switch on `type` and nothing else.
+Once ready, everything is in memory and every read is synchronous:
 
-```js
-socket.on('clip:change', (change) => {
-  const track = tracks.get(change.trackId);
-  if (!track) return;                      // a track we have not fetched yet
+```ts
+live.timeline;                      // name, frameRate (a number), frameRateName, dropFrame, startFrame…
+live.tracks.list();                 // every track, in the editor's order
+live.tracks.find('Cameras');        // by id, or by name ignoring case
+live.clips.list(track.id);          // one track's clips, sorted by position
+live.clips.get(clipId);
+live.sources;                       // the production's sources, e.g. cameras
+live.source(clip.sourceId);         // → { name: 'Camera 1', shortName: 'C1', … } or null
+live.trackTypes;
+```
 
-  if (change.type === 'upsert') {
-    const i = track.clips.findIndex(c => c.id === change.clip.id);
-    if (i === -1) track.clips.push(change.clip);
-    else track.clips[i] = change.clip;
-  } else if (change.type === 'remove') {
-    track.clips = track.clips.filter(c => c.id !== change.clipId);
-  }
-});
+A track or clip gives you its common fields directly — `id`, `name`, `position`,
+`end`, `label`, `sourceId` — and every field the server sent in `row`, so
+`clip.row.hue` and `track.row.isLocked` are there when you need them.
 
-socket.on('track:change', (change) => {
-  if (change.type === 'upsert') {
-    const existing = tracks.get(change.track.id);
-    tracks.set(change.track.id, { ...change.track, clips: existing?.clips ?? [] });
-  } else if (change.type === 'remove') {
-    tracks.delete(change.trackId);
-  } else if (change.type === 'reorder') {
-    change.order.forEach((id, i) => {
-      const t = tracks.get(id);
-      if (t) t.sortOrder = i;
-    });
-  }
+The objects are frozen. A change replaces the object rather than editing it, so
+a clip you are holding never changes underneath you. Look it up again to see the
+new version.
+
+The `change` event says when the copy moved:
+
+```ts
+live.on('change', (event) => {
+  if (event.kind === 'refresh') redrawEverything();        // fetched again, e.g. after a reconnect
+  else if (event.kind === 'clip') redrawTrack(event.change.trackId);
+  else redrawTrackList();                                 // a track was added, edited, removed or reordered
 });
 ```
 
-Three things to note, each of which is a bug if you miss it.
+---
 
-**`upsert` covers create and update.** There is no separate create event, so
-never assume an upsert is new. Key by id and replace.
+## What is live
 
-**A `remove` carries `trackId` as well as `clipId`,** because once the row is
-gone there is nothing left to look the track up from.
+A clip is live from its `position`. With an `end` it lasts `end − mediaStart`
+frames (`mediaStart` counts as 0 when it is null). Without an `end` it lasts
+until the next clip on the track. Between clips nothing is live.
 
-**`reorder` sends the full order**, not a delta. Tracks missing from the list
-keep their existing `sortOrder`.
+```ts
+live.clips.live(track.id);                 // the clip under the playhead, or null
+live.clips.live(track.id, '00:10:00:00');  // at a timecode, or a frame number
+live.clips.nowPlaying();                   // [{ track, clip }] for every track with something live
+```
+
+These answer *what is live now*. To act *when* it changes, listen for clip
+events instead of asking in a loop.
+
+---
+
+## Clip events
+
+While the timeline plays, the SDK works out when each track's live clip changes
+and announces it on the frame:
+
+```ts
+live.onTrack('Cameras', ({ clip, previous, frame, onBoundary }) => {
+  const camera = live.source(clip?.sourceId)?.shortName;
+  console.log(`${live.timecode(frame)} ${previous?.label ?? '—'} → ${clip?.label ?? 'nothing'} (${camera})`);
+});
+
+live.on('clip', (event) => { /* the same, for every track */ });
+```
+
+| Field | |
+| --- | --- |
+| `track` | The track whose live clip changed |
+| `clip` | The clip now live, or `null` when the track went quiet |
+| `previous` | The clip that was live before, or `null` |
+| `frame` | The frame it changed on |
+| `at` | The server clock reading when it was announced |
+| `onBoundary` | `true` when it landed on the boundary itself; `false` for a catch-up |
+
+A **catch-up** is an announcement that did not come from reaching a boundary.
+It happens when the device joins a show that is already playing, when someone
+presses play or seeks, when an edit changes what is under the playhead, and when
+the process was too busy to announce a boundary on time. Whether to act on a
+catch-up is the device's decision: a vision switcher should put the right camera
+up at once, and a sound desk should not start a sound cue halfway through.
+
+The server never sends these events. It sends the playhead's anchor, the clips
+and every edit, and the device works out the boundaries itself. An event sent as
+a boundary passed would reach you late by the network, so the only place a
+boundary can be known in time is the device. [Clocks and timing](./timing.md)
+covers how the SDK makes that land on the frame.
+
+---
+
+## The playhead
+
+```ts
+live.transport;          // { playing, frame, frameRate, at, userId } as the room last sent it, or null
+live.currentFrame();     // where the playhead is now, or null before the clock is measured
+live.timecode();         // the playhead as timecode, e.g. "00:12:07:14"
+
+live.on('transport', ({ playing }) => {
+  console.log(playing ? `playing from ${live.timecode()}` : `stopped at ${live.timecode()}`);
+});
+```
+
+Clip events and cues only run while the room plays. **A stopped timeline is
+browsed privately:** each person in the editor moves their own playhead, and
+none of it reaches devices. A pause leaves a device on whatever was live when it
+stopped.
 
 ---
 
 ## Presence
 
-`timeline:presence` carries the room's current occupants after any change, as a
-complete list rather than a diff. A token appears under its own label, so a desk
-shows as `FOH Lighting Desk` rather than as the person who installed it.
+`presence` carries everyone in the room after any change, as a complete list.
+A token appears under its own label, and its id starts with
+`TOKEN_PRESENCE_PREFIX`, which tells devices apart from people:
 
-```js
-socket.on('timeline:presence', (users) => {
-  console.log('in the room:', users.map(u => u.name).join(', '));
+```ts
+import { TOKEN_PRESENCE_PREFIX } from 'cino-sdk';
+
+live.on('presence', (users) => {
+  const devices = users.filter(user => user.id.startsWith(TOKEN_PRESENCE_PREFIX));
+  console.log(`${users.length - devices.length} people, devices: ${devices.map(d => d.name).join(', ')}`);
 });
 ```
 
 ---
 
-## Following the playhead
+## When the connection drops
 
-The server owns the transport clock. Clients never stream positions. They
-receive an **anchor** and derive the rest:
-
-```js
-const clock = createServerClock(socket);   // from Clocks and timing
-let transport = null;
-socket.on('transport:state', (state) => { transport = state; });   // keep it as it arrived
-
-function currentFrame() {
-  if (!transport) return null;
-  if (!transport.playing) return transport.frame;
-  if (!clock.synced) return null;          // no server time measured yet
-  return transport.frame + ((clock.now() - transport.at) / 1000) * transport.frameRate;
-}
+```ts
+live.on('disconnected', ({ reason }) => showOnPanel(`Cino connection lost (${reason})`));
+live.on('error', ({ error }) => console.warn(`retrying: ${error.message}`));
+live.on('ready', ({ reconnected }) => { if (reconnected) showOnPanel('Cino connected'); });
 ```
 
-This is why an anchor never goes stale, and why a device connecting mid-show
-lands on the right frame immediately.
+A dropped connection does not stop a show. Clip events and cues keep coming from
+the last timeline and playhead the device knew, and when the connection comes
+back the SDK fetches everything again and emits `ready` with `reconnected: true`.
+An edit made while the device was away takes effect from that moment.
 
-**`transport.at` is a reading of the server's clock, so compare it with the
-server's clock.** Putting `Date.now()` in place of `clock.now()` makes the
-playhead wrong by however far off the device's own clock is. A few seconds off
-is common, and so is minutes on a box that has never been near a time server.
-[Clocks and timing](./timing.md) covers measuring server time with `time:ping`
-and keeping it right through a show. It is not optional for anything that fires
-on a frame.
-
-To know which cue is live on a track, work it out from the clips you already
-hold and `currentFrame()`. The server does not send an event when the live clip
-changes: one would arrive after the change it describes, and the arithmetic is
-cheap on the device.
-
-```js
-function liveClip(track, frame) {
-  let live = null;
-  for (const clip of track.clips) {          // sorted by position
-    if (clip.position > frame) break;
-    live = clip;
-  }
-  if (!live || live.end == null) return live; // no end: live until the next clip
-  return frame < live.position + (live.end - (live.mediaStart ?? 0)) ? live : null;
-}
-```
-
-A clip is live from its `position`. With an `end` it lasts `end − mediaStart`
-frames; without one it lasts until the next clip on the track. For cues that must
-land on the frame, schedule the boundary rather than polling this;
-[the worked example](./timing.md#worked-example-cutting-cameras-on-the-frame)
-shows how.
+`live.connected` and `live.ready` say where things stand at any moment, which is
+what a status light on the device should show. `live.close()` leaves the room
+and stops everything.
 
 Next: [clocks and timing](./timing.md).

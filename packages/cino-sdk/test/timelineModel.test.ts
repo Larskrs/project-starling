@@ -70,29 +70,51 @@ section('changes');
 
 await check('a clip moved to another track leaves the first one', () => {
   const model = loaded();
-  model.applyClipChange({ type: 'upsert', trackId: 't2', clip: { id: 'A', trackId: 't2', position: 0, sourceId: 's1' } });
+  model.applyClipChange({ type: 'patch', clip: { id: 'A', trackId: 't2' } });
   eq(model.liveClip('t1', 50), null, 'old track:');
   eq(model.liveClip('t2', 50)?.id, 'A', 'new track:');
   eq(model.clip('A')?.trackId, 't2', 'lookup:');
+  eq(model.clip('A')?.sourceId, 's1', 'fields the patch did not carry:');
 });
 
 await check('a relay keeps fields the bootstrap enriched, unless it sends them', () => {
   const model = loaded();
-  model.applyClipChange({ type: 'upsert', trackId: 't1', clip: { id: 'B', trackId: 't1', position: 110, label: 'Close up' } });
+  model.applyClipChange({ type: 'upsert', clip: { id: 'B', trackId: 't1', position: 110, label: 'Close up' } });
   const b = model.clip('B')!;
   eq(b.position, 110, 'position:');
   eq(b.label, 'Close up', 'label:');
   eq(b.row.fileType, 'audio', 'fileType kept:');
-  model.applyTrackChange({ type: 'upsert', track: { id: 't1', timelineId: 'tl', name: 'Programme B' } });
+  model.applyTrackChange({ type: 'patch', track: { id: 't1', name: 'Programme B' } });
+  eq(model.track('t1')!.name, 'Programme B', 'renamed:');
   eq(model.track('t1')!.row.typeName, 'Camera', 'typeName kept:');
   eq(model.track('t1')!.clips.length, 3, 'clips kept:');
+});
+
+await check('a patch carries only what changed, and a null in it is a change', () => {
+  const model = loaded();
+  eq(model.applyClipChange({ type: 'patch', clip: { id: 'B', end: null } }), true, 'applied:');
+  const b = model.clip('B')!;
+  eq(b.end, null, 'end cleared:');
+  eq(b.position, 100, 'position kept:');
+  eq(b.label, 'Close', 'label kept:');
+  eq(model.liveClip('t1', 160)?.id, 'B', 'B now lasts until C:');
+});
+
+await check('a patch for a clip or track never held is ignored, not invented', () => {
+  const model = loaded();
+  const v = model.version;
+  eq(model.applyClipChange({ type: 'patch', clip: { id: 'X', label: 'ghost' } }), false, 'clip:');
+  eq(model.applyTrackChange({ type: 'patch', track: { id: 'tx', name: 'ghost' } }), false, 'track:');
+  eq(model.clip('X'), null, 'clip lookup:');
+  eq(model.track('tx'), null, 'track lookup:');
+  eq(model.version, v, 'version:');
 });
 
 await check('handed-out objects never change underneath the caller', () => {
   const model = loaded();
   const trackBefore = model.track('t1')!;
   const clipBefore = model.clip('B')!;
-  model.applyClipChange({ type: 'upsert', trackId: 't1', clip: { id: 'B', trackId: 't1', position: 120 } });
+  model.applyClipChange({ type: 'patch', clip: { id: 'B', position: 120 } });
   eq(clipBefore.position, 100, 'old clip:');
   eq(trackBefore.clips.length, 3, 'old track:');
   eq(model.track('t1') !== trackBefore, true, 'new track object:');
@@ -102,10 +124,10 @@ await check('handed-out objects never change underneath the caller', () => {
 
 await check('removing a clip or a track updates lookups and boundaries', () => {
   const model = loaded();
-  eq(model.applyClipChange({ type: 'remove', trackId: 't1', clipId: 'B' }), true, 'removed:');
+  eq(model.applyClipChange({ type: 'remove', clipId: 'B' }), true, 'removed:');
   eq(model.clip('B'), null, 'lookup:');
   eq(model.nextBoundaryAfter(0), 200, 'boundaries:');
-  eq(model.applyClipChange({ type: 'remove', trackId: 't1', clipId: 'B' }), false, 'second remove:');
+  eq(model.applyClipChange({ type: 'remove', clipId: 'B' }), false, 'second remove:');
   model.applyTrackChange({ type: 'remove', trackId: 't1' });
   eq(model.track('t1'), null, 'track:');
   eq(model.clip('A'), null, 'its clips:');
@@ -120,7 +142,7 @@ await check('reorder changes the order tracks come back in', () => {
 
 await check('an upsert for a track not fetched is not invented', () => {
   const model = loaded();
-  model.applyClipChange({ type: 'upsert', trackId: 'ghost', clip: { id: 'X', trackId: 'ghost', position: 5 } });
+  model.applyClipChange({ type: 'upsert', clip: { id: 'X', trackId: 'ghost', position: 5 } });
   eq(model.clip('X'), null, 'clip:');
   eq(model.track('ghost'), null, 'track:');
 });
@@ -128,11 +150,11 @@ await check('an upsert for a track not fetched is not invented', () => {
 await check('the version moves on every change and only then', () => {
   const model = loaded();
   const v = model.version;
-  model.applyClipChange({ type: 'remove', trackId: 't1', clipId: 'nope' });
+  model.applyClipChange({ type: 'remove', clipId: 'nope' });
   eq(model.version, v, 'no-op remove:');
   model.applyTrackChange({ type: 'reorder', order: ['t1', 't2'] });
   eq(model.version, v, 'same order:');
-  model.applyClipChange({ type: 'remove', trackId: 't1', clipId: 'A' });
+  model.applyClipChange({ type: 'remove', clipId: 'A' });
   eq(model.version, v + 1, 'real change:');
 });
 

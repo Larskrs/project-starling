@@ -6,6 +6,7 @@
  *
  * The URL defaults to production, https://cino.no.
  */
+import { normaliseUrl } from 'cino-sdk';
 
 export interface Config {
   baseUrl: string;
@@ -35,7 +36,7 @@ export function resolveConfig(
 ): Config {
   const args = parseArgs(argv);
 
-  const rawUrl     = args.url      ?? env.CINO_URL      ?? 'https://cino.no';
+  const rawUrl     = args.url      ?? env.CINO_URL      ?? 'http://localhost:3000';
   const token      = args.token    ?? env.CINO_TOKEN    ?? '';
   const timelineId = args.timeline ?? env.CINO_TIMELINE ?? '';
 
@@ -53,15 +54,11 @@ export function resolveConfig(
     throw new ConfigError('That does not look like a Cino API token — expected cino_svc_…');
   }
 
-  // The same origin serves REST and the socket, and fetch() only speaks http(s).
-  // A ws(s):// URL is accepted as the natural thing to type and mapped back;
-  // socket.io picks the socket scheme itself.
-  if (!/^(https?|wss?):\/\//.test(rawUrl)) {
+  // The SDK maps a ws(s):// URL back to http(s):// and drops trailing slashes;
+  // checked here too so a bad URL gets the same friendly exit as the rest.
+  try {
+    return { baseUrl: normaliseUrl(rawUrl), token, timelineId };
+  } catch {
     throw new ConfigError(`Invalid URL "${rawUrl}" — expected https://host or http://host:port`);
   }
-  const baseUrl = rawUrl.replace(/^ws(s?):\/\//, 'http$1://');
-
-  // Trailing slashes turn every URL into a double slash, which some proxies
-  // treat as a different path.
-  return { baseUrl: baseUrl.replace(/\/+$/, ''), token, timelineId };
 }

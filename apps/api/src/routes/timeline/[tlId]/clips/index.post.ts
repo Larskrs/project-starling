@@ -5,8 +5,7 @@ import { defineEventHandler, readValidatedBody, createError, getSocketId } from 
 import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
 import { clipDataSchema } from '../../../../lib/clipData.js';
 import { Permission } from '@starling/auth/permissions';
-import { TimelineEvent } from '@starling/realtime';
-import { emitTimelineChange } from '../../../../lib/timelineSockets.js';
+import { timelineRelay } from '../../../../lib/timelineSockets.js';
 
 const bodySchema = z.object({
   trackId:    z.uuid(),
@@ -48,9 +47,8 @@ export default defineEventHandler(async (event) => {
   }).returning();
 
   // Relayed here rather than by the client, so peers do not wait for this
-  // request's round trip to finish first. See emitTimelineChange.
-  emitTimelineChange(timeline.id, TimelineEvent.clipChange,
-    { type: 'upsert', trackId: body.trackId, clip: clip! }, getSocketId(event));
+  // request's round trip to finish first. See timelineRelay.
+  timelineRelay.clipAdded(timeline.id, clip!, getSocketId(event));
 
   return clip!;
 });

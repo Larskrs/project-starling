@@ -67,5 +67,26 @@ check('round-trips framesToTC at whole-number rates', () => {
   }
 });
 
+check('fractional rates count whole frames, so timecode never runs backwards', () => {
+  // Counting seconds at 29.97 but frames at 30 once read 00:00:59:28 → 00:01:00:29 → 00:01:00:00.
+  eq(framesToTC(1798, '29.97'), '00:00:59:28', 'frame 1798:');
+  eq(framesToTC(1799, '29.97'), '00:00:59:29', 'frame 1799:');
+  eq(framesToTC(1800, '29.97'), '00:01:00:00', 'frame 1800:');
+});
+
+check('drop-frame rates skip frame numbers, and negatives keep their sign', () => {
+  eq(framesToTC(1800, '29.97df'), '00:01:00;02', 'first frame of minute 1:');
+  eq(tcToFrames('00:01:00;02', '29.97df'), 1800, 'typed back:');
+  eq(framesToTC(-25, 25), '-00:00:01:00', 'before zero:');
+});
+
+check('round-trips framesToTC at fractional and drop-frame rates', () => {
+  for (const fps of ['23.976', '29.97', '29.97df', '59.94']) {
+    for (const f of [0, 1, 29, 1799, 1800, 17982, 123456]) {
+      eq(tcToFrames(framesToTC(f, fps), fps), f, `${fps}fps frame ${f}:`);
+    }
+  }
+});
+
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

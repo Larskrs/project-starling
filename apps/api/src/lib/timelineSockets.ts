@@ -10,16 +10,13 @@ import { resolveAccessLevel, type AccessLevel, type AccessPrincipal } from './pr
 import { can } from './permissions.js';
 import { Permission } from '@starling/auth/permissions';
 import {
-  TIMELINE_NAMESPACE, TimelineEvent,
-  isClipChange, isTrackChange, isTransportCommand, isClockReport,
-  type ClockResyncAck,
-  type ClipChange, type TrackChange, type PresenceUser, type TransportState,
-  type TransportCommand,
+  PROTOCOL, TIMELINE_NAMESPACE, TimelineEvent,
+  decodeCommand, decodeReport,
+  encodeAnchor, encodeClip, encodeMeasure, encodePatch, encodePresence, encodeProgress, encodeStatus, encodeTrack,
+  type ClockResyncAck, type PresenceSource, type TimelineEventName, type TransportState,
 } from '@starling/realtime';
 
-// Re-exported so existing importers keep working; the definitions now live in
-// @starling/realtime, shared with the web client and any native client.
-export type { ClipChange, TrackChange, PresenceUser, TransportState };
+export type { TransportState };
 
 /** Capabilities resolved once at join and cached on the socket. */
 export interface TimelineCaps {
@@ -45,9 +42,16 @@ export interface TimelineCaps {
 // timer — just the new anchor and one broadcast.
 const roomTransport = new Map<string, TransportState>();
 
-// Seek commands arrive as scrub bursts — bound them per socket.
+/**
+ * Seeks arrive as scrub bursts, and every seek the room takes is a broadcast to
+ * all of it. So the ROOM takes at most one per interval, whoever is scrubbing —
+ * two people scrubbing at once used to double the rate. A seek inside the
+ * interval waits for its end, and a newer one replaces it while it waits, so
+ * the room lands on the last frame of a scrub instead of dropping it.
+ */
 const SEEK_MIN_INTERVAL_MS = 80;
-const lastSeekAt = new Map<string, number>();
+const lastSeekAt   = new Map<string, number>();   // timelineId → server time of the room's last seek
+const pendingSeeks = new Map<string, { frame: number; timer: ReturnType<typeof setTimeout> }>();
 
 /**
  * Wire precision for anything sent on every command. A tenth of a millisecond
@@ -96,21 +100,17 @@ async function resolveTimelineAccess(
   };
 }
 
-// ── Namespace setup ───────────────────────────────────────────────────────────
-
-/** Client-sent relays fan one sender's payload to every peer — bound what that can cost. */
-const MAX_RELAY_BYTES = 32 * 1024;
-
-function relayTooLarge(payload: unknown): boolean {
-  try { return JSON.stringify(payload).length > MAX_RELAY_BYTES; }
-  catch { return true; }
-}
+// ── Relaying persisted changes ────────────────────────────────────────────────
 
 /**
  * Set once the namespace exists, so REST routes can broadcast a write the
- * instant it is persisted. See emitTimelineChange.
+ * instant it is persisted. See timelineRelay.
  */
-let live: LiveRoomContext<TimelineCaps, PresenceUser> | null = null;
+let live: LiveRoomContext<TimelineCaps, PresenceSource> | null = null;
+
+function relay(timelineId: string, event: TimelineEventName, payload: unknown, exceptSocketId: string | null): void {
+  live?.emitExcept(timelineId, exceptSocketId, event, payload);
+}
 
 /**
  * Broadcast a persisted change to everyone watching a timeline.
@@ -128,24 +128,43 @@ let live: LiveRoomContext<TimelineCaps, PresenceUser> | null = null;
  * design depended on ten separate call sites each remembering to relay, with
  * the right payload shape, and a silent desync if any of them forgot.
  *
- * `exceptSocketId` keeps the originator from receiving its own change back —
- * see SOCKET_ID_HEADER. It is optional everywhere: a caller without a socket
- * (curl, a native client, an older build) simply gets the echo, which is
- * idempotent.
+ * An update relays only the fields the request changed, not the whole row: a
+ * rename is a label, not a label plus a dozen columns every peer already holds.
  *
- * No size check here, unlike the client-sent relays below: the payload is a row
- * this server's own route just validated and wrote, bounded by that route's
- * limits (clip `data` at 2 KB). Measuring it would serialise every relay twice —
- * once to count, once for socket.io — to guard against a sender that is us.
+ * `exceptSocketId` keeps the originator from receiving its own change back —
+ * see SOCKET_ID_HEADER. A caller without a socket (curl, a script) simply gets
+ * the echo, which is idempotent.
+ *
+ * No size check: the payload is a row this server's own route just validated
+ * and wrote, bounded by that route's limits (clip `data` at 2 KB).
  */
-export function emitTimelineChange(
-  timelineId: string,
-  event: typeof TimelineEvent.clipChange | typeof TimelineEvent.trackChange,
-  payload: ClipChange | TrackChange,
-  exceptSocketId: string | null = null,
-): void {
-  live?.emitExcept(timelineId, exceptSocketId, event, payload);
-}
+export const timelineRelay = {
+  clipAdded(timelineId: string, row: object, exceptSocketId: string | null): void {
+    relay(timelineId, TimelineEvent.clipAdd, encodeClip(row), exceptSocketId);
+  },
+  /** `fields` are the columns the request wrote; their values are read from the stored row. */
+  clipUpdated(timelineId: string, row: { id: string }, fields: readonly string[], exceptSocketId: string | null): void {
+    relay(timelineId, TimelineEvent.clipUpdate, encodePatch(row, fields), exceptSocketId);
+  },
+  clipRemoved(timelineId: string, clipId: string, exceptSocketId: string | null): void {
+    relay(timelineId, TimelineEvent.clipRemove, clipId, exceptSocketId);
+  },
+  trackAdded(timelineId: string, row: object, exceptSocketId: string | null): void {
+    relay(timelineId, TimelineEvent.trackAdd, encodeTrack(row), exceptSocketId);
+  },
+  trackUpdated(timelineId: string, row: { id: string }, fields: readonly string[], exceptSocketId: string | null): void {
+    relay(timelineId, TimelineEvent.trackUpdate, encodePatch(row, fields), exceptSocketId);
+  },
+  trackRemoved(timelineId: string, trackId: string, exceptSocketId: string | null): void {
+    relay(timelineId, TimelineEvent.trackRemove, trackId, exceptSocketId);
+  },
+  /** The full order the reorder applied; a track's index is its sortOrder. */
+  tracksReordered(timelineId: string, order: readonly string[], exceptSocketId: string | null): void {
+    relay(timelineId, TimelineEvent.trackOrder, order, exceptSocketId);
+  },
+};
+
+// ── Transport ─────────────────────────────────────────────────────────────────
 
 /** Makes `next` the room's transport and tells the whole room. */
 function commitTransport(timelineId: string, next: TransportState): void {
@@ -154,41 +173,78 @@ function commitTransport(timelineId: string, next: TransportState): void {
   // everyone was sent.
   const trimmed: TransportState = { ...next, frame: trimFrame(next.frame), at: trimMs(next.at) };
   roomTransport.set(timelineId, trimmed);
-  live.emit(timelineId, TimelineEvent.transportState, trimmed);
+  live.emit(timelineId, TimelineEvent.transportState, encodeAnchor(trimmed));
 }
+
+function cancelSeek(timelineId: string): void {
+  const pending = pendingSeeks.get(timelineId);
+  if (pending) clearTimeout(pending.timer);
+  pendingSeeks.delete(timelineId);
+}
+
+/** A seek is only a new anchor: no query, no timer beyond the interval, one small broadcast. */
+function seek(timelineId: string, frame: number): void {
+  const prev = roomTransport.get(timelineId);
+  // Stopped timelines are browsed privately — shared seeks exist only while the
+  // transport runs.
+  if (!prev?.playing) {
+    cancelSeek(timelineId);
+    return;
+  }
+
+  const now  = serverNow();
+  const wait = SEEK_MIN_INTERVAL_MS - (now - (lastSeekAt.get(timelineId) ?? -Infinity));
+  if (wait > 0) {
+    const pending = pendingSeeks.get(timelineId);
+    if (pending) { pending.frame = frame; return; }
+    const timer = setTimeout(() => {
+      const latest = pendingSeeks.get(timelineId);
+      pendingSeeks.delete(timelineId);
+      if (latest) seek(timelineId, latest.frame);
+    }, wait);
+    timer.unref?.();
+    pendingSeeks.set(timelineId, { frame, timer });
+    return;
+  }
+
+  lastSeekAt.set(timelineId, now);
+  commitTransport(timelineId, { ...prev, frame, at: now });
+}
+
+// ── Namespace setup ───────────────────────────────────────────────────────────
 
 export function setupTimelineSockets(io: SocketIOServer): void {
   // Room-wide clock resync. The rules are in clockResync.ts; this wires them to
   // the room — who is asked, where progress goes, and how a held Play starts.
   const resyncs = createClockResyncs({
-    now:     serverNow,
-    measure: (timelineId, request) => live?.emit(timelineId, TimelineEvent.clockMeasure, request),
-    publish: (timelineId, status) => live?.emit(timelineId, TimelineEvent.clockStatus, status),
+    measure:  (timelineId, request) => live?.emit(timelineId, TimelineEvent.clockMeasure, encodeMeasure(request)),
+    publish:  (timelineId, status) => live?.emit(timelineId, TimelineEvent.clockStatus, encodeStatus(status)),
+    progress: (timelineId, update) => live?.emit(timelineId, TimelineEvent.clockProgress, encodeProgress(update)),
     // Stamped when it is released, not when it was pressed: every clock has just
     // been measured, and the anchor must describe the moment playback begins.
     releasePlay: (timelineId, play) => commitTransport(timelineId, {
       playing:   true,
       frame:     play.frame,
       frameRate: play.frameRate,
-      userId:    play.userId,
       at:        serverNow(),
     }),
   });
 
-  live = createLiveRoom<TimelineCaps, PresenceUser>(io, {
-    namespace:     TIMELINE_NAMESPACE,
-    roomPrefix:    'tl',
-    joinEvent:     TimelineEvent.join,
-    leaveEvent:    TimelineEvent.leave,
-    presenceEvent: TimelineEvent.presence,
-    roomIdField:   'timelineId',
+  live = createLiveRoom<TimelineCaps, PresenceSource>(io, {
+    namespace:      TIMELINE_NAMESPACE,
+    roomPrefix:     'tl',
+    joinEvent:      TimelineEvent.join,
+    leaveEvent:     TimelineEvent.leave,
+    presenceEvent:  TimelineEvent.presence,
+    protocol:       PROTOCOL,
+    encodePresence,
 
     async authorize({ user, principal }, timelineId) {
       const resolved = await resolveTimelineAccess(principal, timelineId);
       if (!resolved) return null;
 
       return {
-        // Resolved ONCE here so the relays below never hit the database, no
+        // Resolved ONCE here so the handlers below never hit the database, no
         // matter how many events a room produces.
         caps: {
           canEdit:      accessGrants(resolved.level, user, Permission.EDIT_TIMELINE),
@@ -201,7 +257,9 @@ export function setupTimelineSockets(io: SocketIOServer): void {
           id:            user.id,
           name:          user.name,
           avatarImageId: user.avatarImageId,
-          createdAt:     user.createdAt,
+          // A token's createdAt is only the moment it connected: nothing an
+          // avatar colour should come from, and nothing worth sending.
+          createdAt:     principal.kind === 'token' ? null : user.createdAt,
         },
       };
     },
@@ -223,16 +281,20 @@ export function setupTimelineSockets(io: SocketIOServer): void {
         });
       }
 
-      // A clock sync in progress: show the joiner the panel everyone else sees.
-      // It was not asked to measure — connecting has just made it measure anyway.
+      // What the joiner needs to know about the room rides the ack. An ACTIVE
+      // timeline is shared: the joiner receives the authoritative anchor and
+      // derives the current frame from it — anchors never go stale. A stopped
+      // timeline is browsed privately, so there is nothing to replay. A clock
+      // sync in progress is shown whole; the joiner was not asked to measure,
+      // but connecting has just made it measure anyway.
+      const state  = roomTransport.get(timelineId);
       const resync = resyncs.measuring(timelineId);
-      if (resync) socket.emit(TimelineEvent.clockStatus as never, resync as never);
-
-      // An ACTIVE timeline is shared: the joiner receives the authoritative
-      // anchor and derives the current frame from it — anchors never go stale.
-      // A stopped timeline is browsed privately, so there is nothing to replay.
-      const state = roomTransport.get(timelineId);
-      if (state?.playing) socket.emit(TimelineEvent.transportState as never, state as never);
+      return {
+        canEdit:   caps.canEdit,
+        canRename: caps.canRename,
+        ...(state?.playing ? { anchor: encodeAnchor(state) } : {}),
+        ...(resync ? { sync: encodeStatus(resync) } : {}),
+      };
     },
 
     onLeaving(socket, timelineId) {
@@ -242,46 +304,13 @@ export function setupTimelineSockets(io: SocketIOServer): void {
 
     onRoomEmpty(timelineId) {
       roomTransport.delete(timelineId);
+      cancelSeek(timelineId);
+      lastSeekAt.delete(timelineId);
       resyncs.clear(timelineId);
     },
 
     events(socket, ctx) {
       const user = socket.data.user;
-
-      // ── Client-initiated relays (compatibility path) ───────────────────
-      // Persisted changes now fan out from the REST routes themselves, which is
-      // both faster and impossible to forget. These handlers stay for clients
-      // that still relay by hand — notably the native client documented in
-      // docs/swiftSocket.md — and are exactly as guarded as they always were.
-      //
-      // A client that sends BOTH (an old web build against a new server) makes a
-      // peer apply the same row twice. Upserts are idempotent, so that is
-      // wasteful rather than wrong.
-      socket.on(TimelineEvent.clipChange as never, ((raw: unknown) => {
-        const change = raw as ClipChange;
-        const timelineId = socket.data.roomId;
-        const caps = socket.data.caps;
-        if (!timelineId || !caps) return;
-        if (!caps.canEdit && !caps.canRename) return;
-        if (!isClipChange(raw)) return;
-        // Rename-only members persist label PATCHes (upserts); they have no REST
-        // path to a remove, so they get no relay for one either.
-        if (!caps.canEdit && change.type !== 'upsert') return;
-        if (relayTooLarge(change)) return;
-
-        ctx.emitExcept(timelineId, socket.id, TimelineEvent.clipChange, change);
-      }) as never);
-
-      socket.on(TimelineEvent.trackChange as never, ((raw: unknown) => {
-        const change = raw as TrackChange;
-        const timelineId = socket.data.roomId;
-        const caps = socket.data.caps;
-        if (!timelineId || !caps?.canEdit) return;
-        if (!isTrackChange(raw)) return;
-        if (relayTooLarge(change)) return;
-
-        ctx.emitExcept(timelineId, socket.id, TimelineEvent.trackChange, change);
-      }) as never);
 
       // ── Transport ──────────────────────────────────────────────────────
       // The server OWNS the clock. A command updates the room's anchor and the
@@ -289,56 +318,42 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       // sender, so every client derives its position from the same anchor.
       // Stays at join level — any member may drive the shared transport.
       socket.on(TimelineEvent.transportCommand as never, ((raw: unknown) => {
-        const cmd = raw as TransportCommand;
         const timelineId = socket.data.roomId;
-        if (!timelineId || !isTransportCommand(raw)) return;
+        const cmd = decodeCommand(raw);
+        if (!timelineId || !cmd) return;
 
+        if (cmd.action === 'seek') {
+          seek(timelineId, cmd.frame!);
+          return;
+        }
+
+        // A play or a pause is newer intent than any seek still waiting its turn.
+        cancelSeek(timelineId);
         const now  = serverNow();
         const prev = roomTransport.get(timelineId);
+        const frameRate = socket.data.caps?.frameRate ?? 25;
 
-        let next: TransportState;
         if (cmd.action === 'play') {
           // The room's clocks are being re-measured for a show. Hold the Play;
           // it starts on a fresh anchor the moment every client has answered
           // (releasePlay above). An anchor stamped now would be read by clients
           // whose estimate is still settling, and they would start apart.
-          const held = resyncs.holdPlay(timelineId, {
-            frame:     cmd.frame!,
-            frameRate: socket.data.caps?.frameRate ?? 25,
-            userId:    user.id,
-          });
-          if (held) return;
-          next = {
-            playing:   true,
-            frame:     cmd.frame!,
-            frameRate: socket.data.caps?.frameRate ?? 25,
-            userId:    user.id,
-            at:        now,
-          };
-        } else if (cmd.action === 'seek') {
-          // Stopped timelines are browsed privately — shared seeks exist only
-          // while the transport runs. Scrub bursts are rate-bounded per socket.
-          // A seek is only a new anchor: no query, no timer, one small broadcast.
-          if (!prev?.playing) return;
-          if (lastSeekAt.get(socket.id) && now - lastSeekAt.get(socket.id)! < SEEK_MIN_INTERVAL_MS) return;
-          lastSeekAt.set(socket.id, now);
-          next = { ...prev, frame: cmd.frame!, userId: user.id, at: now };
-        } else {
-          // A pause also takes back a Play that is waiting on a clock sync.
-          resyncs.cancelPlay(timelineId);
-          // pause: idempotent, and the frame comes from the SERVER clock rather
-          // than the client, so everyone stops at the authoritative spot.
-          if (!prev?.playing) return;
-          next = {
-            playing:   false,
-            frame:     prev.frame + ((now - prev.at) / 1000) * prev.frameRate,
-            frameRate: prev.frameRate,
-            userId:    user.id,
-            at:        now,
-          };
+          if (resyncs.holdPlay(timelineId, { frame: cmd.frame!, frameRate })) return;
+          commitTransport(timelineId, { playing: true, frame: cmd.frame!, frameRate, at: now });
+          return;
         }
 
-        commitTransport(timelineId, next);
+        // A pause also takes back a Play that is waiting on a clock sync.
+        resyncs.cancelPlay(timelineId);
+        // pause: idempotent, and the frame comes from the SERVER clock rather
+        // than the client, so everyone stops at the authoritative spot.
+        if (!prev?.playing) return;
+        commitTransport(timelineId, {
+          playing:   false,
+          frame:     prev.frame + ((now - prev.at) / 1000) * prev.frameRate,
+          frameRate: prev.frameRate,
+          at:        now,
+        });
       }) as never);
 
       socket.on(TimelineEvent.timePing as never, ((ack: unknown) => {
@@ -351,8 +366,9 @@ export function setupTimelineSockets(io: SocketIOServer): void {
       // Join-level, like the transport it protects: anyone who may press Play
       // may make sure the room is ready for it. Every socket in the room is
       // asked — a user with two tabs has two clocks.
-      socket.on(TimelineEvent.clockResync as never, ((_payload: unknown, ack?: unknown) => {
-        const reply = typeof ack === 'function' ? ack as (result: ClockResyncAck) => void : () => {};
+      socket.on(TimelineEvent.clockResync as never, ((...args: unknown[]) => {
+        const ack = args.find(arg => typeof arg === 'function') as ((result: ClockResyncAck) => void) | undefined;
+        const reply = ack ?? (() => {});
         const timelineId = socket.data.roomId;
         if (!timelineId) { reply({ error: 'Not in a timeline' }); return; }
 
@@ -362,17 +378,16 @@ export function setupTimelineSockets(io: SocketIOServer): void {
           return member ? [{ socketId, id: member.data.user.id as string, name: member.data.user.name as string }] : [];
         });
 
-        const { requestId } = resyncs.start(timelineId, { id: user.id, name: user.name }, clients);
+        const { requestId } = resyncs.start(timelineId, { name: user.name }, clients);
         reply({ ok: true, requestId });
       }) as never);
 
       socket.on(TimelineEvent.clockReport as never, ((raw: unknown) => {
         const timelineId = socket.data.roomId;
-        if (!timelineId || !isClockReport(raw)) return;
-        resyncs.report(timelineId, socket.id, raw);
+        const report = decodeReport(raw);
+        if (!timelineId || !report) return;
+        resyncs.report(timelineId, socket.id, report);
       }) as never);
-
-      socket.on('disconnect', () => { lastSeekAt.delete(socket.id); });
     },
   });
 }

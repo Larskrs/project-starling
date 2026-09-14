@@ -9,6 +9,8 @@ await check('non-drop rates count whole frames', () => {
   eq(toTimecode(90_000, 25), '01:00:00:00', 'an hour:');
   eq(fromTimecode('00:00:03:15', '25'), 90, 'back:');
   eq(toTimecode(59.6, '60'), '00:00:01:00', 'rounds to the nearest frame:');
+  eq(toTimecode(9_000_000, 25), '100:00:00:00', 'past 99 hours:');
+  eq(fromTimecode('100:00:00:00', 25), 9_000_000, 'back past 99 hours:');
 });
 
 await check('drop-frame skips frame numbers, not frames', () => {

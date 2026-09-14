@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type { ClockMeasureRequest, ClockReport, ClockSyncStatus } from '@starling/realtime';
+import type {
+  ClockClientStatus, ClockMeasureRequest, ClockReport, ClockSyncProgress, ClockSyncStatus,
+} from '@starling/realtime';
 
 /**
  * Room-wide clock resync — the rules, without sockets or real timers.
@@ -15,12 +17,24 @@ import type { ClockMeasureRequest, ClockReport, ClockSyncStatus } from '@starlin
  * a closed laptop or an older client that does not know the event cannot hold
  * the room — it is listed as not answering, and the Play goes ahead.
  *
- * Pure apart from the injected clock, timers and emitters, so the rules are
- * pinned down in clockResync.test.ts; timelineSockets.ts wires it to the room.
+ * Pure apart from the injected timers and emitters, so the rules are pinned
+ * down in clockResync.test.ts; timelineSockets.ts wires it to the room.
  */
 
 /** Long enough for a five-ping burst over long-polling; short enough that nobody waits on a dead device. */
 export const RESYNC_DEADLINE_MS = 4_000;
+
+/**
+ * How often, at most, the room hears a run's progress.
+ *
+ * Every report used to re-send the whole client table to the whole room, so a
+ * run in a room of n sent n tables of n entries to each of n sockets — all of it
+ * in the four seconds before a show. The room is now sent the table once, as the
+ * run starts, and after that only the clients whose answer came in, gathered for
+ * up to this long. What people wait on is never gathered: a held Play and the
+ * end of the run go out at once.
+ */
+export const RESYNC_PROGRESS_MS = 250;
 
 export interface ResyncClient {
   socketId: string;
@@ -32,28 +46,40 @@ export interface ResyncClient {
 export interface HeldPlay {
   frame: number;
   frameRate: number;
-  userId: string;
 }
 
 export interface ClockResyncOptions {
-  /** The server clock (serverNow). */
-  now: () => number;
   /** Ask every client in the room to re-measure. */
   measure: (roomId: string, request: ClockMeasureRequest) => void;
-  /** Broadcast a run's progress. Receives a copy; mutating it changes nothing. */
+  /** Broadcast a run whole, as it starts. Receives a copy; mutating it changes nothing. */
   publish: (roomId: string, status: ClockSyncStatus) => void;
+  /** Broadcast what changed since the room last heard. */
+  progress: (roomId: string, progress: ClockSyncProgress) => void;
   /** The run ended with a Play waiting: start it now. */
   releasePlay: (roomId: string, play: HeldPlay) => void;
   deadlineMs?: number;
+  progressMs?: number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
   newId?: () => string;
 }
 
+/** The server's copy keeps each client's socket, which is how a report is matched to it. */
+interface RunClient extends ClockClientStatus {
+  socketId: string;
+}
+
+interface RunStatus extends ClockSyncStatus {
+  clients: RunClient[];
+}
+
 interface Run {
-  status: ClockSyncStatus;
-  timer: unknown;
+  status: RunStatus;
+  deadline: unknown;
   held: HeldPlay | null;
+  /** Indexes of clients whose latest state the room has not been sent. */
+  unsent: Set<number>;
+  progressTimer: unknown;
 }
 
 const realSetTimer = (fn: () => void, ms: number): unknown => {
@@ -62,48 +88,91 @@ const realSetTimer = (fn: () => void, ms: number): unknown => {
   return timer;
 };
 
+/**
+ * Eight hex digits. A run id is repeated in every measure request, report and
+ * progress message, and only has to tell this room's runs apart.
+ */
+const shortId = (): string => randomUUID().slice(0, 8);
+
 export function createClockResyncs({
-  now,
   measure,
   publish,
+  progress,
   releasePlay,
   deadlineMs = RESYNC_DEADLINE_MS,
+  progressMs = RESYNC_PROGRESS_MS,
   setTimer = realSetTimer,
   clearTimer = handle => clearTimeout(handle as ReturnType<typeof setTimeout>),
-  newId = randomUUID,
+  newId = shortId,
 }: ClockResyncOptions) {
   const runs = new Map<string, Run>();
 
-  const announce = (roomId: string, run: Run) => publish(roomId, structuredClone(run.status));
+  /** Tells the room what changed, now. */
+  function sendProgress(roomId: string, run: Run): void {
+    if (run.progressTimer !== null) {
+      clearTimer(run.progressTimer);
+      run.progressTimer = null;
+    }
+    const changes = [...run.unsent].sort((a, b) => a - b).map((index) => {
+      const { state, rtt } = run.status.clients[index]!;
+      return { index, state, rtt };
+    });
+    run.unsent.clear();
+    progress(roomId, {
+      requestId: run.status.requestId,
+      state:     run.status.state,
+      playHeld:  run.status.playHeld,
+      changes,
+    });
+  }
+
+  /** Tells the room what changed soon, together with whatever else changes meanwhile. */
+  function queueProgress(roomId: string, run: Run): void {
+    if (run.progressTimer !== null) return;
+    run.progressTimer = setTimer(() => {
+      run.progressTimer = null;
+      sendProgress(roomId, run);
+    }, progressMs);
+  }
 
   function finish(roomId: string): void {
     const run = runs.get(roomId);
     if (!run || run.status.state !== 'measuring') return;
-    clearTimer(run.timer);
+    clearTimer(run.deadline);
 
-    for (const client of run.status.clients) {
-      if (client.state === 'waiting') client.state = 'no-report';
-    }
-    run.status.state      = 'done';
-    run.status.finishedAt = now();
-    run.status.playHeld   = false;
+    run.status.clients.forEach((client, index) => {
+      if (client.state !== 'waiting') return;
+      client.state = 'no-report';
+      run.unsent.add(index);
+    });
+    run.status.state    = 'done';
+    run.status.playHeld = false;
 
     const held = run.held;
     run.held = null;
     // The room hears that the run ended BEFORE the Play's anchor arrives, so no
     // client ever sees playback start while its panel still says "measuring".
-    announce(roomId, run);
+    sendProgress(roomId, run);
     if (held) releasePlay(roomId, held);
   }
 
-  function progress(roomId: string, run: Run): void {
+  function answered(roomId: string, run: Run, index: number): void {
+    run.unsent.add(index);
     if (run.status.clients.every(c => c.state !== 'waiting')) finish(roomId);
-    else announce(roomId, run);
+    else queueProgress(roomId, run);
   }
 
   function measuringRun(roomId: string): Run | null {
     const run = runs.get(roomId);
     return run?.status.state === 'measuring' ? run : null;
+  }
+
+  /** A client of the run in progress that has not answered yet, by socket. */
+  function waitingClient(roomId: string, socketId: string): { run: Run; index: number } | null {
+    const run = measuringRun(roomId);
+    const index = run ? run.status.clients.findIndex(c => c.socketId === socketId) : -1;
+    if (!run || index === -1 || run.status.clients[index]!.state !== 'waiting') return null;
+    return { run, index };
   }
 
   return {
@@ -112,53 +181,51 @@ export function createClockResyncs({
      * is running joins it rather than restarting it — two operators pressing at
      * once should not make the room measure twice.
      */
-    start(roomId: string, requestedBy: { id: string; name: string }, clients: ResyncClient[]): { requestId: string; joined: boolean } {
+    start(roomId: string, requestedBy: { name: string }, clients: ResyncClient[]): { requestId: string; joined: boolean } {
       const current = measuringRun(roomId);
       if (current) return { requestId: current.status.requestId, joined: true };
 
       const run: Run = {
-        held:  null,
-        timer: null,
+        held:          null,
+        deadline:      null,
+        progressTimer: null,
+        unsent:        new Set(),
         status: {
-          requestId:  newId(),
-          state:      'measuring',
-          requestedBy,
-          startedAt:  now(),
-          finishedAt: null,
+          requestId:   newId(),
+          state:       'measuring',
+          requestedBy: { name: requestedBy.name },
           deadlineMs,
-          playHeld:   false,
-          clients:    clients.map(c => ({ ...c, state: 'waiting' as const, rtt: null })),
+          playHeld:    false,
+          clients:     clients.map(c => ({ ...c, state: 'waiting' as const, rtt: null })),
         },
       };
       runs.set(roomId, run);
-      run.timer = setTimer(() => finish(roomId), deadlineMs);
+      run.deadline = setTimer(() => finish(roomId), deadlineMs);
 
       measure(roomId, { requestId: run.status.requestId, deadlineMs });
-      announce(roomId, run);
+      publish(roomId, structuredClone(run.status));
       if (clients.length === 0) finish(roomId);
       return { requestId: run.status.requestId, joined: false };
     },
 
     /** A client's answer. Late, foreign and repeated reports change nothing. */
     report(roomId: string, socketId: string, report: ClockReport): boolean {
-      const run = measuringRun(roomId);
-      if (!run || run.status.requestId !== report.requestId) return false;
-      const client = run.status.clients.find(c => c.socketId === socketId);
-      if (!client || client.state !== 'waiting') return false;
+      const found = waitingClient(roomId, socketId);
+      if (!found || found.run.status.requestId !== report.requestId) return false;
 
+      const client = found.run.status.clients[found.index]!;
       client.state = report.rtt === null ? 'failed' : 'synced';
       client.rtt   = report.rtt;
-      progress(roomId, run);
+      answered(roomId, found.run, found.index);
       return true;
     },
 
     /** A socket left the room. Counts as answered, so it cannot hold a Play. */
     leave(roomId: string, socketId: string): void {
-      const run = measuringRun(roomId);
-      const client = run?.status.clients.find(c => c.socketId === socketId && c.state === 'waiting');
-      if (!run || !client) return;
-      client.state = 'left';
-      progress(roomId, run);
+      const found = waitingClient(roomId, socketId);
+      if (!found) return;
+      found.run.status.clients[found.index]!.state = 'left';
+      answered(roomId, found.run, found.index);
     },
 
     /** Holds a Play if a run is going. Returns false when there is nothing to wait for. */
@@ -168,7 +235,7 @@ export function createClockResyncs({
       run.held = play;   // the newest intent wins, as it does for any transport command
       if (!run.status.playHeld) {
         run.status.playHeld = true;
-        announce(roomId, run);
+        sendProgress(roomId, run);
       }
       return true;
     },
@@ -179,20 +246,23 @@ export function createClockResyncs({
       if (!run?.held) return false;
       run.held = null;
       run.status.playHeld = false;
-      announce(roomId, run);
+      sendProgress(roomId, run);
       return true;
     },
 
-    /** The run in progress, for a client joining mid-run; null when none is. */
+    /** The run in progress, whole, for a client joining mid-run; null when none is. */
     measuring(roomId: string): ClockSyncStatus | null {
       const run = measuringRun(roomId);
       return run ? structuredClone(run.status) : null;
     },
 
-    /** The room emptied: drop its run and its deadline. */
+    /** The room emptied: drop its run, its deadline, and anything it had yet to say. */
     clear(roomId: string): void {
       const run = runs.get(roomId);
-      if (run) clearTimer(run.timer);
+      if (run) {
+        clearTimer(run.deadline);
+        if (run.progressTimer !== null) clearTimer(run.progressTimer);
+      }
       runs.delete(roomId);
     },
   };

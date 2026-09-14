@@ -145,7 +145,7 @@ await check('an edit that moves the boundary cancels the timer for the old one',
   h.goTo(99.25);
   h.scheduler.tick();
   const timer = h.armed()[0]!;
-  h.model.applyClipChange({ type: 'upsert', trackId: 't1', clip: { id: 'B', trackId: 't1', position: 120, end: 50 } });
+  h.model.applyClipChange({ type: 'upsert', clip: { id: 'B', trackId: 't1', position: 120, end: 50 } });
   h.scheduler.invalidate();
   eq(timer.cancelled, true, 'cancelled:');
   h.scheduler.tick();
@@ -157,7 +157,7 @@ await check('an edit to the live clip is not announced as a change', () => {
   const h = harness();
   h.play(50);
   h.scheduler.tick();
-  h.model.applyClipChange({ type: 'upsert', trackId: 't1', clip: { id: 'A', trackId: 't1', position: 0, label: 'Opening' } });
+  h.model.applyClipChange({ type: 'patch', clip: { id: 'A', label: 'Opening' } });
   h.scheduler.tick();
   eq(h.events.length, 1, 'events:');
   eq(h.scheduler.announced('t1')?.label, 'Opening', 'newest copy remembered:');

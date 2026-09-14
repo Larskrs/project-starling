@@ -5,8 +5,7 @@ import { defineEventHandler, getRouterParam, readValidatedBody, createError, pic
 import { requireTimelineParam, requirePermission, assertTrackUnlocked } from '../../../../lib/production.js';
 import { clipDataSchema } from '../../../../lib/clipData.js';
 import { Permission } from '@starling/auth/permissions';
-import { TimelineEvent } from '@starling/realtime';
-import { emitTimelineChange } from '../../../../lib/timelineSockets.js';
+import { timelineRelay } from '../../../../lib/timelineSockets.js';
 
 const bodySchema = z.object({
   label:      z.string().max(256).optional(),
@@ -46,8 +45,8 @@ export default defineEventHandler(async (event) => {
     .where(eq(clips.id, clipId))
     .returning();
 
-  emitTimelineChange(ctx.timeline.id, TimelineEvent.clipChange,
-    { type: 'upsert', trackId: updated!.trackId, clip: updated! }, getSocketId(event));
+  // Only the columns this request wrote travel; peers already hold the rest.
+  timelineRelay.clipUpdated(ctx.timeline.id, updated!, Object.keys(update), getSocketId(event));
 
   return updated;
 });

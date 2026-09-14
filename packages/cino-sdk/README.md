@@ -24,6 +24,12 @@ try {
 }
 ```
 
+A request that never reaches the server, or whose response has not started within `timeoutMs`, throws a `CinoApiError` with `status` 0. The default is 30 seconds, and `0` waits forever. Reading a body is never cut off, so long downloads are safe. A success that is not JSON, such as a captive portal's page, throws one too.
+
+```ts
+const cino = new Cino({ url, token, timeoutMs: 10_000 });
+```
+
 ## REST
 
 ```ts
@@ -117,8 +123,11 @@ The events:
 | `token` | The token's expiry, after every fetch. |
 | `disconnected` | Clips and cues keep coming from the last known state. |
 | `authFailed` | The client has stopped for good. |
+| `incompatible` | The server speaks another wire protocol. The client has stopped; `message` says whether cino-sdk or the server needs updating. |
 | `error` | Something that is retried. |
 | `stall` | The process froze. Anything due during the freeze was late. |
+
+cino-sdk 0.2 speaks wire protocol 2, and needs a server that does too.
 
 ## Timecode
 
@@ -131,7 +140,7 @@ fromTimecode('00:10:00;00', '29.97df');        // 17982
 
 ## Building blocks
 
-The pieces `connect` is built from are exported too: `createServerClock`, `startClockSync`, `createTimelineModel`, `createClipScheduler`, `createCueScheduler`, `createClockStatusWatch`, and the wire protocol (`TimelineEvent`, payload types and guards). See the timing guide in `docs/integrations/timing.md`.
+The pieces `connect` is built from are exported too: `createServerClock`, `startClockSync`, `createTimelineModel`, `createClipScheduler`, `createCueScheduler`, `createClockStatusWatch`, and the wire protocol (`TimelineEvent`, payload types and guards). The integration guide in `docs/integrations` explains how they fit together, and `docs/examples` has complete devices built on the SDK.
 
 ## Development
 

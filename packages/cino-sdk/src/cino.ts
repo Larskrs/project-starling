@@ -12,6 +12,8 @@ export interface CinoOptions {
   token: string;
   /** Replaces the global fetch. */
   fetch?: typeof fetch;
+  /** Give up on a request whose response has not started after this many ms. 0 waits forever. Default 30 000. */
+  timeoutMs?: number;
   /** Replaces socket.io-client's `io`. */
   io?: SocketFactory;
 }
@@ -33,10 +35,10 @@ export class Cino {
   readonly #http: Http;
   readonly #io: SocketFactory;
 
-  constructor({ url, token, fetch, io }: CinoOptions) {
+  constructor({ url, token, fetch, timeoutMs, io }: CinoOptions) {
     if (!token) throw new TypeError('cino-sdk: a token is required');
     this.url = normaliseUrl(url);
-    this.#http = new Http({ baseUrl: this.url, token, fetch });
+    this.#http = new Http({ baseUrl: this.url, token, fetch, timeoutMs });
     this.#io = io ?? socketIo;
     this.files = new FilesApi(this.#http);
     this.folders = new FoldersApi(this.#http);

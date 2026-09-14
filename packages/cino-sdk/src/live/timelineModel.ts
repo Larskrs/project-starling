@@ -134,7 +134,7 @@ export function createTimelineModel() {
 
     applyClipChange(change: ClipChange): boolean {
       if (change.type === 'remove') {
-        const track = tracks.get(clipHome.get(change.clipId) ?? change.trackId);
+        const track = tracks.get(clipHome.get(change.clipId) ?? '');
         if (!track?.clips.some(c => c.id === change.clipId)) return false;
         putTrack(withoutClip(track, change.clipId));
         clipHome.delete(change.clipId);
@@ -145,22 +145,27 @@ export function createTimelineModel() {
       const id = change.clip.id;
       const previousHome = clipHome.get(id);
       const previous = previousHome ? tracks.get(previousHome)?.clips.find(c => c.id === id) : undefined;
-      // Relays carry the raw row without the bootstrap's joined fields, so merge.
-      const row = { ...(previous?.row ?? {}), ...change.clip, id };
+      // A patch is only the fields that changed. There is nothing to apply one to
+      // for a clip never held, and a clip invented from it would have no position.
+      if (change.type === 'patch' && !previous) return false;
+      // Merged either way: a created row lacks the bootstrap's joined fields, and
+      // a patch lacks everything it did not change.
+      const row: Record<string, unknown> & { id: string } = { ...(previous?.row ?? {}), ...change.clip, id };
+      const trackId = typeof row.trackId === 'string' ? row.trackId : previousHome!;
 
-      if (previousHome && previousHome !== change.trackId) {
+      if (previousHome && previousHome !== trackId) {
         const old = tracks.get(previousHome);
         if (old) putTrack(withoutClip(old, id));
       }
 
-      const target = tracks.get(change.trackId);
+      const target = tracks.get(trackId);
       if (!target) {
         clipHome.delete(id);
         changed();
         return true;
       }
 
-      putTrack(toTrack(target.row as TrackRow, [...target.clips.filter(c => c.id !== id), toClip(row, change.trackId)]));
+      putTrack(toTrack(target.row as TrackRow, [...target.clips.filter(c => c.id !== id), toClip(row, trackId)]));
       changed();
       return true;
     },
@@ -188,6 +193,7 @@ export function createTimelineModel() {
       }
 
       const existing = tracks.get(change.track.id);
+      if (change.type === 'patch' && !existing) return false;
       putTrack(toTrack({ ...(existing?.row ?? {}), ...change.track, id: change.track.id }, existing?.clips ?? []));
       changed();
       return true;

@@ -48,6 +48,10 @@ If the role is deleted, the token keeps working as a credential but holds **no
 permissions at all**. It fails visibly with `403`s rather than quietly picking up
 someone else's access.
 
+Give each device the smallest role that does its job. A device that only
+follows the timeline, like the [camera switcher](../examples/camera-switcher.md),
+needs nothing beyond `VIEW`.
+
 ---
 
 ## What a token cannot reach
@@ -62,9 +66,8 @@ This matters more than it looks. Several of those routes filter by the caller's
 user id rather than by a production, so a token allowed through would report on
 the account of whoever issued it.
 
-The same rule holds for sockets. A token may connect to the `/timeline`
-namespace only. The root namespace is chat between people, and refuses a token
-with `errors.auth.tokenNotPermitted`.
+The same rule holds for sockets. A token may connect to the live timeline only.
+Chat between people is refused with `errors.auth.tokenNotPermitted`.
 
 ---
 
@@ -87,83 +90,92 @@ keep: it is how you find the tokens nobody remembers issuing.
 
 ---
 
-## Sending the token over REST
+## Using the token
 
-```
-Authorization: Bearer cino_svc_8f2c1a94e0b34d7f9a61c2d5b7e08f13_R7pQ...
-```
+```ts
+import { Cino } from 'cino-sdk';
 
-```bash
-curl -s "https://cino.no/api/timeline/$TIMELINE_ID" \
-  -H "Authorization: Bearer $CINO_TOKEN"
-```
-
-Send no cookies. If a request carries both a session cookie and a bearer token
-the token wins, so a misconfigured proxy cannot quietly upgrade a device to a
-person's access.
-
-Every successful response carries the token's expiry in `X-Cino-Token-Expires`.
-See [expiry and revocation](./lifecycle.md) for what to do with it.
-
-## Sending the token over Socket.IO
-
-The token goes in the handshake `auth` payload, not in a header. Browsers
-cannot set headers on a WebSocket upgrade, and one form means one code path on
-the server.
-
-```js
-import { io } from 'socket.io-client';
-
-const socket = io('https://cino.no/timeline', {
-  path: '/socket',
-  // Start on long-polling and upgrade when the network allows it. cino.no's
-  // proxy does not forward WebSocket upgrades, so a websocket-only client
-  // never connects there.
-  transports: ['polling', 'websocket'],
-  auth: { token: process.env.CINO_TOKEN },
+const cino = new Cino({
+  url: 'https://cino.no',            // the server that issued the token
+  token: process.env.CINO_TOKEN!,
 });
 ```
 
-Native clients send no `Origin` header. The server's allowlist permits that
-explicitly, so there is no CORS configuration to do.
+One `Cino` holds one token. Every REST call it makes sends the token as
+`Authorization: Bearer …`, and `cino.connect()` sends it in the socket handshake.
+It sends no cookies, and if a request ever carried both a session cookie and a
+token, the token would win, so a misconfigured proxy cannot quietly upgrade a
+device to a person's access.
+
+A token belongs to the server that issued it. One made on a local development
+server is refused by cino.no with `errors.auth.tokenInvalid`, and the other way
+round, so point `url` at the server you created it on.
+
+**Keep the token where visitors cannot reach it.** Put it in an environment
+variable or a file only the device's service account can read, and never in
+source control. A token inside a web page's JavaScript is a token anyone who
+opens the page can copy. If your device's interface is a browser, keep the token
+on a small server beside it, as the [control panel](../examples/control-panel.md)
+does.
 
 ---
 
-## Failure shapes
+## When a request is refused
 
-| Status | `errorKey` | Meaning |
+A refused request throws a `CinoApiError`:
+
+```ts
+import { CinoApiError } from 'cino-sdk';
+
+try {
+  await cino.timeline(timelineId).clips.create({ trackId, position: 1500, label: 'Cue 13' });
+} catch (err) {
+  if (!(err instanceof CinoApiError)) throw err;
+  if (err.missingPermission) console.error(`the token's role needs ${err.missingPermission}`);
+  else if (err.isAuth) console.error(`the token no longer works: ${err.errorKey}`);
+  else if (err.status === 423) console.error('someone locked that track in the editor');
+  else throw err;
+}
+```
+
+| `status` | `errorKey` | Meaning |
 | --- | --- | --- |
+| 0 | — | The request never reached the server, or no response started within `timeoutMs` (30 seconds unless you set it) |
 | 401 | `errors.auth.tokenInvalid` | Unknown, malformed, or revoked |
 | 401 | `errors.auth.tokenExpired` | Past its 30 days |
 | 401 | `errors.auth.tokenNotPermitted` | Valid, but this route is not on the allowlist |
-| 403 | `errors.permission.missing` | Valid, but the role lacks the bit — `data.missingPermission` names it |
+| 403 | `errors.permission.missing` | Valid, but the role lacks the bit — `err.missingPermission` names it |
 | 423 | `errors.track.locked` | Someone locked the track in the editor |
+
+`err.isAuth` is true for every `errors.auth.*` key. `err.isFatal` is true when
+sending the same request again cannot succeed: an auth failure, a `403` or a
+`404`. Retry the rest with a backoff, and never retry a fatal one.
 
 A revoked token answers `tokenInvalid`, not something more specific. Confirming
 that a particular secret once existed would tell an attacker something.
 
-On a socket, a handshake failure arrives as `connect_error` with one of the same
-keys as its message. Losing access while connected arrives as `access:revoked`,
-just before the server closes the socket.
+---
 
-**Do not reconnect in a tight loop on `tokenInvalid` or `tokenExpired`.** The
-credential will not fix itself, and a device hammering the handshake is what
-takes an API instance down on a show night. Stop, and surface the state on the
-device's own display.
+## A live connection stops on a dead credential
 
-```js
-socket.on('connect_error', (err) => {
-  if (String(err.message).startsWith('errors.auth.')) {
-    socket.disconnect();
-    console.error('auth failed, not retrying:', err.message);
-  }
-});
+A device hammering the handshake with a dead token is what takes an API instance
+down on a show night, and the credential will not fix itself. So the SDK does
+not retry one. When the handshake is refused with an `errors.auth.*` key, when
+fetching the timeline answers `401`, `403` or `404`, or when the server sends
+`access:revoked`, the connection closes for good and emits `authFailed`:
 
-socket.on('access:revoked', () => {
-  socket.disconnect();
-  console.error('access revoked, not retrying');
+```ts
+const live = cino.connect(timelineId);
+
+live.on('authFailed', ({ errorKey, message }) => {
+  showOnPanel(`Cino stopped: ${message}`);   // on the device's own display
+  process.exitCode = 1;
 });
 ```
+
+Say so on the device itself, and make sure whatever supervises the process does
+not simply start it again. Under systemd, give the exit code to
+`RestartPreventExitStatus=`.
 
 Every rejected token is written to the production's audit log with the reason
 and the source address, so a device stuck retrying a dead token is easy to find.

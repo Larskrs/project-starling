@@ -44,9 +44,9 @@ export function toTimecode(frame: number, rate: FrameRateLike): string {
   return `${pad(Math.floor(totalSeconds / 3600))}:${pad(Math.floor(totalSeconds / 60) % 60)}:${pad(totalSeconds % 60)}${separator}${pad(frames)}`;
 }
 
-/** `HH:MM:SS:FF` (or `;FF`) → frame. */
+/** `HH:MM:SS:FF` (or `;FF`) → frame. Hours may run past 99. */
 export function fromTimecode(timecode: string, rate: FrameRateLike): number {
-  const match = /^(\d{1,2}):(\d{2}):(\d{2})[:;.](\d{2,3})$/.exec(timecode.trim());
+  const match = /^(\d+):(\d{2}):(\d{2})[:;.](\d{2,3})$/.exec(timecode.trim());
   if (!match) throw new TypeError(`cino-sdk: not a timecode: "${timecode}"`);
 
   const [hours, minutes, seconds, frames] = match.slice(1).map(Number) as [number, number, number, number];

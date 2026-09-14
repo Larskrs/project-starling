@@ -1,6 +1,6 @@
 {
   "name": "cino-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Cino SDK: productions, timelines, tracks, clips, storage, and live frame-accurate playback from any device.",
   "keywords": ["cino", "sdk", "timeline", "timecode", "show control", "live"],
   "type": "module",
@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@starling/realtime": "*",
+    "@types/node": "^26.1.2",
     "typescript": "^5.8.3"
   }
 }

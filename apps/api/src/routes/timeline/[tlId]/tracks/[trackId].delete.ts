@@ -3,8 +3,7 @@ import { db, tracks } from '@starling/db';
 import { defineEventHandler, getRouterParam, createError, getSocketId } from '../../../../lib/handler.js';
 import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
 import { Permission } from '@starling/auth/permissions';
-import { TimelineEvent } from '@starling/realtime';
-import { emitTimelineChange } from '../../../../lib/timelineSockets.js';
+import { timelineRelay } from '../../../../lib/timelineSockets.js';
 
 export default defineEventHandler(async (event) => {
   const { timeline } = await requireTimelineParam(event, { permission: Permission.EDIT_TIMELINE });
@@ -21,8 +20,7 @@ export default defineEventHandler(async (event) => {
 
   await db.delete(tracks).where(eq(tracks.id, trackId));
 
-  emitTimelineChange(timeline.id, TimelineEvent.trackChange,
-    { type: 'remove', trackId }, getSocketId(event));
+  timelineRelay.trackRemoved(timeline.id, trackId, getSocketId(event));
 
   return { ok: true };
 });
