@@ -1,4 +1,5 @@
-import { users } from '@starling/db';
+import { eq, sql, type SQL } from 'drizzle-orm';
+import { db, users } from '@starling/db';
 
 /**
  * The single projection for "the signed-in user".
@@ -44,3 +45,34 @@ export function toPublicUser(row: typeof users.$inferSelect) {
 }
 
 export type PublicUser = ReturnType<typeof toPublicUser>;
+
+/**
+ * How a person is named in someone else's inbox — "Lars from Cino invited you".
+ * First name when set, the full name otherwise; undefined when there is no such
+ * user (an API token did the adding), so templates fall back to "Someone".
+ */
+export async function userDisplayName(userId: string | null | undefined): Promise<string | undefined> {
+  if (!userId) return undefined;
+  const [row] = await db
+    .select({ firstName: users.first_name, name: users.name })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row?.firstName || row?.name || undefined;
+}
+
+/** How an address is stored and compared: trimmed and lowercased. */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/**
+ * WHERE clause matching an account by address, ignoring case.
+ *
+ * Compared through lower() rather than eq() because accounts registered before
+ * addresses were normalised may still be stored mixed-case — "Bob@x.com" must
+ * find the "bob@x.com" account, not fall through to "no such user".
+ */
+export function userEmailIs(email: string): SQL {
+  return sql`lower(${users.email}) = ${normalizeEmail(email)}`;
+}

@@ -3,8 +3,8 @@ import { stat } from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
 import z from 'zod';
 import { db, storageFiles, storageImageVersions } from '@starling/db';
-import { defineEventHandler, getRouterParam, getValidatedQuery, createError, requireAuth } from '../../../lib/handler.js';
-import { requireProductionAccess, requirePermission } from '../../../lib/production.js';
+import { defineEventHandler, getRouterParam, getValidatedQuery, createError, requireAuth } from '../../../lib/http/handler.js';
+import { requireProductionAccess, requirePermission } from '../../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const querySchema = z.object({

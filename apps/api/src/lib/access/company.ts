@@ -1,6 +1,6 @@
 import { eq, and, or } from 'drizzle-orm';
 import { db, companies, companyMembers } from '@starling/db';
-import { type ApiEvent, createError, requireAuth } from './handler.js';
+import { type ApiEvent, createError, requireAuth } from '../http/handler.js';
 
 export type CompanyRef = { companyId: string } | { slug: string };
 

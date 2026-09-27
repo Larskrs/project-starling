@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { db, companies, companyMembers } from '@starling/db';
-import { defineEventHandler, getRouterParam, createError, requireAdmin, ApiError } from '../../../../lib/handler.js';
+import { defineEventHandler, getRouterParam, createError, requireAdmin, ApiError } from '../../../../lib/http/handler.js';
 
 export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug');

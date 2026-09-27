@@ -1,9 +1,9 @@
 import { eq, and, isNull } from 'drizzle-orm';
 import { db, apiTokens, storageFiles, storageImageVersions } from '@starling/db';
-import { defineEventHandler, getRouterParam, readMultipart, createError, ApiError } from '../../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../../lib/production.js';
+import { defineEventHandler, getRouterParam, readMultipart, createError, ApiError } from '../../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../../lib/access/production.js';
 import { isImage, processImage, tokenProfileImagePath, purgeFilesFromDisk } from '../../../../../lib/storage.js';
-import { invalidateToken } from '../../../../../lib/apiTokens.js';
+import { invalidateToken } from '../../../../../lib/auth/apiTokens.js';
 import { Permission } from '@starling/auth/permissions';
 
 /**

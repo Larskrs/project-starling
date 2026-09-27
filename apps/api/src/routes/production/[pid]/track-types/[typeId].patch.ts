@@ -1,10 +1,10 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, trackTypes } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
-import { trackBehaviorPatchFields } from '../../../../lib/trackTypeSettings.js';
-import { iconField } from '../../../../lib/icons.js';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined } from '../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../lib/access/production.js';
+import { trackBehaviorPatchFields } from '../../../../lib/timeline/trackTypeSettings.js';
+import { iconField } from '../../../../lib/timeline/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({

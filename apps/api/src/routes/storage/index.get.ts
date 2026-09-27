@@ -1,8 +1,8 @@
 import z from 'zod';
 import { eq, and, isNull, ne, getTableColumns } from 'drizzle-orm';
 import { db, storageFiles, storageFolders, storageImageVersions } from '@starling/db';
-import { defineEventHandler, getValidatedQuery } from '../../lib/handler.js';
-import { requireProductionAccess, requirePermission } from '../../lib/production.js';
+import { defineEventHandler, getValidatedQuery } from '../../lib/http/handler.js';
+import { requireProductionAccess, requirePermission } from '../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const querySchema = z.object({

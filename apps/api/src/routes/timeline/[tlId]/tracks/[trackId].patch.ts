@@ -1,11 +1,11 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, tracks } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined, getSocketId } from '../../../../lib/handler.js';
-import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
-import { iconField } from '../../../../lib/icons.js';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError, pickDefined, getSocketId } from '../../../../lib/http/handler.js';
+import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/access/production.js';
+import { iconField } from '../../../../lib/timeline/icons.js';
 import { Permission } from '@starling/auth/permissions';
-import { timelineRelay } from '../../../../lib/timelineSockets.js';
+import { timelineRelay } from '../../../../lib/realtime/timelineSockets.js';
 
 const bodySchema = z.object({
   name:      z.string().min(1).max(128).optional(),

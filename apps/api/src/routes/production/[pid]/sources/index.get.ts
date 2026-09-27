@@ -1,8 +1,8 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, sources, sourceSet } from '@starling/db';
-import { defineEventHandler, getValidatedQuery, createError } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
+import { defineEventHandler, getValidatedQuery, createError } from '../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../lib/access/production.js';
 
 const querySchema = z.object({
   sid: z.uuid(),

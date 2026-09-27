@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { companies, companyMembers, db } from '@starling/db';
-import { defineEventHandler, readValidatedBody, ApiError, requireAdmin } from '../../lib/handler.js';
+import { defineEventHandler, readValidatedBody, ApiError, requireAdmin } from '../../lib/http/handler.js';
 
 const schema = z.object({
   name: z.string().min(2).max(100),

@@ -2,8 +2,8 @@ import z from 'zod';
 import { eq } from 'drizzle-orm';
 import { db, productionRoles } from '@starling/db';
 import { decode } from '@starling/auth/permissions';
-import { defineEventHandler, getValidatedQuery } from '../../lib/handler.js';
-import { requireProductionAccess } from '../../lib/production.js';
+import { defineEventHandler, getValidatedQuery } from '../../lib/http/handler.js';
+import { requireProductionAccess } from '../../lib/access/production.js';
 import { trackActivity } from '../../lib/activity.js';
 
 const querySchema = z.object({

@@ -1,5 +1,5 @@
-import { defineEventHandler } from '../../lib/handler.js';
-import { destroySessionFromCookies, clearSessionCookieHeader } from '../../lib/session.js';
+import { defineEventHandler } from '../../lib/http/handler.js';
+import { destroySessionFromCookies, clearSessionCookieHeader } from '../../lib/auth/session.js';
 
 export default defineEventHandler(async (event) => {
   await destroySessionFromCookies(event.req.headers.cookie);

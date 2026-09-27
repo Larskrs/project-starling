@@ -98,7 +98,19 @@
     "removeTitle": "Fjern medlem",
     "you": "deg",
     "failedToAdd": "Klarte ikke å legge til medlem",
-    "confirmRemove": "Fjern {name} fra denne produksjonen?"
+    "confirmRemove": "Fjern {name} fra denne produksjonen?",
+    "inviteSent": "Invitasjon sendt til {email} — lenken utløper om en time.",
+    "inviteLink": "Invitasjonslenke",
+    "inviteLinkHint": "Alle med lenken kan bli med i denne produksjonen. Utløper om 7 dager.",
+    "createLink": "Lag lenke",
+    "copy": "Kopier",
+    "copied": "Kopiert",
+    "anyoneWithLink": "Alle med lenken",
+    "revokeInvite": "Trekk tilbake invitasjon",
+    "usesOf": "{used} av {max} brukt",
+    "expiresMinutes": "Utløper om {minutes} min",
+    "expiresHours": "Utløper om {hours} t",
+    "expiresDays": "Utløper om {days} dager"
   },
   "roles": {
     "title": "Roller",
@@ -259,7 +271,11 @@
     "changeAvatar": "Endre avatar",
     "changeBanner": "Endre banner",
     "uploading": "Laster opp…",
-    "uploadFailed": "Opplasting mislyktes"
+    "uploadFailed": "Opplasting mislyktes",
+    "emailVerified": "Bekreftet",
+    "verifyEmail": "Bekreft e-posten din",
+    "verifySending": "Sender…",
+    "verifySent": "Bekreftelseslenke sendt til {email}. Den utløper om 24 timer."
   },
   "errors": {
     "generic": {
@@ -297,6 +313,18 @@
     "docs": {
       "notFound": "Fant ikke dokumentasjonssiden",
       "signInRequired": "Logg inn for å lese den siden"
+    },
+    "invite": {
+      "notFound": "Fant ikke invitasjonen",
+      "expired": "Invitasjonen er utløpt",
+      "revoked": "Invitasjonen er trukket tilbake",
+      "exhausted": "Invitasjonen er allerede brukt",
+      "emailMismatch": "Invitasjonen ble sendt til en annen e-postadresse"
+    },
+    "verifyEmail": {
+      "notFound": "Denne bekreftelseslenken er ikke gyldig",
+      "expired": "Denne bekreftelseslenken er utløpt",
+      "emailChanged": "Adressen din ble endret etter at lenken ble sendt"
     }
   },
   "danger": {
@@ -778,5 +806,61 @@
     "limited": "begrenset",
     "changeImage": "Endre bilde",
     "imageUploadFailed": "Kunne ikke laste opp bildet"
+  },
+  "invite": {
+    "heading": "Du har blitt invitert til {production}",
+    "headingFrom": "{inviter} fra {company} inviterte deg til {production}",
+    "asRole": "Du blir med som {role}.",
+    "join": "Bli med i produksjonen",
+    "open": "Åpne produksjonen",
+    "joining": "Blir med…",
+    "createAccount": "Opprett konto og bli med",
+    "haveAccount": "Jeg har allerede en konto",
+    "goHome": "Gå til Cino",
+    "expiresInMinutes": "Invitasjonen utløper om {minutes} min",
+    "expiresInHours": "Invitasjonen utløper om {hours} t",
+    "rejected": {
+      "notFound": {
+        "title": "Fant ikke invitasjonen",
+        "body": "Denne lenken er ikke gyldig. Be den som inviterte deg om en ny."
+      },
+      "expired": {
+        "title": "Invitasjonen er utløpt",
+        "body": "Denne lenken er ikke gyldig lenger. Be den som inviterte deg om en ny."
+      },
+      "revoked": {
+        "title": "Invitasjonen er trukket tilbake",
+        "body": "Denne invitasjonen er trukket tilbake."
+      },
+      "exhausted": {
+        "title": "Invitasjonen er brukt opp",
+        "body": "Denne lenken er allerede brukt. Be om en egen invitasjon."
+      },
+      "emailMismatch": {
+        "title": "Invitasjonen gjelder en annen adresse",
+        "body": "Denne invitasjonen ble sendt til en annen e-postadresse. Logg inn med den adressen, eller be om en invitasjon til denne."
+      }
+    }
+  },
+  "verifyEmail": {
+    "goToSettings": "Gå til innstillinger",
+    "done": {
+      "title": "E-posten er bekreftet",
+      "body": "{email} er bekreftet. Ikke noe mer å gjøre."
+    },
+    "rejected": {
+      "notFound": {
+        "title": "Ugyldig lenke",
+        "body": "Denne bekreftelseslenken er ikke gyldig. Send deg selv en ny fra innstillinger."
+      },
+      "expired": {
+        "title": "Lenken er utløpt",
+        "body": "Denne lenken er eldre enn 24 timer. Send deg selv en ny fra innstillinger."
+      },
+      "emailChanged": {
+        "title": "Adressen er endret",
+        "body": "E-postadressen din ble endret etter at lenken ble sendt, så den gjelder ikke lenger. Send en ny fra innstillinger."
+      }
+    }
   }
 }

@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 import z from 'zod';
 import { db, storageFiles } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../lib/handler.js';
-import { requireProductionAccess, requirePermission } from '../../lib/production.js';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../lib/http/handler.js';
+import { requireProductionAccess, requirePermission } from '../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({

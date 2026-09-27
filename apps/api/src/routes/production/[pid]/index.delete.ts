@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db, productions } from '@starling/db';
-import { defineEventHandler } from '../../../lib/handler.js';
-import { requireProductionParam } from '../../../lib/production.js';
+import { defineEventHandler } from '../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 import { deleteProductionStorage } from '../../../lib/storage.js';
 

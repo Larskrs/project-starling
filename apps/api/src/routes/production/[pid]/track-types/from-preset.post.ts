@@ -1,8 +1,8 @@
 import z from 'zod';
 import { db, trackTypes, sourceSet, sources } from '@starling/db';
-import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
-import { getTrackTypePreset } from '../../../../lib/trackTypePresets.js';
+import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../lib/access/production.js';
+import { getTrackTypePreset } from '../../../../lib/timeline/trackTypePresets.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({

@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { db, users, sessions } from '@starling/db';
-import { defineEventHandler, ApiError } from '../../lib/handler.js';
-import { parseSessionCookie } from '../../lib/session.js';
-import { publicUserColumns } from '../../lib/user.js';
+import { defineEventHandler, ApiError } from '../../lib/http/handler.js';
+import { parseSessionCookie } from '../../lib/auth/session.js';
+import { publicUserColumns } from '../../lib/auth/user.js';
 
 export default defineEventHandler(async (event) => {
   const sessionId = parseSessionCookie(event.req.headers.cookie);

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db, timelines } from '@starling/db';
-import { defineEventHandler } from '../../lib/handler.js';
-import { requireProductionQuery } from '../../lib/production.js';
+import { defineEventHandler } from '../../lib/http/handler.js';
+import { requireProductionQuery } from '../../lib/access/production.js';
 
 export default defineEventHandler(async (event) => {
   const { production } = await requireProductionQuery(event);

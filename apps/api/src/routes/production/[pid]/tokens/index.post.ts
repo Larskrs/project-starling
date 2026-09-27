@@ -1,12 +1,12 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, apiTokens, productionRoles } from '@starling/db';
-import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
-import { getClientIp } from '../../../../lib/security.js';
+import { defineEventHandler, readValidatedBody, createError } from '../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../lib/access/production.js';
+import { getClientIp } from '../../../../lib/http/security.js';
 import {
   issueToken, recordTokenEvent, maskTokenPermissions, TOKEN_FORBIDDEN_PERMISSIONS,
-} from '../../../../lib/apiTokens.js';
+} from '../../../../lib/auth/apiTokens.js';
 import { Permission, decode } from '@starling/auth/permissions';
 
 const bodySchema = z.object({

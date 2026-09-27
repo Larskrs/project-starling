@@ -30,7 +30,7 @@ import { renderMarkdown, type Heading } from './docsRender.js';
  * file path.
  */
 
-const BUNDLE_PATH = resolve(join(import.meta.dirname, '../../docs-dist/docs.json'));
+const BUNDLE_PATH = resolve(join(import.meta.dirname, '../../../docs-dist/docs.json'));
 
 /** Bumped when the shape changes, so an old artifact is ignored rather than misread. */
 const BUNDLE_VERSION = 1;

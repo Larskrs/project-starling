@@ -9,7 +9,7 @@
     "build": "npm run clean && npm run docs:build && tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx src/lib/docs.test.ts && tsx src/lib/docsRender.test.ts && tsx src/lib/clockResync.test.ts",
+    "test": "tsx src/lib/docs/docs.test.ts && tsx src/lib/docs/docsRender.test.ts && tsx src/lib/realtime/clockResync.test.ts && tsx src/lib/email/templates.test.ts && tsx src/lib/access/invites.test.ts && tsx src/lib/email/verification.test.ts",
     "docs:build": "tsx scripts/buildDocs.ts"
   },
   "dependencies": {
@@ -19,11 +19,13 @@
     "drizzle-orm": "^0.45.2",
     "highlight.js": "^11.11.1",
     "marked": "^15.0.7",
+    "nodemailer": "^10.0.10",
     "sharp": "^0.35.4",
     "socket.io": "^4.8.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.2",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }

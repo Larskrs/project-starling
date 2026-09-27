@@ -245,7 +245,7 @@ Endpoints:
 
 | Route | Behavior |
 | --- | --- |
-| `POST /api/auth/register` | create user, hash password (scrypt, `lib/auth.ts`); rate-limited **5 / 10 min per IP** |
+| `POST /api/auth/register` | create user, hash password (scrypt, `lib/auth/password.ts`); rate-limited **5 / 10 min per IP** |
 | `POST /api/auth/login` | rate-limited **10 / min per IP+email** (429 `errors.generic.rateLimited`); timing-equalized — a missing user still costs one scrypt verify against a dummy hash, so response time doesn't leak account existence; `401` on mismatch; sets cookie, returns `{ user }` |
 | `POST /api/auth/logout` | destroy session from cookie, clear cookie |
 | `GET /api/auth/me`, `GET /api/user/me` | current user info |
@@ -463,7 +463,7 @@ Recorded at:
 | --- | --- |
 | `GET/POST /production/[pid]/track-types` | `{ name ≤64, color?, trackMode: 'event'\|'clip' (default clip), sourceSetId?, sortOrder }` — writes need `MANAGE_TRACK_TYPES` |
 | `PATCH/DELETE /production/[pid]/track-types/[typeId]` | PATCH throws `422 Nothing to update` on empty body |
-| `GET /production/[pid]/track-type-presets` | file-based preset catalogue (`apps/api/src/lib/trackTypePresets.ts`): `{ id, name, description, supportsCameraSet?, settings }` |
+| `GET /production/[pid]/track-type-presets` | file-based preset catalogue (`apps/api/src/lib/timeline/trackTypePresets.ts`): `{ id, name, description, supportsCameraSet?, settings }` |
 | `POST /production/[pid]/track-types/from-preset` | `MANAGE_TRACK_TYPES` — `{ presetId, name?, sortOrder?, cameraSet?: { name ≤128, count 1–64 } }`. Creates a track type from the preset's settings; `cameraSet` (camera presets only, else 400) also creates a source set with `count` cameras (`Camera N`/`CN`), hues spread evenly from the preset hue. Returns `{ trackType, sourceSet, sources }` |
 
 ### Timelines, tracks, clips

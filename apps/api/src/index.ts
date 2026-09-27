@@ -4,10 +4,11 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { loadRoutes, matchRoute, type Route } from './router.js';
-import { ApiError, type ApiEvent, sendJson, appendVary, acceptsGzip, getAuth } from './lib/handler.js';
-import { setupSockets } from './lib/sockets.js';
-import { applyCors, applySecurityHeaders, getClientIp } from './lib/security.js';
-import { recordTokenEvent } from './lib/apiTokens.js';
+import { ApiError, type ApiEvent, sendJson, appendVary, acceptsGzip, getAuth } from './lib/http/handler.js';
+import { setupSockets } from './lib/realtime/sockets.js';
+import { applyCors, applySecurityHeaders, getClientIp } from './lib/http/security.js';
+import { recordTokenEvent } from './lib/auth/apiTokens.js';
+import { verifyMailer } from './lib/email/mailer.js';
 
 const here         = dirname(fileURLToPath(import.meta.url));
 const apiDir       = join(here, 'routes');
@@ -255,4 +256,8 @@ setupSockets(server);
 
 server.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
+  // Warns only — a mail server that is down or misconfigured must not stop the
+  // API from serving, but it should say so here rather than in a bug report
+  // about invites that never arrived.
+  void verifyMailer();
 });

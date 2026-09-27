@@ -98,7 +98,19 @@
     "removeTitle": "Remove member",
     "you": "you",
     "failedToAdd": "Failed to add member",
-    "confirmRemove": "Remove {name} from this production?"
+    "confirmRemove": "Remove {name} from this production?",
+    "inviteSent": "Invitation sent to {email} — the link expires in an hour.",
+    "inviteLink": "Invite link",
+    "inviteLinkHint": "Anyone with the link can join this production. Expires in 7 days.",
+    "createLink": "Create link",
+    "copy": "Copy",
+    "copied": "Copied",
+    "anyoneWithLink": "Anyone with the link",
+    "revokeInvite": "Revoke invite",
+    "usesOf": "{used} of {max} used",
+    "expiresMinutes": "Expires in {minutes} min",
+    "expiresHours": "Expires in {hours} h",
+    "expiresDays": "Expires in {days} days"
   },
   "settings": {
     "productionName": "Production name",
@@ -259,7 +271,11 @@
     "changeAvatar": "Change avatar",
     "changeBanner": "Change banner",
     "uploading": "Uploading…",
-    "uploadFailed": "Upload failed"
+    "uploadFailed": "Upload failed",
+    "emailVerified": "Verified",
+    "verifyEmail": "Confirm your email",
+    "verifySending": "Sending…",
+    "verifySent": "Confirmation link sent to {email}. It expires in 24 hours."
   },
   "errors": {
     "generic": {
@@ -297,6 +313,18 @@
     "docs": {
       "notFound": "No such documentation page",
       "signInRequired": "Sign in to read that page"
+    },
+    "invite": {
+      "notFound": "Invitation not found",
+      "expired": "This invitation has expired",
+      "revoked": "This invitation has been withdrawn",
+      "exhausted": "This invitation has already been used",
+      "emailMismatch": "This invitation was sent to a different email address"
+    },
+    "verifyEmail": {
+      "notFound": "This confirmation link is not valid",
+      "expired": "This confirmation link has expired",
+      "emailChanged": "Your address changed after this link was sent"
     }
   },
   "danger": {
@@ -778,5 +806,61 @@
     "limited": "limited",
     "changeImage": "Change image",
     "imageUploadFailed": "Could not upload the image"
+  },
+  "invite": {
+    "heading": "You have been invited to {production}",
+    "headingFrom": "{inviter} from {company} invited you to {production}",
+    "asRole": "You will join as {role}.",
+    "join": "Join production",
+    "open": "Open production",
+    "joining": "Joining…",
+    "createAccount": "Create account and join",
+    "haveAccount": "I already have an account",
+    "goHome": "Go to Cino",
+    "expiresInMinutes": "This invitation expires in {minutes} min",
+    "expiresInHours": "This invitation expires in {hours} h",
+    "rejected": {
+      "notFound": {
+        "title": "Invitation not found",
+        "body": "This link is not valid. Ask whoever invited you for a new one."
+      },
+      "expired": {
+        "title": "Invitation expired",
+        "body": "This link is no longer valid. Ask whoever invited you to send a new one."
+      },
+      "revoked": {
+        "title": "Invitation withdrawn",
+        "body": "This invitation has been withdrawn."
+      },
+      "exhausted": {
+        "title": "Invitation used up",
+        "body": "This link has already been used. Ask for one of your own."
+      },
+      "emailMismatch": {
+        "title": "Invitation for another address",
+        "body": "This invitation was sent to a different email address. Sign in with that address, or ask for an invitation to this one."
+      }
+    }
+  },
+  "verifyEmail": {
+    "goToSettings": "Go to settings",
+    "done": {
+      "title": "Email confirmed",
+      "body": "{email} is confirmed. Nothing else to do."
+    },
+    "rejected": {
+      "notFound": {
+        "title": "Link not valid",
+        "body": "This confirmation link is not valid. Send yourself a new one from settings."
+      },
+      "expired": {
+        "title": "Link expired",
+        "body": "This link is older than 24 hours. Send yourself a new one from settings."
+      },
+      "emailChanged": {
+        "title": "Address changed",
+        "body": "Your email address changed after this link was sent, so it no longer applies. Send a new one from settings."
+      }
+    }
   }
 }

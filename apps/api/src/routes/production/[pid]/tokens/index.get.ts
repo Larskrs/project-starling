@@ -1,6 +1,6 @@
-import { defineEventHandler } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
-import { listProductionTokens, TOKEN_TTL_DAYS } from '../../../../lib/apiTokens.js';
+import { defineEventHandler } from '../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../lib/access/production.js';
+import { listProductionTokens, TOKEN_TTL_DAYS } from '../../../../lib/auth/apiTokens.js';
 import { Permission } from '@starling/auth/permissions';
 
 /**

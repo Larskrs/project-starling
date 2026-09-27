@@ -20,6 +20,13 @@ const router = createRouter({
     { path: '/login',    component: () => import('../views/LoginView.vue'),     meta: { layout: AuthLayout,   title: 'Login' } },
     { path: '/register', component: () => import('../views/RegisterView.vue'),  meta: { layout: AuthLayout,   title: 'Register' } },
     { path: '/chat',     component: () => import('../views/Chat/index.vue'),    meta: { requiresAuth: true, layout: EmptyLayout,   title: 'Chat' } },
+    // Neither requiresAuth nor guestOnly: the token in the URL is the
+    // credential, and the page has something to say to a visitor in either
+    // state — join now, or create the account that joins.
+    { path: '/invite/:token', component: () => import('../views/InviteView.vue'), meta: { layout: EmptyLayout, title: 'Invitation' } },
+    // Same reasoning: the emailed token is the credential, and the link is as
+    // likely to be opened on a phone that has never signed in as anywhere else.
+    { path: '/verify-email/:token', component: () => import('../views/VerifyEmailView.vue'), meta: { layout: EmptyLayout, title: 'Confirm email' } },
     // Kept for links minted while the pitch lived at its own URL.
     { path: '/welcome',  redirect: '/' },
     // Public by default: the integration guide is written for third parties

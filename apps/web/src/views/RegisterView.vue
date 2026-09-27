@@ -1,15 +1,25 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import Button from '@starling/ui/Button'
 import Input  from '@starling/ui/Input'
 import Label  from '@starling/ui/Label'
 
 const { register } = useAuth()
+const route        = useRoute()
+
+// Carried from an invite link: the new account joins the production it was
+// invited to as part of registering.
+const invite = computed(() => (typeof route.query.invite === 'string' ? route.query.invite : undefined))
+
+// An emailed invite only applies to the address it was sent to, so that is the
+// address the form starts with — typing a different one silently loses it.
+const invitedEmail = typeof route.query.email === 'string' ? route.query.email : ''
 
 const first_name   = ref('')
 const last_name    = ref('')
-const email        = ref('')
+const email        = ref(invitedEmail)
 const password     = ref('')
 const error        = ref('')
 const loading      = ref(false)
@@ -18,7 +28,7 @@ async function handleSubmit() {
   error.value   = ''
   loading.value = true
   try {
-    await register(email.value, first_name.value, last_name.value, password.value)
+    await register(email.value, first_name.value, last_name.value, password.value, invite.value)
   } catch (e) {
     error.value = e.message
   } finally {

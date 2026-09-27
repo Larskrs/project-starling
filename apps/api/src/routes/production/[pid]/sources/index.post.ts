@@ -1,9 +1,9 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, sources, sourceSet } from '@starling/db';
-import { defineEventHandler, getValidatedQuery, readValidatedBody, createError } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
-import { iconField } from '../../../../lib/icons.js';
+import { defineEventHandler, getValidatedQuery, readValidatedBody, createError } from '../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../lib/access/production.js';
+import { iconField } from '../../../../lib/timeline/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const querySchema = z.object({

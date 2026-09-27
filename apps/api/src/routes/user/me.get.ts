@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db, users } from '@starling/db';
-import { defineEventHandler, requireAuth, ApiError } from '../../lib/handler.js';
-import { publicUserColumns } from '../../lib/user.js';
+import { defineEventHandler, requireAuth, ApiError } from '../../lib/http/handler.js';
+import { publicUserColumns } from '../../lib/auth/user.js';
 
 export default defineEventHandler(async (event) => {
   const auth = await requireAuth(event);

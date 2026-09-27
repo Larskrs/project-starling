@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { db, activity } from '@starling/db';
-import { TtlCache } from './cache.js';
+import { TtlCache } from './util/cache.js';
 
 export type ActivityEntity = (typeof activity.$inferSelect)['entityType'];
 export type ActivityAction = (typeof activity.$inferSelect)['action'];

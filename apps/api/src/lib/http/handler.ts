@@ -1,11 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import type { ZodType } from 'zod';
-import type { SessionData } from './session.js';
-import { parseSessionCookie, getSession, renewSessionIfDue } from './session.js';
+import type { SessionData } from '../auth/session.js';
+import { parseSessionCookie, getSession, renewSessionIfDue } from '../auth/session.js';
 import {
   verifyApiToken, recordTokenEvent, TOKEN_EXPIRES_HEADER, type TokenPrincipal,
-} from './apiTokens.js';
+} from '../auth/apiTokens.js';
 import { getClientIp } from './security.js';
 import { SOCKET_ID_HEADER } from '@starling/realtime';
 

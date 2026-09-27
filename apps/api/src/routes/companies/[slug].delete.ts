@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db, companies } from '@starling/db';
-import { defineEventHandler, getRouterParam, createError } from '../../lib/handler.js';
-import { requireCompanyAdmin } from '../../lib/company.js';
+import { defineEventHandler, getRouterParam, createError } from '../../lib/http/handler.js';
+import { requireCompanyAdmin } from '../../lib/access/company.js';
 import { deleteCompanyStorage } from '../../lib/storage.js';
 
 export default defineEventHandler(async (event) => {

@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { db, storageFolders } from '@starling/db';
-import { defineEventHandler, getRouterParam, createError } from '../../../lib/handler.js';
+import { defineEventHandler, getRouterParam, createError } from '../../../lib/http/handler.js';
 import { deleteFolder } from '../../../lib/storage.js';
-import { requireProductionAccess, requirePermission } from '../../../lib/production.js';
+import { requireProductionAccess, requirePermission } from '../../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 export default defineEventHandler(async (event) => {

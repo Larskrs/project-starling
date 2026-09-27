@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, companies, companyMembers, users } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError, requireAdmin, ApiError } from '../../../../lib/handler.js';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError, requireAdmin, ApiError } from '../../../../lib/http/handler.js';
+import { queueCompanyInvite } from '../../../../lib/email/notify.js';
+import { userDisplayName, userEmailIs } from '../../../../lib/auth/user.js';
 
 const schema = z.object({
   email: z.string().email(),
@@ -12,14 +14,18 @@ export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug');
   if (!slug) throw createError({ statusCode: 400, message: 'Missing company slug' });
 
-  await requireAdmin(event);
+  const auth = await requireAdmin(event);
 
-  const [company] = await db.select({ id: companies.id }).from(companies).where(eq(companies.slug, slug)).limit(1);
+  const [company] = await db
+    .select({ id: companies.id, name: companies.name, slug: companies.slug, profileImageId: companies.profileImageId })
+    .from(companies)
+    .where(eq(companies.slug, slug))
+    .limit(1);
   if (!company) throw createError({ statusCode: 404, message: 'Company not found' });
 
   const { email, role } = await readValidatedBody(event, schema);
 
-  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+  const [user] = await db.select({ id: users.id }).from(users).where(userEmailIs(email)).limit(1);
   if (!user) throw new ApiError(404, 'No user found with that email address');
 
   const [existing] = await db
@@ -42,6 +48,20 @@ export default defineEventHandler(async (event) => {
     .insert(companyMembers)
     .values({ companyId: company.id, userId: user.id, role })
     .returning();
+
+  // Only on the join, not on the role change above: a role edit is routine
+  // housekeeping, and mailing on every one of them trains people to ignore the
+  // mail that actually matters. Queued, never awaited — see mailer.ts.
+  if (user.id !== auth.userId) {
+    queueCompanyInvite({
+      to:          email,
+      inviterName: await userDisplayName(auth.userId),
+      companyName: company.name,
+      companySlug: company.slug,
+      role,
+      imageFileId: company.profileImageId,
+    });
+  }
 
   return { member };
 });

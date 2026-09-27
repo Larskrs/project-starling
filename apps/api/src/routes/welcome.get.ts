@@ -1,9 +1,9 @@
 import { sql } from 'drizzle-orm';
 import { clips, companies, db, productions, storageFiles, timelines, tracks, users } from '@starling/db';
-import { ApiError, defineEventHandler } from '../lib/handler.js';
-import { TtlCache } from '../lib/cache.js';
-import { createRateLimiter } from '../lib/rateLimit.js';
-import { getClientIp } from '../lib/security.js';
+import { ApiError, defineEventHandler } from '../lib/http/handler.js';
+import { TtlCache } from '../lib/util/cache.js';
+import { createRateLimiter } from '../lib/http/rateLimit.js';
+import { getClientIp } from '../lib/http/security.js';
 
 /**
  * Server-wide totals for the signed-out welcome page.

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineEventHandler, requireAuth, ApiError, getValidatedQuery } from '../../../lib/handler.js';
+import { defineEventHandler, requireAuth, ApiError, getValidatedQuery } from '../../../lib/http/handler.js';
 
 const GIPHY_BASE = 'https://api.giphy.com/v1/gifs';
 

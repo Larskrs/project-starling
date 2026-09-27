@@ -56,7 +56,7 @@ async function loadMembers() {
   members.value = data
 }
 
-onMounted(() => { loadRoles(); loadMembers() })
+onMounted(() => { loadRoles(); loadMembers(); loadInvites() })
 
 // ── Add member ────────────────────────────────────────────────────────────────
 const addEmail  = ref('')
@@ -64,21 +64,91 @@ const addRoleId = ref('')
 const addSaving = ref(false)
 const addError  = ref('')
 
+const addNotice = ref('')
+
 async function addMember() {
   if (!addEmail.value.trim()) return
   addSaving.value = true
   addError.value  = ''
+  addNotice.value = ''
   const body = { email: addEmail.value.trim() }
   if (addRoleId.value) body.roleId = addRoleId.value
-  const { ok, error: fetchError } = await $fetch(
+  const { ok, data, error: fetchError } = await $fetch(
     `/api/production/${pid.value}/members`,
     { method: 'POST', json: body, silent: true },
   )
   addSaving.value = false
   if (!ok) { addError.value = fetchError ?? t('members.failedToAdd'); return }
+
+  // No account on that address: the API mailed them a one-time invite instead
+  // of adding a member, so there is nothing new in the members list to show.
+  if (data?.invited) {
+    addNotice.value = t('members.inviteSent', { email: data.email })
+    addEmail.value  = ''
+    addRoleId.value = ''
+    await loadInvites()
+    return
+  }
+
   addEmail.value  = ''
   addRoleId.value = ''
   await loadMembers()
+}
+
+// ── Invite links ──────────────────────────────────────────────────────────────
+
+const invites      = ref([])
+const linkRoleId   = ref('')
+const linkCreating = ref(false)
+const createdLink  = ref('')
+const linkCopied   = ref(false)
+
+async function loadInvites() {
+  const { ok, data } = await $fetch(`/api/production/${pid.value}/invites`, { silent: true })
+  if (ok) invites.value = data
+}
+
+async function createInviteLink() {
+  linkCreating.value = true
+  createdLink.value  = ''
+  linkCopied.value   = false
+  const body = linkRoleId.value ? { roleId: linkRoleId.value } : {}
+  const { ok, data } = await $fetch(
+    `/api/production/${pid.value}/invites`,
+    { method: 'POST', json: body },
+  )
+  linkCreating.value = false
+  if (!ok) return
+
+  // Shown once — the server keeps only a hash, so this is the only chance to
+  // copy it. A fresh link is one click away if they lose it.
+  createdLink.value = data.url
+  await loadInvites()
+}
+
+async function copyLink() {
+  try {
+    await navigator.clipboard.writeText(createdLink.value)
+    linkCopied.value = true
+  } catch {
+    linkCopied.value = false
+  }
+}
+
+async function revokeInvite(invite) {
+  const { ok } = await $fetch(
+    `/api/production/${pid.value}/invites/${invite.id}`,
+    { method: 'DELETE' },
+  )
+  if (ok) invites.value = invites.value.filter(i => i.id !== invite.id)
+}
+
+/** "in 42 minutes" / "in 6 days" — invites are short-lived, so this is coarse. */
+function expiresIn(invite) {
+  const minutes = Math.max(0, Math.round((new Date(invite.expiresAt) - Date.now()) / 60000))
+  if (minutes < 90)   return t('members.expiresMinutes', { minutes })
+  if (minutes < 2880) return t('members.expiresHours',   { hours: Math.round(minutes / 60) })
+  return t('members.expiresDays', { days: Math.round(minutes / 1440) })
 }
 
 async function changeMemberRole(member, roleId) {
@@ -144,6 +214,66 @@ async function removeMember() {
         </button>
       </div>
       <p v-if="addError" class="text-xs text-destructive">{{ addError }}</p>
+      <p v-if="addNotice" class="text-xs text-muted-foreground">{{ addNotice }}</p>
+    </section>
+
+    <!-- Invite link -->
+    <section class="rounded-xl border border-border bg-card px-5 py-4 flex flex-col gap-3">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p class="text-sm font-medium">{{ $t('members.inviteLink') }}</p>
+          <p class="text-xs text-muted-foreground mt-0.5">{{ $t('members.inviteLinkHint') }}</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <RoleSelector v-model="linkRoleId" :roles="roles" align="end" />
+          <button
+            class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            :disabled="linkCreating"
+            @click="createInviteLink"
+          >
+            <Spinner v-if="linkCreating" class="text-sm" />
+            {{ $t('members.createLink') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Shown once: only a hash is stored, so this is the only chance to copy it. -->
+      <div v-if="createdLink" class="flex items-center gap-2">
+        <input
+          :value="createdLink"
+          readonly
+          class="flex-1 h-9 rounded-md border border-input bg-muted px-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+          @focus="$event.target.select()"
+        />
+        <button
+          class="h-9 px-3 rounded-md border border-border text-sm hover:bg-muted transition-colors shrink-0"
+          @click="copyLink"
+        >{{ linkCopied ? $t('members.copied') : $t('members.copy') }}</button>
+      </div>
+
+      <!-- Pending invites -->
+      <ul v-if="invites.length" class="divide-y divide-border border-t border-border -mx-5 px-5">
+        <li v-for="invite in invites" :key="invite.id" class="flex items-center gap-3 py-2.5">
+          <Icon :icon="invite.email ? 'mdi:email-outline' : 'mdi:link-variant'" class="text-muted-foreground shrink-0" />
+          <div class="flex-1 min-w-0">
+            <p class="text-sm truncate">{{ invite.email || $t('members.anyoneWithLink') }}</p>
+            <p class="text-xs text-muted-foreground">
+              {{ expiresIn(invite) }}
+              <template v-if="invite.roleName"> · {{ invite.roleName }}</template>
+              <template v-if="invite.maxUses"> · {{ $t('members.usesOf', { used: invite.useCount, max: invite.maxUses }) }}</template>
+            </p>
+          </div>
+          <button
+            type="button"
+            class="p-1.5 rounded text-muted-foreground/50 hover:text-destructive transition-colors shrink-0"
+            :title="$t('members.revokeInvite')"
+            :aria-label="$t('members.revokeInvite')"
+            @click="revokeInvite(invite)"
+          >
+            <Icon icon="mdi:close" class="text-sm" aria-hidden="true" />
+          </button>
+        </li>
+      </ul>
     </section>
 
     <!-- Members list -->

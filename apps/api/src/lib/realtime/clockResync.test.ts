@@ -1,7 +1,7 @@
 /**
  * Regression guard for room-wide clock resync.
  *
- *     tsx apps/api/src/lib/clockResync.test.ts
+ *     tsx apps/api/src/lib/realtime/clockResync.test.ts
  *
  * The invariants: every client is asked and accounted for; a Play waits for the
  * run and starts exactly once, after the room hears the run ended; nothing — a

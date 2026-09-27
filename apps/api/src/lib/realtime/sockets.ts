@@ -3,11 +3,11 @@ import type { Server as HttpServer } from 'node:http';
 import { eq } from 'drizzle-orm';
 import { db, users } from '@starling/db';
 import { TOKEN_PRESENCE_PREFIX } from '@starling/realtime';
-import { sessionFromCookies } from './session.js';
-import { verifyApiToken, recordTokenEvent } from './apiTokens.js';
+import { sessionFromCookies } from '../auth/session.js';
+import { verifyApiToken, recordTokenEvent } from '../auth/apiTokens.js';
 import { setupTimelineSockets } from './timelineSockets.js';
-import { isOriginAllowed, requestHost } from './security.js';
-import { createRateLimiter } from './rateLimit.js';
+import { isOriginAllowed, requestHost } from '../http/security.js';
+import { createRateLimiter } from '../http/rateLimit.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

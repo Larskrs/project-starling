@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { eq, lt } from 'drizzle-orm';
 import { db, sessions, users } from '@starling/db';
-import { TtlCache } from './cache.js';
+import { TtlCache } from '../util/cache.js';
 
 export const SESSION_COOKIE  = 'syncsw_sid';
 const        SESSION_TTL_MS  = 24 * 60 * 60 * 1000;

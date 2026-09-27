@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { EventHandler, ApiMeta } from './lib/handler.js';
+import type { EventHandler, ApiMeta } from './lib/http/handler.js';
 
 /**
  * Convention (Nuxt/Nitro style). Files live under `server/api` and are named

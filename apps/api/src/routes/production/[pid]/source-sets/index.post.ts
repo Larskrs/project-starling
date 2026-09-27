@@ -1,8 +1,8 @@
 import z from 'zod';
 import { db, sourceSet } from '@starling/db';
-import { defineEventHandler, readValidatedBody } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
-import { iconField } from '../../../../lib/icons.js';
+import { defineEventHandler, readValidatedBody } from '../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../lib/access/production.js';
+import { iconField } from '../../../../lib/timeline/icons.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({

@@ -1,5 +1,5 @@
-import { defineEventHandler, getRouterParam, createError } from '../../lib/handler.js';
-import { requireCompanyAccess } from '../../lib/company.js';
+import { defineEventHandler, getRouterParam, createError } from '../../lib/http/handler.js';
+import { requireCompanyAccess } from '../../lib/access/company.js';
 
 export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug');

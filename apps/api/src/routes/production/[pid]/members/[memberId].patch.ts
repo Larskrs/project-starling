@@ -1,8 +1,8 @@
 import z from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, productionMembers } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../../../lib/http/handler.js';
+import { requireProductionParam, assertRoleInProduction } from '../../../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({
@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: 'You cannot change your own role' });
 
   const body = await readValidatedBody(event, bodySchema);
+  await assertRoleInProduction(ctx.production.id, body.roleId);
 
   const [updated] = await db.update(productionMembers)
     .set({ roleId: body.roleId })

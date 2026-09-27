@@ -3,11 +3,11 @@ import { eq } from 'drizzle-orm';
 import { db, timelines, productions } from '@starling/db';
 import type { SocketUser, SocketPrincipal } from './sockets.js';
 import { createLiveRoom, type LiveRoomContext } from './liveRoom.js';
-import { trackActivity } from './activity.js';
+import { trackActivity } from '../activity.js';
 import { serverNow } from './clock.js';
 import { createClockResyncs } from './clockResync.js';
-import { resolveAccessLevel, type AccessLevel, type AccessPrincipal } from './production.js';
-import { can } from './permissions.js';
+import { resolveAccessLevel, type AccessLevel, type AccessPrincipal } from '../access/production.js';
+import { can } from '../access/permissions.js';
 import { Permission } from '@starling/auth/permissions';
 import {
   PROTOCOL, TIMELINE_NAMESPACE, TimelineEvent,

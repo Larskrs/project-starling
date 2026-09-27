@@ -227,7 +227,7 @@ trusted one — and clients hold server payloads to the same standard.
 
 ## 4. Rooms: `createLiveRoom`
 
-[`liveRoom.ts`](../apps/api/src/lib/liveRoom.ts) owns the machinery every live
+[`liveRoom.ts`](../apps/api/src/lib/realtime/liveRoom.ts) owns the machinery every live
 namespace needs, so a namespace file contains only what makes it different.
 
 It handles: the protocol check, room naming, the presence map, join with an
@@ -270,7 +270,7 @@ many events the room produces.
 ### Access can never drift from REST
 
 `authorize` delegates to `resolveAccessLevel` in
-[`production.ts`](../apps/api/src/lib/production.ts) — the same function the
+[`production.ts`](../apps/api/src/lib/access/production.ts) — the same function the
 REST preambles use. There is one implementation of "may this user touch this
 production", so the socket layer and the HTTP layer cannot disagree.
 
@@ -311,7 +311,7 @@ not taken from whichever client pressed the key, so everyone stops at the same
 place.
 
 `at` is a reading of the server's **monotonic** clock
-([`clock.ts`](../apps/api/src/lib/clock.ts)), never `Date.now()`. A wall clock
+([`clock.ts`](../apps/api/src/lib/realtime/clock.ts)), never `Date.now()`. A wall clock
 gets stepped by NTP or an operator, and a step would move every room's playhead
 at once, because every client's offset was measured against the old reading.
 
@@ -353,7 +353,7 @@ report `e` → status `s`, then progress `sp`). While a run is going, the server
 **holds any Play** and starts it on a fresh anchor once the run ends, so nobody
 starts the show on an estimate still being refined.
 
-The rules live in [`clockResync.ts`](../apps/api/src/lib/clockResync.ts), pure
+The rules live in [`clockResync.ts`](../apps/api/src/lib/realtime/clockResync.ts), pure
 and tested, and the two that matter most are about not trusting the room:
 
 - **A deadline ends every run** (4 seconds). A crashed desk, a closed laptop, or
@@ -444,7 +444,7 @@ transport stops, because the anchor was in memory.
    client would misread the change.
 2. Create the namespace with `createLiveRoom`, supplying `authorize` (delegating
    to `resolveAccessLevel`) and any namespace-specific handlers.
-3. Register it in [`sockets.ts`](../apps/api/src/lib/sockets.ts) beside
+3. Register it in [`sockets.ts`](../apps/api/src/lib/realtime/sockets.ts) beside
    `setupTimelineSockets`.
 4. Export relay helpers from the namespace module, as `timelineRelay` does, and
    call them from each mutating REST route, passing `getSocketId(event)`.

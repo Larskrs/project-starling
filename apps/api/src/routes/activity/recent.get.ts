@@ -1,8 +1,8 @@
 import z from 'zod';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, activity, timelines, productions, companies } from '@starling/db';
-import { defineEventHandler, getValidatedQuery, requireAuth } from '../../lib/handler.js';
-import { productionAccessFilter } from '../../lib/production.js';
+import { defineEventHandler, getValidatedQuery, requireAuth } from '../../lib/http/handler.js';
+import { productionAccessFilter } from '../../lib/access/production.js';
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(24).default(6),

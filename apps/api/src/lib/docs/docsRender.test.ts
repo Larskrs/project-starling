@@ -1,7 +1,7 @@
 /**
  * Regression guard for documentation rendering.
  *
- *     node apps/api/src/lib/docsRender.test.ts
+ *     node apps/api/src/lib/docs/docsRender.test.ts
  *
  * (Standalone, same convention as the web tests — the repo has no test runner.
  * Exits non-zero on failure.)
@@ -54,7 +54,7 @@ check('anchors survive the rewrite', () => {
 
 check('a source-file link goes to the repository', () => {
   assert(
-    rewriteLink('../apps/api/src/lib/liveRoom.ts', '').endsWith('/apps/api/src/lib/liveRoom.ts'),
+    rewriteLink('../apps/api/src/lib/realtime/liveRoom.ts', '').endsWith('/apps/api/src/lib/realtime/liveRoom.ts'),
     'source link was not rewritten to the repo',
   );
 });

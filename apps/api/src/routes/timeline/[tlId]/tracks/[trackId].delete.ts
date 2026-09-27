@@ -1,9 +1,9 @@
 import { eq, and } from 'drizzle-orm';
 import { db, tracks } from '@starling/db';
-import { defineEventHandler, getRouterParam, createError, getSocketId } from '../../../../lib/handler.js';
-import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/production.js';
+import { defineEventHandler, getRouterParam, createError, getSocketId } from '../../../../lib/http/handler.js';
+import { requireTimelineParam, assertTrackUnlocked } from '../../../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
-import { timelineRelay } from '../../../../lib/timelineSockets.js';
+import { timelineRelay } from '../../../../lib/realtime/timelineSockets.js';
 
 export default defineEventHandler(async (event) => {
   const { timeline } = await requireTimelineParam(event, { permission: Permission.EDIT_TIMELINE });

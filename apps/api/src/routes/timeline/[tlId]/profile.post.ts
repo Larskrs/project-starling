@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { db, timelines, storageFiles, storageImageVersions } from '@starling/db';
-import { defineEventHandler, readMultipart, ApiError } from '../../../lib/handler.js';
+import { defineEventHandler, readMultipart, ApiError } from '../../../lib/http/handler.js';
 import { isImage, writeTimelineProfileImage, purgeFilesFromDisk } from '../../../lib/storage.js';
-import { requireTimelineParam } from '../../../lib/production.js';
+import { requireTimelineParam } from '../../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 /**

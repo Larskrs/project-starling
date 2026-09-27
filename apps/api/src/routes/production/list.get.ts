@@ -1,6 +1,6 @@
 import { companies, db, productions } from '@starling/db';
-import { createError, defineEventHandler, getValidatedQuery, requireAuth } from '../../lib/handler.js';
-import { productionAccessFilter } from '../../lib/production.js';
+import { createError, defineEventHandler, getValidatedQuery, requireAuth } from '../../lib/http/handler.js';
+import { productionAccessFilter } from '../../lib/access/production.js';
 import z from 'zod';
 import { and, eq } from 'drizzle-orm';
 

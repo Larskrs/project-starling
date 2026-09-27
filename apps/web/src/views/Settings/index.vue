@@ -22,6 +22,24 @@ async function fetchProfile() {
 
 onMounted(fetchProfile)
 
+// ── Email verification ────────────────────────────────────────────────────────
+
+const verifySending = ref(false)
+const verifyNotice  = ref('')
+
+async function sendVerification() {
+  verifySending.value = true
+  verifyNotice.value  = ''
+  const { ok, data } = await $fetch('/api/user/verify-email', { method: 'POST' })
+  verifySending.value = false
+  if (!ok) return
+
+  // The account may have been verified in another tab since this page loaded.
+  if (data.alreadyVerified) { await fetchProfile(); return }
+
+  verifyNotice.value = t('profile.verifySent', { email: data.email })
+}
+
 const avatarUploading = ref(false)
 const bannerUploading = ref(false)
 const avatarError     = ref('')
@@ -131,7 +149,24 @@ function onCropCancel() {
       <div class="space-y-2">
         <template v-if="profile">
           <p class="text-sm font-medium">{{ profile.first_name }} {{ profile.last_name }}</p>
-          <p class="text-sm text-muted-foreground">{{ profile.email }}</p>
+          <div class="flex items-center gap-2 flex-wrap">
+            <p class="text-sm text-muted-foreground">{{ profile.email }}</p>
+            <span
+              v-if="profile.isEmailVerified"
+              class="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md"
+            >
+              <Icon icon="mdi:check-circle-outline" class="size-3.5" aria-hidden="true" />
+              {{ $t('profile.emailVerified') }}
+            </span>
+            <button
+              v-else
+              type="button"
+              class="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+              :disabled="verifySending"
+              @click="sendVerification"
+            >{{ verifySending ? $t('profile.verifySending') : $t('profile.verifyEmail') }}</button>
+          </div>
+          <p v-if="verifyNotice" class="text-xs text-muted-foreground">{{ verifyNotice }}</p>
         </template>
         <template v-else>
           <Skeleton class="h-4 w-40 rounded" />

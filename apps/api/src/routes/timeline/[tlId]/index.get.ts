@@ -1,9 +1,9 @@
 import { eq, inArray } from 'drizzle-orm';
 import { db, tracks, trackTypes, sources, clips, storageFiles } from '@starling/db';
-import { defineEventHandler } from '../../../lib/handler.js';
-import { requireTimelineParam } from '../../../lib/production.js';
+import { defineEventHandler } from '../../../lib/http/handler.js';
+import { requireTimelineParam } from '../../../lib/access/production.js';
 import { trackActivity } from '../../../lib/activity.js';
-import { can } from '../../../lib/permissions.js';
+import { can } from '../../../lib/access/permissions.js';
 import { Permission } from '@starling/auth/permissions';
 
 export default defineEventHandler(async (event) => {

@@ -37,7 +37,7 @@ export function escapeHtml(s: string): string {
  * `./authentication.md` → `/docs/integrations/authentication`, so a
  * cross-reference is navigation rather than a broken file path.
  *
- * `../apps/api/src/lib/liveRoom.ts` → the file on GitHub. A served page has no
+ * `../apps/api/src/lib/realtime/liveRoom.ts` → the file on GitHub. A served page has no
  * filesystem to point at, and these links are how the docs say "the code is
  * here" — dropping them would lose the most useful thing about them.
  *

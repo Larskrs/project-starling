@@ -1,9 +1,9 @@
 import z from 'zod';
 import { eq } from 'drizzle-orm';
 import { db, companies, storageFiles, storageImageVersions } from '@starling/db';
-import { defineEventHandler, getRouterParam, readMultipart, createError, ApiError } from '../../../lib/handler.js';
+import { defineEventHandler, getRouterParam, readMultipart, createError, ApiError } from '../../../lib/http/handler.js';
 import { isImage, writeProfileImage, purgeFilesFromDisk } from '../../../lib/storage.js';
-import { requireCompanyAdmin } from '../../../lib/company.js';
+import { requireCompanyAdmin } from '../../../lib/access/company.js';
 
 const slotSchema = z.enum(['profile', 'banner']);
 

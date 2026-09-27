@@ -1,7 +1,7 @@
 /**
  * Regression guard for documentation discovery, visibility and search.
  *
- *     node apps/api/src/lib/docs.test.ts
+ *     node apps/api/src/lib/docs/docs.test.ts
  *
  * (Standalone, same convention as the web tests — the repo has no test runner.
  * Exits non-zero on failure.)

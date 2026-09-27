@@ -1,11 +1,17 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import Button from '@starling/ui/Button'
 import Input  from '@starling/ui/Input'
 import Label  from '@starling/ui/Label'
 
 const { login } = useAuth()
+const route     = useRoute()
+
+// Carried from an invite link: signing in redeems it and lands on the
+// production, rather than dropping them on /home with nothing to show for it.
+const invite = computed(() => (typeof route.query.invite === 'string' ? route.query.invite : undefined))
 
 const email    = ref('')
 const password = ref('')
@@ -16,7 +22,7 @@ async function handleSubmit() {
   error.value   = ''
   loading.value = true
   try {
-    await login(email.value, password.value)
+    await login(email.value, password.value, invite.value)
   } catch (e) {
     error.value = e.message
   } finally {

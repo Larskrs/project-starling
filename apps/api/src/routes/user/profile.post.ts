@@ -1,7 +1,7 @@
 import z from 'zod';
 import { eq } from 'drizzle-orm';
 import { db, users, storageFiles, storageImageVersions } from '@starling/db';
-import { defineEventHandler, readMultipart, createError, requireAuth, ApiError } from '../../lib/handler.js';
+import { defineEventHandler, readMultipart, createError, requireAuth, ApiError } from '../../lib/http/handler.js';
 import { isImage, writeUserProfileImage, purgeFilesFromDisk } from '../../lib/storage.js';
 
 const slotSchema = z.enum(['avatar', 'banner']);

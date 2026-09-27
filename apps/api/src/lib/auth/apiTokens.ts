@@ -1,8 +1,9 @@
-import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 import { db, apiTokens, apiTokenEvents, productionRoles } from '@starling/db';
 import { Permission, decode } from '@starling/auth/permissions';
-import { TtlCache } from './cache.js';
+import { TtlCache } from '../util/cache.js';
+import { mintSecret, hashSecret } from './secrets.js';
 
 /**
  * API tokens for installed equipment.
@@ -43,17 +44,8 @@ export function maskTokenPermissions(bits: bigint | null): bigint {
 
 // ── Hashing ───────────────────────────────────────────────────────────────────
 
-/**
- * SHA-256, not scrypt.
- *
- * The secret is 32 bytes from a CSPRNG, so there is no low-entropy guess to
- * slow down — the work factor that protects a human password buys nothing here.
- * It would however be paid on EVERY request, and a desk polling the API would
- * feel it immediately.
- */
-function hashSecret(secret: string): string {
-  return createHash('sha256').update(secret).digest('hex');
-}
+// hashSecret is SHA-256, not scrypt (see secrets.ts). A work factor would also
+// be paid on EVERY request here, and a desk polling the API would feel it.
 
 function hashesMatch(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'hex');
@@ -78,7 +70,7 @@ export interface IssuedToken {
  */
 export function issueToken(): IssuedToken {
   const id     = randomUUID();
-  const secret = randomBytes(32).toString('base64url');
+  const secret = mintSecret();
 
   return {
     id,

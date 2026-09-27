@@ -11,8 +11,8 @@ function env(name: string, fallback?: string): string {
 const PORT = Number(env('DISPLAY_PORT', '8081'));
 const CAMERA_TRACK = env('CAMERA_TRACK', 'Cameras');
 
-// const cino = new Cino({ url: env('CINO_URL', 'https://cino.no'), token: env('CINO_TOKEN') });
-const cino = new Cino({ url: env('CINO_URL', 'http://localhost:3000'), token: env('CINO_TOKEN') });
+const cino = new Cino({ url: env('CINO_URL', 'https://cino.no'), token: env('CINO_TOKEN') });
+// const cino = new Cino({ url: env('CINO_URL', 'http://localhost:3000'), token: env('CINO_TOKEN') });
 const live = cino.connect(env('CINO_TIMELINE'));
 
 // ── What the page is sent ─────────────────────────────────────────────────────

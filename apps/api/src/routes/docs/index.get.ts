@@ -1,5 +1,5 @@
-import { defineEventHandler, getAuth, appendVary } from '../../lib/handler.js';
-import { docGroups } from '../../lib/docsStore.js';
+import { defineEventHandler, getAuth, appendVary } from '../../lib/http/handler.js';
+import { docGroups } from '../../lib/docs/docsStore.js';
 
 /**
  * The documentation index, filtered to what this caller may read.

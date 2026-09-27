@@ -391,7 +391,7 @@ export function decodeCommand(raw: unknown): TransportCommand | null {
 // Before a show, an operator presses "Sync clocks": every client in the room
 // re-measures its clock against the server and reports how good its estimate
 // now is. While that runs, the server holds any Play, so nobody starts the show
-// on an estimate still being refined. Rules: apps/api/src/lib/clockResync.ts.
+// on an estimate still being refined. Rules: apps/api/src/lib/realtime/clockResync.ts.
 //
 // The run is sent whole once, as it starts, and to anyone joining mid-run.
 // After that the room hears only what changed, a few times a second at most —

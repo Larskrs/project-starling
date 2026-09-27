@@ -1,10 +1,10 @@
 import { eq, and, isNull } from 'drizzle-orm';
 import { db, apiTokens } from '@starling/db';
-import { defineEventHandler, getRouterParam, createError } from '../../../../lib/handler.js';
-import { requireProductionParam } from '../../../../lib/production.js';
-import { getClientIp } from '../../../../lib/security.js';
-import { invalidateToken, recordTokenEvent } from '../../../../lib/apiTokens.js';
-import { disconnectTokenSockets } from '../../../../lib/sockets.js';
+import { defineEventHandler, getRouterParam, createError } from '../../../../lib/http/handler.js';
+import { requireProductionParam } from '../../../../lib/access/production.js';
+import { getClientIp } from '../../../../lib/http/security.js';
+import { invalidateToken, recordTokenEvent } from '../../../../lib/auth/apiTokens.js';
+import { disconnectTokenSockets } from '../../../../lib/realtime/sockets.js';
 import { Permission } from '@starling/auth/permissions';
 
 /**

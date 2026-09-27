@@ -1,7 +1,7 @@
 import z from 'zod';
 import { db, timelines, frameRateEnum } from '@starling/db';
-import { defineEventHandler, readValidatedBody } from '../../lib/handler.js';
-import { requireProductionQuery } from '../../lib/production.js';
+import { defineEventHandler, readValidatedBody } from '../../lib/http/handler.js';
+import { requireProductionQuery } from '../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({

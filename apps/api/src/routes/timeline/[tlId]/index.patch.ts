@@ -1,8 +1,8 @@
 import z from 'zod';
 import { eq } from 'drizzle-orm';
 import { db, timelines, frameRateEnum } from '@starling/db';
-import { defineEventHandler, readValidatedBody, createError, pickDefined } from '../../../lib/handler.js';
-import { requireTimelineParam } from '../../../lib/production.js';
+import { defineEventHandler, readValidatedBody, createError, pickDefined } from '../../../lib/http/handler.js';
+import { requireTimelineParam } from '../../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const bodySchema = z.object({

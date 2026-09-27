@@ -1,8 +1,8 @@
 import z from 'zod';
 import { eq, and, ne } from 'drizzle-orm';
 import { db, companies } from '@starling/db';
-import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../lib/handler.js';
-import { requireCompanyAdmin } from '../../lib/company.js';
+import { defineEventHandler, getRouterParam, readValidatedBody, createError } from '../../lib/http/handler.js';
+import { requireCompanyAdmin } from '../../lib/access/company.js';
 
 const bodySchema = z.object({
   name: z.string().min(1).max(255).optional(),

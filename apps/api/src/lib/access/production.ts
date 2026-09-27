@@ -2,7 +2,7 @@ import { eq, and, or, inArray } from 'drizzle-orm';
 import {
   db, companies, productions, companyMembers, productionMembers, productionRoles, timelines,
 } from '@starling/db';
-import { type ApiEvent, createError, getPrincipal, getRouterParam, type Principal } from './handler.js';
+import { type ApiEvent, createError, getPrincipal, getRouterParam, type Principal } from '../http/handler.js';
 import { can } from './permissions.js';
 import { type PermissionName, Permission, PERMISSION_MESSAGES } from '@starling/auth/permissions';
 
@@ -309,4 +309,19 @@ export async function requireProductionQuery(
   const ctx = await requireProductionAccess(event, { productionId: pid });
   if (opts.permission !== undefined) await requirePermission(ctx, opts.permission);
   return ctx;
+}
+
+/**
+ * 404s unless `roleId` belongs to this production. Without it, a role from
+ * ANOTHER production could be attached here, handing its permission bits to a
+ * member of this one.
+ */
+export async function assertRoleInProduction(productionId: string, roleId: string | null | undefined): Promise<void> {
+  if (!roleId) return;
+  const [role] = await db
+    .select({ id: productionRoles.id })
+    .from(productionRoles)
+    .where(and(eq(productionRoles.id, roleId), eq(productionRoles.productionId, productionId)))
+    .limit(1);
+  if (!role) throw createError({ statusCode: 404, message: 'Role not found', errorKey: 'errors.role.notFound' });
 }

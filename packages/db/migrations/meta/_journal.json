@@ -85,6 +85,20 @@
       "when": 1789302899586,
       "tag": "0011_public_zuras",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789930836581,
+      "tag": "0012_kind_exiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789931818868,
+      "tag": "0013_wet_sabra",
+      "breakpoints": true
     }
   ]
 }

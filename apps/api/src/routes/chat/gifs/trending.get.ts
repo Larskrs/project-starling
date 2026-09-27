@@ -1,4 +1,4 @@
-import { defineEventHandler, requireAuth, ApiError } from '../../../lib/handler.js';
+import { defineEventHandler, requireAuth, ApiError } from '../../../lib/http/handler.js';
 
 const GIPHY_BASE = 'https://api.giphy.com/v1/gifs';
 

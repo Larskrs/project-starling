@@ -1,9 +1,9 @@
 import z from 'zod';
 import { eq } from 'drizzle-orm';
 import { db, storageFolders, storageFiles, storageImageVersions } from '@starling/db';
-import { defineEventHandler, readMultipart, createError, ApiError } from '../../lib/handler.js';
+import { defineEventHandler, readMultipart, createError, ApiError } from '../../lib/http/handler.js';
 import { isImage, isAudio, processImage, writeAudio, imagePhysicalPath } from '../../lib/storage.js';
-import { requireProductionAccess, requirePermission } from '../../lib/production.js';
+import { requireProductionAccess, requirePermission } from '../../lib/access/production.js';
 import { Permission } from '@starling/auth/permissions';
 
 const metaSchema = z.object({

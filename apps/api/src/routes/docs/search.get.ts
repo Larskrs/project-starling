@@ -1,6 +1,6 @@
 import z from 'zod';
-import { defineEventHandler, getAuth, getValidatedQuery, appendVary } from '../../lib/handler.js';
-import { docSearch } from '../../lib/docsStore.js';
+import { defineEventHandler, getAuth, getValidatedQuery, appendVary } from '../../lib/http/handler.js';
+import { docSearch } from '../../lib/docs/docsStore.js';
 
 const querySchema = z.object({
   q: z.string().min(1).max(120),

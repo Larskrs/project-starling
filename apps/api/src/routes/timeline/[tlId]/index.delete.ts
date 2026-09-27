@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db, timelines, storageFiles } from '@starling/db';
-import { defineEventHandler } from '../../../lib/handler.js';
-import { requireTimelineParam } from '../../../lib/production.js';
+import { defineEventHandler } from '../../../lib/http/handler.js';
+import { requireTimelineParam } from '../../../lib/access/production.js';
 import { purgeFilesFromDisk } from '../../../lib/storage.js';
 import { Permission } from '@starling/auth/permissions';
 

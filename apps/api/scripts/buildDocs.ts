@@ -1,4 +1,4 @@
-import { buildBundle, writeBundle, bundlePath } from '../src/lib/docsStore.js';
+import { buildBundle, writeBundle, bundlePath } from '../src/lib/docs/docsStore.js';
 
 /**
  * Renders every page in `docs/` to a single JSON bundle.

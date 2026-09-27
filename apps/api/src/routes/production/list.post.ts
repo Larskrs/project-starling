@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { and, eq, or } from 'drizzle-orm';
 import { productions, productionMembers, companies, companyMembers, db } from '@starling/db';
-import { defineEventHandler, readValidatedBody, ApiError, createError, requireAuth } from '../../lib/handler.js';
+import { defineEventHandler, readValidatedBody, ApiError, createError, requireAuth } from '../../lib/http/handler.js';
 
 const schema = z.object({
   company_id: z.uuid(),

@@ -136,6 +136,68 @@ export const companyMembers = pgTable('company_members', {
   index('company_member_user_idx').on(t.userId),
 ]);
 
+/**
+ * Outstanding "confirm your address" links.
+ *
+ * A row per request rather than a column on `users`, so re-sending is just a
+ * new row and the old link dies with the one it replaces. `email` is recorded
+ * alongside because the token proves ONE address: if the account's address
+ * changes before the link is clicked, the proof no longer applies to it.
+ *
+ * Only the hash is stored, like every other credential here.
+ */
+export const emailVerifications = pgTable('email_verifications', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  /** The address this token proves, as it was when the link was sent. */
+  email:     text('email').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('email_verifications_hash_uq').on(t.tokenHash),
+  // Re-sending clears this user's previous links, so it is looked up by user.
+  index('email_verifications_user_idx').on(t.userId),
+]);
+
+/**
+ * Pending access to a production, for the two cases a membership row cannot
+ * cover: a person who has no account yet, and a link handed out before anyone
+ * knows who will use it.
+ *
+ * The plaintext token lives only in the link that was sent — only its hash is
+ * here, exactly as api_tokens does it, so a leaked database dump cannot be
+ * replayed into somebody's production.
+ *
+ * Revoking sets `revokedAt` instead of deleting, so "who was invited, and what
+ * happened to it" survives the invite being withdrawn.
+ */
+export const productionInvites = pgTable('production_invites', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  productionId: uuid('production_id').notNull().references(() => productions.id, { onDelete: 'cascade' }),
+  // A deleted role leaves the invite roleless rather than inheriting whatever
+  // role is created next — it grants nothing until someone sets one.
+  roleId:       uuid('role_id').references(() => productionRoles.id, { onDelete: 'set null' }),
+  /** Bound to one address, or null for a link anyone holding it may use. */
+  email:        text('email'),
+  /** SHA-256 of the token, hex. The plaintext is never stored. */
+  tokenHash:    text('token_hash').notNull(),
+  /** Nullable so deleting a person does not delete the invites they sent. */
+  createdBy:    uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  expiresAt:    timestamp('expires_at').notNull(),
+  /** null → unlimited until expiry. An emailed invite is always 1. */
+  maxUses:      integer('max_uses'),
+  useCount:     integer('use_count').notNull().default(0),
+  lastUsedAt:   timestamp('last_used_at'),
+  /** Set rather than deleting the row, so the trail keeps its subject. */
+  revokedAt:    timestamp('revoked_at'),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  // Every redemption is a lookup by hash; the management page lists by production.
+  uniqueIndex('production_invites_hash_uq').on(t.tokenHash),
+  index('production_invites_production_idx').on(t.productionId),
+]);
+
 export const trackTypes = pgTable(
   "track_types",
   {

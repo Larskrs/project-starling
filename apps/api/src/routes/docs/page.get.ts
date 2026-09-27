@@ -1,6 +1,6 @@
 import z from 'zod';
-import { defineEventHandler, getAuth, getValidatedQuery, createError, appendVary } from '../../lib/handler.js';
-import { docPage, docGroups } from '../../lib/docsStore.js';
+import { defineEventHandler, getAuth, getValidatedQuery, createError, appendVary } from '../../lib/http/handler.js';
+import { docPage, docGroups } from '../../lib/docs/docsStore.js';
 
 const querySchema = z.object({
   // Slashes are meaningful — 'integrations/writing' is one page, not two path

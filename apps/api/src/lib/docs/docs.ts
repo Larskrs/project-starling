@@ -21,7 +21,7 @@ import { join, resolve, relative, extname, basename, dirname, sep } from 'node:p
  * caller directly — the store projects it first.
  */
 
-const DOCS_ROOT = resolve(join(import.meta.dirname, '../../../../docs'));
+const DOCS_ROOT = resolve(join(import.meta.dirname, '../../../../../docs'));
 
 /** Sidebar group for pages that sit directly in `docs/`. */
 export const ROOT_CATEGORY = 'Reference';
